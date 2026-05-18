@@ -1005,6 +1005,7 @@ static_assert(requires(
     { staging_payload_diff.ready_recovered } -> std::same_as<bool&>;
     { staging_payload_diff.regression } -> std::same_as<bool&>;
     { staging_payload_diff.recovery } -> std::same_as<bool&>;
+    { staging_payload_diff.change_summary } -> std::same_as<std::string&>;
     { staging_payload_diff.diagnostic } -> std::same_as<std::string&>;
     { staging_payload_diff.changed() } -> std::same_as<bool>;
     { staging_payload_diff.ok() } -> std::same_as<bool>;

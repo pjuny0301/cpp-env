@@ -568,8 +568,17 @@ void test_staging_payload_plan_records_rows_alignment_and_blockers()
     require(aligned_diff.row_padding_byte_delta == 8, "aligned staging diff records padding delta");
     require(aligned_diff.total_staging_byte_delta == 8, "aligned staging diff records staging byte delta");
     require(
+        aligned_diff.change_summary == "staging_bytes=8->16,alignment=4->16,row_padding=0->8",
+        "aligned staging diff emits compact layout summary");
+    require(
         aligned_diff.diagnostic == "image texture staging payload plan changed staging bytes",
         "aligned staging diff diagnostic is stable");
+    const render_image_texture_staging_payload_plan_diff unchanged_diff =
+        diff_render_image_texture_staging_payload_plans(base_plan, base_plan);
+    require(!unchanged_diff.changed(), "unchanged staging diff reports stable no-op");
+    require(
+        unchanged_diff.change_summary == "no staging payload plan changes",
+        "unchanged staging diff summary is stable");
 
     const render_image_texture_staging_payload_plan invalid_alignment_plan =
         make_render_image_texture_staging_payload_plan(layout, base_mipmap_plan, 0);
@@ -1435,8 +1444,13 @@ void test_texture_upload_result_diff_reports_added_changed_and_regressed_packets
     require(staging_diff.after_staging_payload_byte_count == 16, "staging payload diff records after aggregate bytes");
     require(staging_diff.staging_payload_byte_delta == 8, "staging payload diff records aggregate byte delta");
     require(
-        staging_diff.staging_payload_summary == "request=1:staging_bytes=8->16",
-        "staging payload diff emits compact staging byte summary");
+        staging_diff.staging_payload_summary
+            == "request=1:staging_bytes=8->16,alignment=4->16,row_padding=0->8,cache_key_changed,sampler_changed",
+        "staging payload diff emits compact layout and identity summary");
+    require(
+        staging_diff.entries[0].staging_payload_plan_diff.change_summary
+            == "staging_bytes=8->16,alignment=4->16,row_padding=0->8,cache_key_changed,sampler_changed",
+        "staging payload packet diff records compact change summary");
     require(
         staging_diff.entries[0].staging_payload_plan_diff.alignment_changed,
         "staging payload packet diff records alignment evidence");
@@ -1510,6 +1524,23 @@ void test_texture_upload_result_diff_reports_added_changed_and_regressed_packets
         staging_regression_diff.entries[0].staging_payload_plan_diff.after_blocker_summary
             == "mutated staging blocker",
         "staging regression packet diff preserves blocker summary");
+    require(
+        staging_regression_diff.staging_payload_summary == "request=1:blocker=ready->blocked_invalid_layout",
+        "staging regression diff summarizes blocker transition");
+
+    const render_image_texture_upload_result_snapshot_diff staging_recovery_diff =
+        diff_render_image_texture_upload_result_snapshots(staging_regressed, before);
+    require(staging_recovery_diff.ok(), "blocked-to-ready staging plan diff is a recovery");
+    require(staging_recovery_diff.has_recovery, "staging recovery diff exposes recovery flag");
+    require(
+        staging_recovery_diff.staging_recovery_count == 1,
+        "staging recovery diff counts staging recovery");
+    require(
+        staging_recovery_diff.entries[0].staging_payload_plan_diff.ready_recovered,
+        "staging recovery packet diff records ready recovery");
+    require(
+        staging_recovery_diff.staging_payload_summary == "request=1:blocker=blocked_invalid_layout->ready",
+        "staging recovery diff summarizes blocker recovery");
 }
 
 void test_texture_upload_snapshot_diff_reports_added_uploads_and_byte_deltas()

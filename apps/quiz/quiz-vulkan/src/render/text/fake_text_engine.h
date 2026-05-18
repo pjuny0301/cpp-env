@@ -142,6 +142,7 @@ struct fake_text_engine_shaping_handoff_snapshot {
     bool cacheable = false;
     bool atlas_ready = false;
     std::string fallback_reason;
+    std::string atlas_blocker_reason;
 };
 
 struct fake_text_engine_shaping_handoff_policy_snapshot {
@@ -153,7 +154,10 @@ struct fake_text_engine_shaping_handoff_policy_snapshot {
     std::size_t materialized_font_byte_run_count = 0;
     std::size_t missing_font_byte_run_count = 0;
     std::size_t adapter_failure_run_count = 0;
+    std::size_t fallback_reason_run_count = 0;
     std::size_t atlas_ready_glyph_count = 0;
+    std::size_t atlas_blocked_glyph_count = 0;
+    std::size_t fallback_reason_glyph_count = 0;
 };
 
 struct fake_text_engine_shaping_atlas_handoff_snapshot {

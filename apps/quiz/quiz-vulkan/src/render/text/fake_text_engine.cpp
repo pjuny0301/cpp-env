@@ -1088,6 +1088,22 @@ std::string automatic_harfbuzz_fallback_reason(
     return {};
 }
 
+std::string shaping_handoff_atlas_blocker_reason_for(
+    const render_text_shaped_glyph& glyph,
+    const float line_height)
+{
+    if (!glyph.glyph_supported) {
+        return "glyph is unsupported";
+    }
+    if (glyph.advance_x <= 0.0f) {
+        return "glyph has no positive atlas advance";
+    }
+    if (line_height <= 0.0f) {
+        return "glyph line height is not positive";
+    }
+    return {};
+}
+
 void record_shaping_handoff(
     fake_text_engine_diagnostics& diagnostics,
     const render_style_id& style_token,
@@ -1122,12 +1138,22 @@ void record_shaping_handoff(
         && adapter_status != render_text_font_backend_adapter_status::backend_unavailable) {
         ++diagnostics.shaping_handoff_policy.adapter_failure_run_count;
     }
+    if (!fallback_reason.empty()) {
+        ++diagnostics.shaping_handoff_policy.fallback_reason_run_count;
+    }
 
     for (const render_text_shaped_glyph& glyph : shaped_run.glyphs) {
-        const bool cacheable = glyph.glyph_supported && glyph.advance_x > 0.0f && line_height > 0.0f;
+        const std::string atlas_blocker_reason =
+            shaping_handoff_atlas_blocker_reason_for(glyph, line_height);
+        const bool cacheable = atlas_blocker_reason.empty();
         ++diagnostics.shaping_handoff_policy.glyph_count;
         if (cacheable) {
             ++diagnostics.shaping_handoff_policy.atlas_ready_glyph_count;
+        } else {
+            ++diagnostics.shaping_handoff_policy.atlas_blocked_glyph_count;
+        }
+        if (!fallback_reason.empty()) {
+            ++diagnostics.shaping_handoff_policy.fallback_reason_glyph_count;
         }
 
         diagnostics.shaping_handoffs.push_back(fake_text_engine_shaping_handoff_snapshot{
@@ -1157,6 +1183,7 @@ void record_shaping_handoff(
             .cacheable = cacheable,
             .atlas_ready = cacheable,
             .fallback_reason = fallback_reason,
+            .atlas_blocker_reason = atlas_blocker_reason,
         });
     }
 }

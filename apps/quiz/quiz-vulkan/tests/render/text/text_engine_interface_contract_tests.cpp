@@ -267,6 +267,22 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
         -> std::same_as<render::fake_text_engine_font_backend_adapter_policy_snapshot&>;
     { diagnostics.font_backend_dependency_policy }
         -> std::same_as<render::fake_text_engine_font_backend_dependency_policy_snapshot&>;
+    { diagnostics.shaping_handoffs }
+        -> std::same_as<std::vector<render::fake_text_engine_shaping_handoff_snapshot>&>;
+    { diagnostics.shaping_handoff_policy }
+        -> std::same_as<render::fake_text_engine_shaping_handoff_policy_snapshot&>;
+    { diagnostics.shaping_atlas_handoffs }
+        -> std::same_as<std::vector<render::fake_text_engine_shaping_atlas_handoff_snapshot>&>;
+    { diagnostics.shaping_atlas_handoff_policy }
+        -> std::same_as<render::fake_text_engine_shaping_atlas_handoff_policy_snapshot&>;
+    { diagnostics.shaping_line_run_evidence }
+        -> std::same_as<std::vector<render::fake_text_engine_shaping_line_run_evidence_snapshot>&>;
+    { diagnostics.shaping_line_run_evidence_policy }
+        -> std::same_as<render::fake_text_engine_shaping_line_run_evidence_policy_snapshot&>;
+    { diagnostics.line_run_atlas_uploads }
+        -> std::same_as<std::vector<render::fake_text_engine_line_run_atlas_upload_snapshot>&>;
+    { diagnostics.line_run_atlas_upload_policy }
+        -> std::same_as<render::fake_text_engine_line_run_atlas_upload_policy_snapshot&>;
     { diagnostics.shaped_glyphs } -> std::same_as<std::vector<render::render_text_shaped_glyph>&>;
     { diagnostics.font_shaping_diagnostics }
         -> std::same_as<std::vector<render::render_text_font_shaping_diagnostic>&>;
@@ -338,6 +354,10 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_font_backend_adapter_policy() } -> std::same_as<bool>;
     { diagnostics.has_font_backend_dependency_probe() } -> std::same_as<bool>;
     { diagnostics.has_font_backend_header_probe() } -> std::same_as<bool>;
+    { diagnostics.has_shaping_handoffs() } -> std::same_as<bool>;
+    { diagnostics.has_shaping_atlas_handoffs() } -> std::same_as<bool>;
+    { diagnostics.has_shaping_line_run_evidence() } -> std::same_as<bool>;
+    { diagnostics.has_line_run_atlas_uploads() } -> std::same_as<bool>;
     { diagnostics.has_shaped_glyphs() } -> std::same_as<bool>;
     { diagnostics.has_font_shaping_diagnostics() } -> std::same_as<bool>;
     { diagnostics.has_font_shaping_policy() } -> std::same_as<bool>;
@@ -363,6 +383,41 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_caret_hit_tests() } -> std::same_as<bool>;
     { diagnostics.has_glyph_cache_faces() } -> std::same_as<bool>;
     { diagnostics.has_glyph_cache_evictions() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    render::fake_text_engine_shaping_handoff_snapshot handoff,
+    render::fake_text_engine_shaping_handoff_policy_snapshot policy) {
+    { handoff.run_index } -> std::same_as<std::size_t&>;
+    { handoff.style_token } -> std::same_as<render::render_style_id&>;
+    { handoff.glyph_index } -> std::same_as<std::size_t&>;
+    { handoff.cluster_byte_offset } -> std::same_as<std::size_t&>;
+    { handoff.cluster_byte_count } -> std::same_as<std::size_t&>;
+    { handoff.cluster_codepoint_offset } -> std::same_as<std::size_t&>;
+    { handoff.cluster_codepoint_count } -> std::same_as<std::size_t&>;
+    { handoff.glyph_id } -> std::same_as<std::uint32_t&>;
+    { handoff.advance_x } -> std::same_as<float&>;
+    { handoff.backend_library } -> std::same_as<render::render_text_font_backend_library&>;
+    { handoff.backend_label } -> std::same_as<std::string&>;
+    { handoff.adapter_status } -> std::same_as<render::render_text_font_backend_adapter_status&>;
+    { handoff.source_bytes_status } -> std::same_as<render::render_text_font_source_bytes_load_status&>;
+    { handoff.materialized_font_bytes } -> std::same_as<bool&>;
+    { handoff.used_adapter } -> std::same_as<bool&>;
+    { handoff.used_harfbuzz } -> std::same_as<bool&>;
+    { handoff.used_deterministic_fallback } -> std::same_as<bool&>;
+    { handoff.atlas_ready } -> std::same_as<bool&>;
+    { handoff.fallback_reason } -> std::same_as<std::string&>;
+    { handoff.atlas_blocker_reason } -> std::same_as<std::string&>;
+    { policy.run_count } -> std::same_as<std::size_t&>;
+    { policy.glyph_count } -> std::same_as<std::size_t&>;
+    { policy.harfbuzz_run_count } -> std::same_as<std::size_t&>;
+    { policy.deterministic_fallback_run_count } -> std::same_as<std::size_t&>;
+    { policy.materialized_font_byte_run_count } -> std::same_as<std::size_t&>;
+    { policy.missing_font_byte_run_count } -> std::same_as<std::size_t&>;
+    { policy.fallback_reason_run_count } -> std::same_as<std::size_t&>;
+    { policy.atlas_ready_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.atlas_blocked_glyph_count } -> std::same_as<std::size_t&>;
+    { policy.fallback_reason_glyph_count } -> std::same_as<std::size_t&>;
 });
 
 static_assert(requires(

@@ -2111,8 +2111,17 @@ void test_fake_text_engine_harfbuzz_handoff_shapes_materialized_font_bytes()
         diagnostics.shaping_handoff_policy.deterministic_fallback_run_count == 0U,
         "HarfBuzz handoff policy records no deterministic fallback");
     require(
+        diagnostics.shaping_handoff_policy.fallback_reason_run_count == 0U,
+        "HarfBuzz handoff policy records no fallback reason");
+    require(
         diagnostics.shaping_handoff_policy.atlas_ready_glyph_count > 0U,
         "HarfBuzz handoff records atlas-ready glyph evidence");
+    require(
+        diagnostics.shaping_handoff_policy.atlas_blocked_glyph_count == 0U,
+        "HarfBuzz handoff records no atlas blocker for fixture glyphs");
+    require(
+        diagnostics.shaping_handoff_policy.fallback_reason_glyph_count == 0U,
+        "HarfBuzz handoff records no glyph fallback reason");
     require(
         diagnostics.shaping_handoffs.size() == layout.glyphs.size(),
         "HarfBuzz handoff emits one handoff record per layout glyph");
@@ -2136,6 +2145,7 @@ void test_fake_text_engine_harfbuzz_handoff_shapes_materialized_font_bytes()
         require(handoff.cluster_byte_count == text.size(), "handoff keeps combined cluster byte range");
         require(handoff.cluster_codepoint_offset == 0U, "handoff keeps cluster codepoint offset");
         require(handoff.cluster_codepoint_count == 2U, "handoff keeps base plus combining mark codepoint range");
+        require(handoff.atlas_blocker_reason.empty(), "handoff records no atlas blocker for HarfBuzz glyphs");
         saw_positive_advance = saw_positive_advance || handoff.advance_x > 0.0f;
     }
     require(saw_positive_advance, "HarfBuzz handoff records font-backed glyph advance");
@@ -2379,6 +2389,15 @@ void test_fake_text_engine_harfbuzz_handoff_keeps_deterministic_fallback_without
     require(
         diagnostics.shaping_handoff_policy.harfbuzz_run_count == 0U,
         "missing bytes handoff policy does not claim HarfBuzz shaping");
+    require(
+        diagnostics.shaping_handoff_policy.fallback_reason_run_count == 1U,
+        "missing bytes handoff policy counts fallback reason");
+    require(
+        diagnostics.shaping_handoff_policy.atlas_blocked_glyph_count == 0U,
+        "missing bytes fallback remains atlas-ready before raster bytes");
+    require(
+        diagnostics.shaping_handoff_policy.fallback_reason_glyph_count == 1U,
+        "missing bytes handoff policy maps fallback reason to glyph evidence");
 
     const fake_text_engine_shaping_handoff_snapshot& handoff = diagnostics.shaping_handoffs.front();
     require(handoff.backend_library == render_text_font_backend_library::deterministic_fake, "fallback backend is deterministic fake");
@@ -2393,6 +2412,7 @@ void test_fake_text_engine_harfbuzz_handoff_keeps_deterministic_fallback_without
         handoff.fallback_reason.find("materialized font bytes") != std::string::npos,
         "handoff fallback reason names missing materialized bytes");
     require(handoff.atlas_ready, "deterministic fallback handoff remains atlas-ready before raster bytes");
+    require(handoff.atlas_blocker_reason.empty(), "atlas-ready fallback handoff has no atlas blocker");
 
     require(diagnostics.has_shaping_atlas_handoffs(), "missing bytes record atlas handoff bridge");
     require(
@@ -3181,6 +3201,18 @@ void test_fake_text_engine_traces_shaped_glyph_without_cache_key()
     require(
         diagnostics.shaped_atlas_update_trace_policy.shaped_glyph_without_cache_key_count == 1,
         "trace policy counts missing cache key");
+    require(diagnostics.has_shaping_handoffs(), "standalone mark records shaping handoff");
+    require(
+        diagnostics.shaping_handoff_policy.atlas_blocked_glyph_count == 1,
+        "standalone mark handoff counts atlas-blocked glyph");
+    require(
+        diagnostics.shaping_handoff_policy.atlas_ready_glyph_count == 0,
+        "standalone mark handoff records no atlas-ready glyphs");
+    const fake_text_engine_shaping_handoff_snapshot& handoff = diagnostics.shaping_handoffs.front();
+    require(!handoff.atlas_ready, "standalone mark handoff is not atlas-ready");
+    require(
+        handoff.atlas_blocker_reason.find("positive atlas advance") != std::string::npos,
+        "standalone mark handoff records zero-advance atlas blocker");
     require(
         diagnostics.glyph_atlas_materializations.size() == 1,
         "standalone combining mark records one materialization decision");

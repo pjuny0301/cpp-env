@@ -244,6 +244,7 @@ target_sources(
             src/assets/asset_resolver.h
             src/assets/asset_runtime_catalog.h
             src/assets/asset_runtime_resolver_policy.h
+            src/assets/asset_shader_byte_pipeline_source_summary.h
             src/assets/asset_typed_materialized_bytes.h
 )
 target_compile_features(quiz_vulkan_asset_contract INTERFACE cxx_std_23)

@@ -558,6 +558,8 @@ static_assert(requires(
     { entry.issues } -> std::same_as<std::vector<asset_shader_materialized_byte_issue>&>;
     { entry.diagnostic } -> std::same_as<std::string&>;
     { const_entry.ready() } -> std::same_as<bool>;
+    { const_entry.has_issue(asset_shader_materialized_byte_issue_kind::blocked_materialization) } ->
+        std::same_as<bool>;
 });
 
 static_assert(requires(
@@ -577,6 +579,7 @@ static_assert(requires(
     { const_summary.ready_count() } -> std::same_as<std::size_t>;
     { const_summary.blocked_count() } -> std::same_as<std::size_t>;
     { const_summary.entry_count() } -> std::same_as<std::size_t>;
+    { const_summary.issue_count() } -> std::same_as<std::size_t>;
     { const_summary.find_ready(id) } -> std::same_as<const asset_shader_materialized_byte_pipeline_entry*>;
     { const_summary.find_blocked(id) } -> std::same_as<const asset_shader_materialized_byte_pipeline_entry*>;
     { const_summary.find_entry(id) } -> std::same_as<const asset_shader_materialized_byte_pipeline_entry*>;
@@ -624,6 +627,7 @@ static_assert(requires(
     const std::vector<asset_materialized_byte_payload_selection_request>& selection_requests,
     const asset_materialized_byte_payload_request_transaction& payload_transaction,
     asset_materialized_byte_payload_selection_status selection_status,
+    asset_shader_materialized_byte_issue_kind shader_issue_kind,
     const std::vector<asset_bytes_catalog_request>& requests,
     const asset_bytes_catalog_request& request) {
     { make_asset_bytes_content_hash(bytes) } -> std::same_as<std::string>;
@@ -672,6 +676,7 @@ static_assert(requires(
         std::same_as<asset_materialized_byte_payload_request_transaction_diff_summary>;
     { summarize_shader_materialized_byte_pipeline(payload_bundle) } ->
         std::same_as<asset_shader_materialized_byte_pipeline_summary>;
+    { asset_shader_materialized_byte_issue_kind_name(shader_issue_kind) } -> std::same_as<std::string>;
 });
 
 } // namespace

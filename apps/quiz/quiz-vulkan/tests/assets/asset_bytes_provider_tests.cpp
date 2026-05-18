@@ -1807,7 +1807,35 @@ void test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads()
     require(summary.empty_shader_bytes_count == 1U, "shader pipeline counts empty shader bytes");
     require(summary.non_spirv_magic_count == 1U, "shader pipeline counts non-SPIR-V-looking .spv bytes");
     require(summary.duplicate_id_count == 2U, "shader pipeline counts duplicate shader id entries");
+    require(summary.issue_count() == 7U, "shader pipeline totals all validation issues");
     require(summary.find_entry("card_front") == nullptr, "shader pipeline ignores non-shader payload groups");
+    require(
+        asset_shader_materialized_byte_issue_kind_name(
+            asset_shader_materialized_byte_issue_kind::blocked_materialization)
+            == "blocked_materialization",
+        "shader pipeline issue kind names include blocked materialization");
+    require(
+        asset_shader_materialized_byte_issue_kind_name(
+            asset_shader_materialized_byte_issue_kind::blocked_byte_load)
+            == "blocked_byte_load",
+        "shader pipeline issue kind names include blocked byte load");
+    require(
+        asset_shader_materialized_byte_issue_kind_name(asset_shader_materialized_byte_issue_kind::integrity_failure)
+            == "integrity_failure",
+        "shader pipeline issue kind names include integrity failure");
+    require(
+        asset_shader_materialized_byte_issue_kind_name(
+            asset_shader_materialized_byte_issue_kind::empty_shader_bytes)
+            == "empty_shader_bytes",
+        "shader pipeline issue kind names include empty shader bytes");
+    require(
+        asset_shader_materialized_byte_issue_kind_name(asset_shader_materialized_byte_issue_kind::non_spirv_magic)
+            == "non_spirv_magic",
+        "shader pipeline issue kind names include SPIR-V magic failures");
+    require(
+        asset_shader_materialized_byte_issue_kind_name(asset_shader_materialized_byte_issue_kind::duplicate_id)
+            == "duplicate_id",
+        "shader pipeline issue kind names include duplicate ids");
 
     const asset_shader_materialized_byte_pipeline_entry* ready = summary.find_ready("ui_shader");
     require(ready != nullptr, "shader pipeline can find ready shader payloads");
@@ -1828,6 +1856,9 @@ void test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads()
     require(ready->spirv_magic_checked, "shader pipeline checks SPIR-V magic for non-empty .spv payloads");
     require(ready->spirv_magic_valid, "shader pipeline accepts SPIR-V magic bytes");
     require(ready->issues.empty(), "ready shader has no validation issues");
+    require(
+        !ready->has_issue(asset_shader_materialized_byte_issue_kind::non_spirv_magic),
+        "ready shader issue lookup reports no SPIR-V magic failure");
     require(ready->diagnostic == "shader materialized byte payload ready", "ready shader diagnostic is stable");
 
     const asset_shader_materialized_byte_pipeline_entry* rootless = summary.find_blocked("rootless_shader");
@@ -1839,6 +1870,9 @@ void test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads()
             0U,
             asset_shader_materialized_byte_issue_kind::blocked_materialization),
         "shader pipeline reports blocked materialization issue");
+    require(
+        rootless->has_issue(asset_shader_materialized_byte_issue_kind::blocked_materialization),
+        "shader pipeline issue lookup finds blocked materialization");
     require(
         rootless->materialized_status == runtime_materialized_asset_lookup_status::missing_rooted_path,
         "shader pipeline preserves materialization blocker status");
@@ -1886,6 +1920,9 @@ void test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads()
             0U,
             asset_shader_materialized_byte_issue_kind::non_spirv_magic),
         "shader pipeline reports non-SPIR-V magic issue");
+    require(
+        text_shader->has_issue(asset_shader_materialized_byte_issue_kind::non_spirv_magic),
+        "shader pipeline issue lookup finds non-SPIR-V magic failures");
     require(text_shader->spirv_magic_checked, "non-empty .spv shader bytes are magic checked");
     require(!text_shader->spirv_magic_valid, "text shader bytes fail SPIR-V magic validation");
 

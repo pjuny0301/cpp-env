@@ -82,14 +82,21 @@ quiz_vulkan::render::render_text_frame_resource_packet_materialization_entry rea
         .glyph_supported = true,
         .upload_consumed = true,
         .upload_rgba_bytes = 256,
-        .cluster_index = 3 + packet_index,
-        .line_index = 2,
-        .pen_x = 10.0f + static_cast<float>(packet_index),
-        .pen_y = 20.0f,
-        .baseline = 29.0f,
-        .upload_generation = 5,
-        .missing_glyph = false,
-        .used_fallback_glyph_id = glyph_id == U'?',
+        .atlas_consumption = render_text_atlas_packet_consumption_evidence{
+            .cluster_index = 3 + packet_index,
+            .line_index = 2,
+            .run_index = 1,
+            .cluster_byte_offset = 4 + packet_index,
+            .cluster_byte_count = 1,
+            .cache_key = cache_key,
+            .resolved_glyph_id = glyph_id,
+            .resolved_face_id = cache_key.face_id,
+            .pen_x = 10.0f + static_cast<float>(packet_index),
+            .pen_y = 20.0f,
+            .baseline = 29.0f,
+            .upload_generation = 5,
+            .used_fallback_glyph_id = glyph_id == U'?',
+        },
         .diagnostic = "resource packet ready",
     };
 }
@@ -145,19 +152,33 @@ void test_ready_resource_packets_become_glyph_quads()
     require(packet.source_node_id_hint == "question-title", "node identity hint is derived from text handoff source label");
     require(packet.layout_bounds.x == entry.layout_bounds.x, "layout bounds x is preserved");
     require(packet.layout_bounds.height == entry.layout_bounds.height, "layout bounds height is preserved");
-    require(packet.cluster_index == entry.cluster_index, "cluster identity is preserved");
-    require(packet.line_index == entry.line_index, "line identity is preserved");
+    require(
+        packet.atlas_consumption.cluster_index == entry.atlas_consumption.cluster_index,
+        "cluster identity is preserved");
+    require(
+        packet.atlas_consumption.line_index == entry.atlas_consumption.line_index,
+        "line identity is preserved");
     require(packet.run_index == entry.run_index, "run identity is preserved");
-    require(packet.pen_x == entry.pen_x && packet.pen_y == entry.pen_y, "pen position is preserved");
-    require(packet.baseline == entry.baseline, "baseline is preserved");
+    require(
+        packet.atlas_consumption.pen_x == entry.atlas_consumption.pen_x
+            && packet.atlas_consumption.pen_y == entry.atlas_consumption.pen_y,
+        "pen position is preserved");
+    require(
+        packet.atlas_consumption.baseline == entry.atlas_consumption.baseline,
+        "baseline is preserved");
     require(packet.uv_bounds.valid, "UV bounds stay valid");
     require(packet.uv_bounds.u0 == entry.uv_bounds.u0, "UV u0 is preserved");
     require(packet.uv_bounds.v1 == entry.uv_bounds.v1, "UV v1 is preserved");
     require(packet.page_id == entry.page_id && packet.page_revision == entry.page_revision, "page identity is preserved");
-    require(packet.upload_generation == entry.upload_generation, "upload generation is preserved");
+    require(
+        packet.atlas_consumption.upload_generation
+            == entry.atlas_consumption.upload_generation,
+        "upload generation is preserved");
     require(packet.sampler_key == entry.sampler_key, "sampler key is preserved");
-    require(!packet.missing_glyph, "missing glyph evidence is preserved as false");
-    require(!packet.used_fallback_glyph_id, "fallback glyph evidence is preserved as false");
+    require(!packet.atlas_consumption.missing_glyph, "missing glyph evidence is preserved as false");
+    require(
+        !packet.atlas_consumption.used_fallback_glyph_id,
+        "fallback glyph evidence is preserved as false");
 }
 
 void test_blocked_resource_packet_stays_blocked()
@@ -310,21 +331,25 @@ void test_glyph_quad_diff_counts_layout_uv_page_sampler_and_upload_changes()
     changed.uv_bounds.u1 += 0.125f;
     changed.resolved_glyph_id += 1;
     changed.cache_key.glyph_id += 1;
-    changed.cluster_index += 1;
-    changed.line_index += 1;
+    changed.atlas_consumption.resolved_glyph_id += 1;
+    changed.atlas_consumption.cache_key.glyph_id += 1;
+    changed.atlas_consumption.cluster_index += 1;
+    changed.atlas_consumption.line_index += 1;
     changed.run_index += 1;
-    changed.pen_x += 4.0f;
-    changed.pen_y += 5.0f;
-    changed.baseline += 6.0f;
+    changed.atlas_consumption.run_index += 1;
+    changed.atlas_consumption.pen_x += 4.0f;
+    changed.atlas_consumption.pen_y += 5.0f;
+    changed.atlas_consumption.baseline += 6.0f;
     changed.page_revision += 1;
-    changed.upload_generation += 1;
+    changed.atlas_consumption.upload_generation += 1;
     changed.sampler_key = render_text_frame_resource_packet_sampler_key_for(2, changed.page_revision);
     changed.upload_request_id = "upload-changed";
     changed.upload_operation_id = "operation-changed";
     changed.upload_rgba_bytes = 512;
     changed.clean_reuse = true;
-    changed.used_fallback_glyph_id = true;
-    changed.missing_glyph = true;
+    changed.atlas_consumption.clean_reuse = true;
+    changed.atlas_consumption.used_fallback_glyph_id = true;
+    changed.atlas_consumption.missing_glyph = true;
     const render_text_renderer_glyph_quad_packet_snapshot after =
         make_quads(resources_for({changed}));
 
@@ -335,19 +360,35 @@ void test_glyph_quad_diff_counts_layout_uv_page_sampler_and_upload_changes()
     require(diff.policy.layout_bounds_changed_count == 1U, "layout bounds changes are counted");
     require(diff.policy.atlas_bounds_changed_count == 1U, "atlas bounds changes are counted");
     require(diff.policy.uv_bounds_changed_count == 1U, "UV changes are counted");
-    require(diff.policy.glyph_identity_changed_count == 1U, "glyph identity changes are counted");
-    require(diff.policy.line_run_changed_count == 1U, "line/run changes are counted");
-    require(diff.policy.pen_position_changed_count == 1U, "pen position changes are counted");
-    require(diff.policy.baseline_changed_count == 1U, "baseline changes are counted");
+    require(
+        diff.policy.atlas_consumption_diff.glyph_identity_changed_count == 1U,
+        "glyph identity changes are counted");
+    require(
+        diff.policy.atlas_consumption_diff.line_run_changed_count == 1U,
+        "line/run changes are counted");
+    require(
+        diff.policy.atlas_consumption_diff.pen_position_changed_count == 1U,
+        "pen position changes are counted");
+    require(
+        diff.policy.atlas_consumption_diff.baseline_changed_count == 1U,
+        "baseline changes are counted");
     require(diff.policy.page_revision_changed_count == 1U, "page revision changes are counted");
-    require(diff.policy.upload_generation_changed_count == 1U, "upload generation changes are counted");
+    require(
+        diff.policy.atlas_consumption_diff.upload_generation_changed_count == 1U,
+        "upload generation changes are counted");
     require(diff.policy.sampler_key_changed_count == 1U, "sampler changes are counted");
     require(diff.policy.upload_request_id_changed_count == 1U, "upload request changes are counted");
     require(diff.policy.upload_operation_id_changed_count == 1U, "upload operation changes are counted");
     require(diff.policy.uploaded_byte_count_changed_count == 1U, "upload byte changes are counted");
-    require(diff.policy.reuse_status_changed_count == 1U, "clean-reuse status changes are counted");
-    require(diff.policy.fallback_glyph_changed_count == 1U, "fallback glyph changes are counted");
-    require(diff.policy.missing_glyph_changed_count == 1U, "missing glyph changes are counted");
+    require(
+        diff.policy.atlas_consumption_diff.reuse_status_changed_count == 1U,
+        "clean-reuse status changes are counted");
+    require(
+        diff.policy.atlas_consumption_diff.fallback_glyph_changed_count == 1U,
+        "fallback glyph changes are counted");
+    require(
+        diff.policy.atlas_consumption_diff.missing_glyph_changed_count == 1U,
+        "missing glyph changes are counted");
     require(diff.packet_diffs.front().upload_rgba_bytes_delta == 256, "upload byte delta is preserved");
 }
 

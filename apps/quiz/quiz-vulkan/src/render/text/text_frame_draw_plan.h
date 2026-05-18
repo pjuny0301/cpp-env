@@ -1,5 +1,6 @@
 #pragma once
 
+#include "render/text/text_atlas_packet_consumption_evidence.h"
 #include "render/text/text_frame_snapshot.h"
 
 #include <algorithm>
@@ -88,13 +89,7 @@ struct render_text_frame_draw_packet_snapshot {
     bool glyph_supported = false;
     bool stable_cache_key = false;
     bool upload_consumed = false;
-    std::size_t cluster_index = 0;
-    std::size_t line_index = 0;
-    float pen_x = 0.0f;
-    float pen_y = 0.0f;
-    float baseline = 0.0f;
-    render_text_revision upload_generation = 0;
-    bool used_fallback_glyph_id = false;
+    render_text_atlas_packet_consumption_evidence atlas_consumption;
     std::string diagnostic;
 
     bool drawable() const
@@ -368,13 +363,23 @@ inline render_text_frame_draw_packet_snapshot make_render_text_frame_draw_packet
             && materialization.cache_key.glyph_id != 0U
             && materialization.cache_key.pixel_size != 0U,
         .upload_consumed = upload != nullptr && upload->consumed,
-        .cluster_index = materialization.cluster_index,
-        .line_index = materialization.line_index,
-        .pen_x = materialization.pen_x,
-        .pen_y = materialization.pen_y,
-        .baseline = materialization.baseline,
-        .upload_generation = page.revision,
-        .used_fallback_glyph_id = materialization.used_fallback_glyph_id,
+        .atlas_consumption = render_text_atlas_packet_consumption_evidence{
+            .cluster_index = materialization.cluster_index,
+            .line_index = materialization.line_index,
+            .run_index = materialization.run_index,
+            .cluster_byte_offset = materialization.cluster_byte_offset,
+            .cluster_byte_count = materialization.cluster_byte_count,
+            .cache_key = materialization.cache_key,
+            .resolved_glyph_id = materialization.resolved_glyph_id,
+            .resolved_face_id = materialization.resolved_face_id,
+            .pen_x = materialization.pen_x,
+            .pen_y = materialization.pen_y,
+            .baseline = materialization.baseline,
+            .upload_generation = page.revision,
+            .missing_glyph = !materialization.glyph_supported,
+            .used_fallback_glyph_id = materialization.used_fallback_glyph_id,
+            .clean_reuse = materialization.clean_reuse,
+        },
         .diagnostic = std::move(diagnostic),
     };
 }
@@ -590,7 +595,7 @@ inline std::string render_text_frame_draw_packet_run_key_for(
 {
     return "run:v1"
         + std::string{":item="} + std::to_string(packet.item_index)
-        + ":line=" + std::to_string(packet.line_index)
+        + ":line=" + std::to_string(packet.atlas_consumption.line_index)
         + ":run=" + std::to_string(packet.run_index)
         + ":style=" + packet.resolved_style_id;
 }
@@ -665,13 +670,10 @@ inline bool render_text_frame_draw_packets_equal(
         && lhs.glyph_supported == rhs.glyph_supported
         && lhs.stable_cache_key == rhs.stable_cache_key
         && lhs.upload_consumed == rhs.upload_consumed
-        && lhs.cluster_index == rhs.cluster_index
-        && lhs.line_index == rhs.line_index
-        && lhs.pen_x == rhs.pen_x
-        && lhs.pen_y == rhs.pen_y
-        && lhs.baseline == rhs.baseline
-        && lhs.upload_generation == rhs.upload_generation
-        && lhs.used_fallback_glyph_id == rhs.used_fallback_glyph_id;
+        && !diff_render_text_atlas_packet_consumption_evidence(
+                lhs.atlas_consumption,
+                rhs.atlas_consumption)
+                .has_changes();
 }
 
 inline void render_text_frame_draw_append_unique_nonempty(

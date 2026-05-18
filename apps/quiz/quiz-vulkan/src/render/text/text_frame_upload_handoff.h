@@ -65,13 +65,7 @@ struct render_text_frame_upload_handoff_packet_snapshot {
   bool glyph_supported{};
   bool upload_consumed{};
   std::size_t upload_rgba_bytes{};
-  std::size_t cluster_index{};
-  std::size_t line_index{};
-  float pen_x{};
-  float pen_y{};
-  float baseline{};
-  render_text_revision upload_generation{};
-  bool used_fallback_glyph_id{};
+  render_text_atlas_packet_consumption_evidence atlas_consumption{};
   std::string blocker_reason{};
   std::string diagnostic{};
 
@@ -220,14 +214,7 @@ struct render_text_frame_resource_packet_materialization_entry {
   bool glyph_supported{};
   bool upload_consumed{};
   std::size_t upload_rgba_bytes{};
-  std::size_t cluster_index{};
-  std::size_t line_index{};
-  float pen_x{};
-  float pen_y{};
-  float baseline{};
-  render_text_revision upload_generation{};
-  bool missing_glyph{};
-  bool used_fallback_glyph_id{};
+  render_text_atlas_packet_consumption_evidence atlas_consumption{};
   std::string blocker_summary{};
   std::string diagnostic{};
 
@@ -527,14 +514,7 @@ struct render_text_renderer_glyph_quad_packet_record {
   bool glyph_supported{};
   bool upload_consumed{};
   std::size_t upload_rgba_bytes{};
-  std::size_t cluster_index{};
-  std::size_t line_index{};
-  float pen_x{};
-  float pen_y{};
-  float baseline{};
-  render_text_revision upload_generation{};
-  bool missing_glyph{};
-  bool used_fallback_glyph_id{};
+  render_text_atlas_packet_consumption_evidence atlas_consumption{};
   std::string blocker_summary{};
   std::string diagnostic{};
 
@@ -614,19 +594,13 @@ struct render_text_renderer_glyph_quad_packet_diff_policy {
   std::size_t layout_bounds_changed_count{};
   std::size_t atlas_bounds_changed_count{};
   std::size_t uv_bounds_changed_count{};
-  std::size_t glyph_identity_changed_count{};
-  std::size_t line_run_changed_count{};
-  std::size_t pen_position_changed_count{};
-  std::size_t baseline_changed_count{};
+  render_text_atlas_packet_consumption_evidence_diff_policy
+      atlas_consumption_diff{};
   std::size_t page_revision_changed_count{};
-  std::size_t upload_generation_changed_count{};
   std::size_t sampler_key_changed_count{};
   std::size_t upload_request_id_changed_count{};
   std::size_t upload_operation_id_changed_count{};
   std::size_t uploaded_byte_count_changed_count{};
-  std::size_t reuse_status_changed_count{};
-  std::size_t fallback_glyph_changed_count{};
-  std::size_t missing_glyph_changed_count{};
   std::size_t readiness_changed_count{};
   std::size_t status_changed_count{};
   std::size_t duplicate_identity_count{};
@@ -656,19 +630,12 @@ struct render_text_renderer_glyph_quad_packet_diff_record {
   bool layout_bounds_changed{};
   bool atlas_bounds_changed{};
   bool uv_bounds_changed{};
-  bool glyph_identity_changed{};
-  bool line_run_changed{};
-  bool pen_position_changed{};
-  bool baseline_changed{};
+  render_text_atlas_packet_consumption_evidence_diff atlas_consumption_diff{};
   bool page_revision_changed{};
-  bool upload_generation_changed{};
   bool sampler_key_changed{};
   bool upload_request_id_changed{};
   bool upload_operation_id_changed{};
   bool uploaded_byte_count_changed{};
-  bool reuse_status_changed{};
-  bool fallback_glyph_changed{};
-  bool missing_glyph_changed{};
   bool readiness_changed{};
   bool readiness_regressed{};
   bool readiness_recovered{};
@@ -977,6 +944,10 @@ make_render_text_frame_upload_handoff_packet(
       detail::text_frame_upload_handoff_stable_key_for(draw_packet);
   const auto blocker =
       detail::handoff_blocker_reason_for(draw_packet, upload_packet, status);
+  render_text_atlas_packet_consumption_evidence atlas_consumption =
+      draw_packet.atlas_consumption;
+  atlas_consumption.missing_glyph = missing_glyph;
+  atlas_consumption.clean_reuse = clean_reuse;
   return {
       .handoff_id = detail::text_frame_upload_handoff_packet_id_for(draw_packet),
       .stable_packet_key = stable_key,
@@ -1023,13 +994,7 @@ make_render_text_frame_upload_handoff_packet(
       .glyph_supported = draw_packet.glyph_supported,
       .upload_consumed = draw_packet.upload_consumed,
       .upload_rgba_bytes = uploaded ? upload_packet->rgba_byte_count : 0U,
-      .cluster_index = draw_packet.cluster_index,
-      .line_index = draw_packet.line_index,
-      .pen_x = draw_packet.pen_x,
-      .pen_y = draw_packet.pen_y,
-      .baseline = draw_packet.baseline,
-      .upload_generation = draw_packet.upload_generation,
-      .used_fallback_glyph_id = draw_packet.used_fallback_glyph_id,
+      .atlas_consumption = atlas_consumption,
       .blocker_reason = blocker,
       .diagnostic = ready ? "glyph packet is ready for frame upload handoff"
                           : blocker,
@@ -1077,8 +1042,17 @@ make_render_text_frame_upload_handoff_missing_draw_packet(
       .missing_glyph = upload_packet.missing_cache_key,
       .missing_materialization = upload_packet.blocked,
       .glyph_supported = !upload_packet.missing_cache_key,
-      .cluster_index = upload_packet.cluster_index,
-      .upload_generation = upload_packet.page.revision,
+      .atlas_consumption =
+          render_text_atlas_packet_consumption_evidence{
+              .cluster_index = upload_packet.cluster_index,
+              .run_index = upload_packet.run_index,
+              .cluster_byte_offset = upload_packet.cluster_index,
+              .cache_key = upload_packet.cache_key,
+              .resolved_glyph_id = upload_packet.cache_key.glyph_id,
+              .resolved_face_id = upload_packet.cache_key.face_id,
+              .upload_generation = upload_packet.page.revision,
+              .missing_glyph = upload_packet.missing_cache_key,
+          },
       .blocker_reason = "atlas upload result has no matching draw packet",
       .diagnostic = "atlas upload result has no matching draw packet",
   };
@@ -1517,6 +1491,12 @@ make_render_text_frame_resource_packet_materialization_entry(
   const std::string blocker =
       detail::resource_packet_blocker_summary_for(&draw_packet, handoff_packet,
                                                   status);
+  render_text_atlas_packet_consumption_evidence atlas_consumption =
+      draw_packet.atlas_consumption;
+  atlas_consumption.missing_glyph =
+      !draw_packet.glyph_supported ||
+      (handoff_packet != nullptr && handoff_packet->missing_glyph);
+  atlas_consumption.clean_reuse = clean_reuse;
   return {
       .resource_packet_id = render_text_frame_resource_packet_id_for(
           draw_packet.frame_id, draw_packet.packet_id),
@@ -1594,15 +1574,7 @@ make_render_text_frame_resource_packet_materialization_entry(
       .upload_rgba_bytes = uploaded && handoff_packet != nullptr
                                ? handoff_packet->upload_rgba_bytes
                                : 0U,
-      .cluster_index = draw_packet.cluster_index,
-      .line_index = draw_packet.line_index,
-      .pen_x = draw_packet.pen_x,
-      .pen_y = draw_packet.pen_y,
-      .baseline = draw_packet.baseline,
-      .upload_generation = draw_packet.upload_generation,
-      .missing_glyph = !draw_packet.glyph_supported ||
-                       (handoff_packet != nullptr && handoff_packet->missing_glyph),
-      .used_fallback_glyph_id = draw_packet.used_fallback_glyph_id,
+      .atlas_consumption = atlas_consumption,
       .blocker_summary = blocker,
       .diagnostic =
           ready
@@ -1667,14 +1639,7 @@ make_render_text_frame_resource_packet_materialization_missing_draw_entry(
       .used_real_backend = handoff_packet.used_real_backend,
       .glyph_supported = handoff_packet.glyph_supported,
       .upload_consumed = handoff_packet.upload_consumed,
-      .cluster_index = handoff_packet.cluster_index,
-      .line_index = handoff_packet.line_index,
-      .pen_x = handoff_packet.pen_x,
-      .pen_y = handoff_packet.pen_y,
-      .baseline = handoff_packet.baseline,
-      .upload_generation = handoff_packet.upload_generation,
-      .missing_glyph = handoff_packet.missing_glyph,
-      .used_fallback_glyph_id = handoff_packet.used_fallback_glyph_id,
+      .atlas_consumption = handoff_packet.atlas_consumption,
       .blocker_summary = blocker,
       .diagnostic = blocker,
   };
@@ -1977,14 +1942,7 @@ make_render_text_renderer_glyph_quad_packet(
       .glyph_supported = entry.glyph_supported,
       .upload_consumed = entry.upload_consumed,
       .upload_rgba_bytes = entry.upload_rgba_bytes,
-      .cluster_index = entry.cluster_index,
-      .line_index = entry.line_index,
-      .pen_x = entry.pen_x,
-      .pen_y = entry.pen_y,
-      .baseline = entry.baseline,
-      .upload_generation = entry.upload_generation,
-      .missing_glyph = entry.missing_glyph,
-      .used_fallback_glyph_id = entry.used_fallback_glyph_id,
+      .atlas_consumption = entry.atlas_consumption,
       .blocker_summary = blocker,
       .diagnostic = ready
           ? "glyph quad packet is ready for renderer-boundary consumption"
@@ -2024,10 +1982,10 @@ inline void append_render_text_renderer_glyph_quad_packet(
   if (packet.missing_stable_packet_key) {
     ++policy.missing_stable_packet_key_count;
   }
-  if (packet.missing_glyph) {
+  if (packet.atlas_consumption.missing_glyph) {
     ++policy.missing_glyph_count;
   }
-  if (packet.used_fallback_glyph_id) {
+  if (packet.atlas_consumption.used_fallback_glyph_id) {
     ++policy.fallback_glyph_count;
   }
   switch (packet.status) {
@@ -2201,29 +2159,15 @@ diff_render_text_renderer_glyph_quad_packet_records(
   const bool uv_bounds_changed =
       before != nullptr && after != nullptr &&
       !render_text_frame_draw_uv_rects_equal(before->uv_bounds, after->uv_bounds);
-  const bool glyph_identity_changed =
-      before != nullptr && after != nullptr &&
-      (before->resolved_glyph_id != after->resolved_glyph_id ||
-       before->resolved_face_id != after->resolved_face_id ||
-       before->cache_key != after->cache_key);
-  const bool line_run_changed =
-      before != nullptr && after != nullptr &&
-      (before->line_index != after->line_index ||
-       before->run_index != after->run_index ||
-       before->cluster_index != after->cluster_index ||
-       before->cluster_byte_offset != after->cluster_byte_offset ||
-       before->cluster_byte_count != after->cluster_byte_count);
-  const bool pen_position_changed =
-      before != nullptr && after != nullptr &&
-      (before->pen_x != after->pen_x || before->pen_y != after->pen_y);
-  const bool baseline_changed =
-      before != nullptr && after != nullptr && before->baseline != after->baseline;
+  const render_text_atlas_packet_consumption_evidence_diff
+      atlas_consumption_diff =
+          before != nullptr && after != nullptr
+              ? diff_render_text_atlas_packet_consumption_evidence(
+                    before->atlas_consumption, after->atlas_consumption)
+              : render_text_atlas_packet_consumption_evidence_diff{};
   const bool page_revision_changed =
       before != nullptr && after != nullptr &&
       before->page_revision != after->page_revision;
-  const bool upload_generation_changed =
-      before != nullptr && after != nullptr &&
-      before->upload_generation != after->upload_generation;
   const bool sampler_key_changed =
       before != nullptr && after != nullptr &&
       before->sampler_key != after->sampler_key;
@@ -2236,15 +2180,6 @@ diff_render_text_renderer_glyph_quad_packet_records(
   const bool uploaded_byte_count_changed =
       before != nullptr && after != nullptr &&
       before->upload_rgba_bytes != after->upload_rgba_bytes;
-  const bool reuse_status_changed =
-      before != nullptr && after != nullptr &&
-      before->clean_reuse != after->clean_reuse;
-  const bool fallback_glyph_changed =
-      before != nullptr && after != nullptr &&
-      before->used_fallback_glyph_id != after->used_fallback_glyph_id;
-  const bool missing_glyph_changed =
-      before != nullptr && after != nullptr &&
-      before->missing_glyph != after->missing_glyph;
   const bool readiness_changed =
       before != nullptr && after != nullptr && before->ready != after->ready;
   const bool readiness_regressed =
@@ -2256,12 +2191,10 @@ diff_render_text_renderer_glyph_quad_packet_records(
   const bool changed =
       !added && !removed &&
       (layout_bounds_changed || atlas_bounds_changed || uv_bounds_changed ||
-       glyph_identity_changed || line_run_changed || pen_position_changed ||
-       baseline_changed || page_revision_changed || upload_generation_changed ||
+       atlas_consumption_diff.has_changes() || page_revision_changed ||
        sampler_key_changed ||
        upload_request_id_changed || upload_operation_id_changed ||
-       uploaded_byte_count_changed || reuse_status_changed ||
-       fallback_glyph_changed || missing_glyph_changed || readiness_changed ||
+       uploaded_byte_count_changed || readiness_changed ||
        status_changed || duplicate_identity || missing_identity);
   const bool unchanged = !added && !removed && !changed;
 
@@ -2291,19 +2224,12 @@ diff_render_text_renderer_glyph_quad_packet_records(
       .layout_bounds_changed = layout_bounds_changed,
       .atlas_bounds_changed = atlas_bounds_changed,
       .uv_bounds_changed = uv_bounds_changed,
-      .glyph_identity_changed = glyph_identity_changed,
-      .line_run_changed = line_run_changed,
-      .pen_position_changed = pen_position_changed,
-      .baseline_changed = baseline_changed,
+      .atlas_consumption_diff = atlas_consumption_diff,
       .page_revision_changed = page_revision_changed,
-      .upload_generation_changed = upload_generation_changed,
       .sampler_key_changed = sampler_key_changed,
       .upload_request_id_changed = upload_request_id_changed,
       .upload_operation_id_changed = upload_operation_id_changed,
       .uploaded_byte_count_changed = uploaded_byte_count_changed,
-      .reuse_status_changed = reuse_status_changed,
-      .fallback_glyph_changed = fallback_glyph_changed,
-      .missing_glyph_changed = missing_glyph_changed,
       .readiness_changed = readiness_changed,
       .readiness_regressed = readiness_regressed,
       .readiness_recovered = readiness_recovered,
@@ -2372,23 +2298,10 @@ inline void append_render_text_renderer_glyph_quad_packet_diff(
   if (packet_diff.uv_bounds_changed) {
     ++policy.uv_bounds_changed_count;
   }
-  if (packet_diff.glyph_identity_changed) {
-    ++policy.glyph_identity_changed_count;
-  }
-  if (packet_diff.line_run_changed) {
-    ++policy.line_run_changed_count;
-  }
-  if (packet_diff.pen_position_changed) {
-    ++policy.pen_position_changed_count;
-  }
-  if (packet_diff.baseline_changed) {
-    ++policy.baseline_changed_count;
-  }
+  count_render_text_atlas_packet_consumption_evidence_diff(
+      policy.atlas_consumption_diff, packet_diff.atlas_consumption_diff);
   if (packet_diff.page_revision_changed) {
     ++policy.page_revision_changed_count;
-  }
-  if (packet_diff.upload_generation_changed) {
-    ++policy.upload_generation_changed_count;
   }
   if (packet_diff.sampler_key_changed) {
     ++policy.sampler_key_changed_count;
@@ -2401,15 +2314,6 @@ inline void append_render_text_renderer_glyph_quad_packet_diff(
   }
   if (packet_diff.uploaded_byte_count_changed) {
     ++policy.uploaded_byte_count_changed_count;
-  }
-  if (packet_diff.reuse_status_changed) {
-    ++policy.reuse_status_changed_count;
-  }
-  if (packet_diff.fallback_glyph_changed) {
-    ++policy.fallback_glyph_changed_count;
-  }
-  if (packet_diff.missing_glyph_changed) {
-    ++policy.missing_glyph_changed_count;
   }
   if (packet_diff.readiness_changed) {
     ++policy.readiness_changed_count;

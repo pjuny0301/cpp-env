@@ -3010,6 +3010,9 @@ static_assert(requires(
     render::render_text_frame_snapshot_regression_summary frame_regression,
     render::render_text_frame_snapshot_diff_policy frame_diff_policy,
     render::render_text_frame_snapshot_diff frame_diff,
+    render::render_text_atlas_packet_consumption_evidence atlas_consumption,
+    render::render_text_atlas_packet_consumption_evidence_diff atlas_consumption_diff,
+    render::render_text_atlas_packet_consumption_evidence_diff_policy atlas_consumption_policy,
     render::render_text_frame_draw_packet_status draw_packet_status,
     render::render_text_frame_draw_uv_rect draw_uv,
     render::render_text_frame_draw_packet_snapshot draw_packet,
@@ -3531,6 +3534,43 @@ static_assert(requires(
         -> std::same_as<render::render_text_frame_snapshot_regression_summary>;
     { render::diff_render_text_frame_snapshots(frame_snapshot, frame_snapshot) }
         -> std::same_as<render::render_text_frame_snapshot_diff>;
+    { atlas_consumption.cluster_index } -> std::same_as<std::size_t&>;
+    { atlas_consumption.line_index } -> std::same_as<std::size_t&>;
+    { atlas_consumption.run_index } -> std::same_as<std::size_t&>;
+    { atlas_consumption.cluster_byte_offset } -> std::same_as<std::size_t&>;
+    { atlas_consumption.cluster_byte_count } -> std::same_as<std::size_t&>;
+    { atlas_consumption.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { atlas_consumption.resolved_glyph_id } -> std::same_as<std::uint32_t&>;
+    { atlas_consumption.resolved_face_id } -> std::same_as<render::font_face_id&>;
+    { atlas_consumption.pen_x } -> std::same_as<float&>;
+    { atlas_consumption.pen_y } -> std::same_as<float&>;
+    { atlas_consumption.baseline } -> std::same_as<float&>;
+    { atlas_consumption.upload_generation } -> std::same_as<render::render_text_revision&>;
+    { atlas_consumption.missing_glyph } -> std::same_as<bool&>;
+    { atlas_consumption.used_fallback_glyph_id } -> std::same_as<bool&>;
+    { atlas_consumption.clean_reuse } -> std::same_as<bool&>;
+    { atlas_consumption_diff.glyph_identity_changed } -> std::same_as<bool&>;
+    { atlas_consumption_diff.line_run_changed } -> std::same_as<bool&>;
+    { atlas_consumption_diff.pen_position_changed } -> std::same_as<bool&>;
+    { atlas_consumption_diff.baseline_changed } -> std::same_as<bool&>;
+    { atlas_consumption_diff.upload_generation_changed } -> std::same_as<bool&>;
+    { atlas_consumption_diff.reuse_status_changed } -> std::same_as<bool&>;
+    { atlas_consumption_diff.fallback_glyph_changed } -> std::same_as<bool&>;
+    { atlas_consumption_diff.missing_glyph_changed } -> std::same_as<bool&>;
+    { atlas_consumption_diff.has_changes() } -> std::same_as<bool>;
+    { atlas_consumption_policy.glyph_identity_changed_count } -> std::same_as<std::size_t&>;
+    { atlas_consumption_policy.line_run_changed_count } -> std::same_as<std::size_t&>;
+    { atlas_consumption_policy.pen_position_changed_count } -> std::same_as<std::size_t&>;
+    { atlas_consumption_policy.baseline_changed_count } -> std::same_as<std::size_t&>;
+    { atlas_consumption_policy.upload_generation_changed_count } -> std::same_as<std::size_t&>;
+    { atlas_consumption_policy.reuse_status_changed_count } -> std::same_as<std::size_t&>;
+    { atlas_consumption_policy.fallback_glyph_changed_count } -> std::same_as<std::size_t&>;
+    { atlas_consumption_policy.missing_glyph_changed_count } -> std::same_as<std::size_t&>;
+    { render::diff_render_text_atlas_packet_consumption_evidence(atlas_consumption, atlas_consumption) }
+        -> std::same_as<render::render_text_atlas_packet_consumption_evidence_diff>;
+    { render::count_render_text_atlas_packet_consumption_evidence_diff(
+        atlas_consumption_policy,
+        atlas_consumption_diff) } -> std::same_as<void>;
     { render::render_text_frame_draw_packet_status_name(draw_packet_status) } -> std::same_as<std::string>;
     { draw_uv.u0 } -> std::same_as<float&>;
     { draw_uv.v0 } -> std::same_as<float&>;
@@ -3568,13 +3608,8 @@ static_assert(requires(
     { draw_packet.glyph_supported } -> std::same_as<bool&>;
     { draw_packet.stable_cache_key } -> std::same_as<bool&>;
     { draw_packet.upload_consumed } -> std::same_as<bool&>;
-    { draw_packet.cluster_index } -> std::same_as<std::size_t&>;
-    { draw_packet.line_index } -> std::same_as<std::size_t&>;
-    { draw_packet.pen_x } -> std::same_as<float&>;
-    { draw_packet.pen_y } -> std::same_as<float&>;
-    { draw_packet.baseline } -> std::same_as<float&>;
-    { draw_packet.upload_generation } -> std::same_as<render::render_text_revision&>;
-    { draw_packet.used_fallback_glyph_id } -> std::same_as<bool&>;
+    { draw_packet.atlas_consumption }
+        -> std::same_as<render::render_text_atlas_packet_consumption_evidence&>;
     { draw_packet.diagnostic } -> std::same_as<std::string&>;
     { draw_packet.drawable() } -> std::same_as<bool>;
     { draw_policy.materialization_count } -> std::same_as<std::size_t&>;
@@ -3730,13 +3765,8 @@ static_assert(requires(
     { handoff_packet.used_real_backend } -> std::same_as<bool&>;
     { handoff_packet.upload_consumed } -> std::same_as<bool&>;
     { handoff_packet.upload_rgba_bytes } -> std::same_as<std::size_t&>;
-    { handoff_packet.cluster_index } -> std::same_as<std::size_t&>;
-    { handoff_packet.line_index } -> std::same_as<std::size_t&>;
-    { handoff_packet.pen_x } -> std::same_as<float&>;
-    { handoff_packet.pen_y } -> std::same_as<float&>;
-    { handoff_packet.baseline } -> std::same_as<float&>;
-    { handoff_packet.upload_generation } -> std::same_as<render::render_text_revision&>;
-    { handoff_packet.used_fallback_glyph_id } -> std::same_as<bool&>;
+    { handoff_packet.atlas_consumption }
+        -> std::same_as<render::render_text_atlas_packet_consumption_evidence&>;
     { handoff_packet.blocker_reason } -> std::same_as<std::string&>;
     { handoff_packet.upload_ready() } -> std::same_as<bool>;
     { handoff_page.stable_page_id } -> std::same_as<std::string&>;
@@ -3840,14 +3870,8 @@ static_assert(requires(
     { resource_packet.glyph_supported } -> std::same_as<bool&>;
     { resource_packet.upload_consumed } -> std::same_as<bool&>;
     { resource_packet.upload_rgba_bytes } -> std::same_as<std::size_t&>;
-    { resource_packet.cluster_index } -> std::same_as<std::size_t&>;
-    { resource_packet.line_index } -> std::same_as<std::size_t&>;
-    { resource_packet.pen_x } -> std::same_as<float&>;
-    { resource_packet.pen_y } -> std::same_as<float&>;
-    { resource_packet.baseline } -> std::same_as<float&>;
-    { resource_packet.upload_generation } -> std::same_as<render::render_text_revision&>;
-    { resource_packet.missing_glyph } -> std::same_as<bool&>;
-    { resource_packet.used_fallback_glyph_id } -> std::same_as<bool&>;
+    { resource_packet.atlas_consumption }
+        -> std::same_as<render::render_text_atlas_packet_consumption_evidence&>;
     { resource_packet.blocker_summary } -> std::same_as<std::string&>;
     { resource_packet.diagnostic } -> std::same_as<std::string&>;
     { resource_packet.ok() } -> std::same_as<bool>;
@@ -3983,14 +4007,8 @@ static_assert(requires(
     { glyph_quad_packet.glyph_supported } -> std::same_as<bool&>;
     { glyph_quad_packet.upload_consumed } -> std::same_as<bool&>;
     { glyph_quad_packet.upload_rgba_bytes } -> std::same_as<std::size_t&>;
-    { glyph_quad_packet.cluster_index } -> std::same_as<std::size_t&>;
-    { glyph_quad_packet.line_index } -> std::same_as<std::size_t&>;
-    { glyph_quad_packet.pen_x } -> std::same_as<float&>;
-    { glyph_quad_packet.pen_y } -> std::same_as<float&>;
-    { glyph_quad_packet.baseline } -> std::same_as<float&>;
-    { glyph_quad_packet.upload_generation } -> std::same_as<render::render_text_revision&>;
-    { glyph_quad_packet.missing_glyph } -> std::same_as<bool&>;
-    { glyph_quad_packet.used_fallback_glyph_id } -> std::same_as<bool&>;
+    { glyph_quad_packet.atlas_consumption }
+        -> std::same_as<render::render_text_atlas_packet_consumption_evidence&>;
     { glyph_quad_packet.blocker_summary } -> std::same_as<std::string&>;
     { glyph_quad_packet.diagnostic } -> std::same_as<std::string&>;
     { glyph_quad_packet.drawable() } -> std::same_as<bool>;
@@ -4066,19 +4084,13 @@ static_assert(requires(
     { glyph_quad_diff_policy.layout_bounds_changed_count } -> std::same_as<std::size_t&>;
     { glyph_quad_diff_policy.atlas_bounds_changed_count } -> std::same_as<std::size_t&>;
     { glyph_quad_diff_policy.uv_bounds_changed_count } -> std::same_as<std::size_t&>;
-    { glyph_quad_diff_policy.glyph_identity_changed_count } -> std::same_as<std::size_t&>;
-    { glyph_quad_diff_policy.line_run_changed_count } -> std::same_as<std::size_t&>;
-    { glyph_quad_diff_policy.pen_position_changed_count } -> std::same_as<std::size_t&>;
-    { glyph_quad_diff_policy.baseline_changed_count } -> std::same_as<std::size_t&>;
+    { glyph_quad_diff_policy.atlas_consumption_diff }
+        -> std::same_as<render::render_text_atlas_packet_consumption_evidence_diff_policy&>;
     { glyph_quad_diff_policy.page_revision_changed_count } -> std::same_as<std::size_t&>;
-    { glyph_quad_diff_policy.upload_generation_changed_count } -> std::same_as<std::size_t&>;
     { glyph_quad_diff_policy.sampler_key_changed_count } -> std::same_as<std::size_t&>;
     { glyph_quad_diff_policy.upload_request_id_changed_count } -> std::same_as<std::size_t&>;
     { glyph_quad_diff_policy.upload_operation_id_changed_count } -> std::same_as<std::size_t&>;
     { glyph_quad_diff_policy.uploaded_byte_count_changed_count } -> std::same_as<std::size_t&>;
-    { glyph_quad_diff_policy.reuse_status_changed_count } -> std::same_as<std::size_t&>;
-    { glyph_quad_diff_policy.fallback_glyph_changed_count } -> std::same_as<std::size_t&>;
-    { glyph_quad_diff_policy.missing_glyph_changed_count } -> std::same_as<std::size_t&>;
     { glyph_quad_diff_policy.readiness_changed_count } -> std::same_as<std::size_t&>;
     { glyph_quad_diff_policy.status_changed_count } -> std::same_as<std::size_t&>;
     { glyph_quad_diff_policy.duplicate_identity_count } -> std::same_as<std::size_t&>;
@@ -4105,19 +4117,13 @@ static_assert(requires(
     { glyph_quad_packet_diff.layout_bounds_changed } -> std::same_as<bool&>;
     { glyph_quad_packet_diff.atlas_bounds_changed } -> std::same_as<bool&>;
     { glyph_quad_packet_diff.uv_bounds_changed } -> std::same_as<bool&>;
-    { glyph_quad_packet_diff.glyph_identity_changed } -> std::same_as<bool&>;
-    { glyph_quad_packet_diff.line_run_changed } -> std::same_as<bool&>;
-    { glyph_quad_packet_diff.pen_position_changed } -> std::same_as<bool&>;
-    { glyph_quad_packet_diff.baseline_changed } -> std::same_as<bool&>;
+    { glyph_quad_packet_diff.atlas_consumption_diff }
+        -> std::same_as<render::render_text_atlas_packet_consumption_evidence_diff&>;
     { glyph_quad_packet_diff.page_revision_changed } -> std::same_as<bool&>;
-    { glyph_quad_packet_diff.upload_generation_changed } -> std::same_as<bool&>;
     { glyph_quad_packet_diff.sampler_key_changed } -> std::same_as<bool&>;
     { glyph_quad_packet_diff.upload_request_id_changed } -> std::same_as<bool&>;
     { glyph_quad_packet_diff.upload_operation_id_changed } -> std::same_as<bool&>;
     { glyph_quad_packet_diff.uploaded_byte_count_changed } -> std::same_as<bool&>;
-    { glyph_quad_packet_diff.reuse_status_changed } -> std::same_as<bool&>;
-    { glyph_quad_packet_diff.fallback_glyph_changed } -> std::same_as<bool&>;
-    { glyph_quad_packet_diff.missing_glyph_changed } -> std::same_as<bool&>;
     { glyph_quad_packet_diff.readiness_changed } -> std::same_as<bool&>;
     { glyph_quad_packet_diff.readiness_regressed } -> std::same_as<bool&>;
     { glyph_quad_packet_diff.readiness_recovered } -> std::same_as<bool&>;

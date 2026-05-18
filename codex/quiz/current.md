@@ -19,9 +19,9 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Active Bottlenecks
 
-- Vulkan: present image execution evidence is integrated. Next useful work is
-  descriptor payload / command packet executor evidence before real queue
-  submission is widened.
+- Vulkan: present image execution evidence and descriptor allocation merge
+  guard tests are integrated. Next useful work is descriptor payload / command
+  packet executor evidence before real queue submission is widened.
 - Text: atlas packet consumption and HarfBuzz shaping handoff diagnostics are
   integrated. Next useful work is real font-backed layout/raster data feeding
   the existing atlas packet contract.
@@ -36,7 +36,7 @@ Historical integration notes are kept in git history, not repeated here.
 ## Active Workers
 
 - `codex-vulkan-native-command-packet-executor-20260516`: idle after native
-  descriptor set evidence work; review before integration.
+  descriptor set evidence work, now integrated as a focused regression test.
 - `codex-text-freetype-prototype-20260514`: idle after HarfBuzz shaping handoff
   diagnostics.
 - `codex-asset-unified-cache-key-20260514`: idle after shader byte source
@@ -75,9 +75,9 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `aaa0256` after
-  HarfBuzz shaping handoff diagnostics and image staging payload diff summary
-  integration.
+- Main branch `codex/quiz-vulkan-remake-baseline` is at `0a5bed7` after
+  HarfBuzz shaping handoff diagnostics, image staging payload diff summaries,
+  and Vulkan descriptor allocation merge guard integration.
 - Last full Windows MinGW CTest batch should be treated as stale. Run focused
   tests during normal integration; run full CTest after the next meaningful
   engine batch.
@@ -143,6 +143,10 @@ Historical integration notes are kept in git history, not repeated here.
   `quiz_vulkan_image_texture_pipeline_tests`; focused CTest passed 8/8 for the
   image texture filtered suite, including uploader, staging materialization diff,
   packet materialization/plan, pipeline, and standard image texture pipeline.
+- After `0a5bed7`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests` and
+  `quiz_vulkan_vulkan_command_packet_execution_tests`; focused CTest passed 1/1
+  for Vulkan command packet execution.
 
 ## Useful Commands
 

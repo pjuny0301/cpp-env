@@ -581,17 +581,30 @@ struct render_image_texture_frame_resource_packet_consumption_entry {
     std::uint64_t upload_request_id = 0;
     std::uint64_t upload_generation_id = 0;
     std::size_t uploaded_byte_count = 0;
+    std::uint64_t decoded_payload_hash = 0;
+    std::size_t decoded_byte_count = 0;
+    std::size_t upload_layout_byte_count = 0;
+    std::size_t upload_layout_row_stride_byte_count = 0;
+    std::size_t staging_payload_byte_count = 0;
+    std::size_t staging_row_copy_count = 0;
     bool materialized = false;
     bool placeholder_backed = false;
     bool blocked = true;
     bool removed = false;
     bool renderer_boundary_ready = false;
+    bool decoded_payload_valid = false;
+    bool upload_payload_layout_ready = false;
+    bool staging_payload_ready = false;
+    bool decoded_resource_ready = false;
+    bool decoded_resource_blocked = false;
     std::string blocker_summary;
+    std::string decoded_resource_summary;
+    std::string decoded_resource_blocker_summary;
     std::string diagnostic;
 
     bool ok() const
     {
-        return materialized && !blocked;
+        return materialized && !blocked && decoded_resource_ready && !decoded_resource_blocked;
     }
 };
 
@@ -605,18 +618,26 @@ struct render_image_texture_frame_resource_packet_consumption_summary {
     std::size_t stable_packet_identity_count = 0;
     std::size_t duplicate_stable_packet_identity_count = 0;
     std::size_t missing_stable_packet_identity_count = 0;
+    std::size_t decoded_resource_ready_count = 0;
+    std::size_t decoded_resource_blocked_count = 0;
+    std::size_t decoded_payload_hash_count = 0;
+    std::size_t decoded_payload_byte_count = 0;
+    std::size_t staging_payload_byte_count = 0;
     bool renderer_boundary_ready = false;
     bool has_placeholders = false;
     bool has_blockers = false;
     bool has_duplicate_stable_packet_identity = false;
     bool has_missing_stable_packet_identity = false;
+    bool has_decoded_resource_blockers = false;
     std::vector<render_image_texture_frame_resource_packet_consumption_entry> entries;
     std::string identity_summary;
+    std::string decoded_resource_summary;
+    std::string decoded_resource_blocker_summary;
     std::string diagnostic;
 
     bool ok() const
     {
-        return renderer_boundary_ready && !has_blockers;
+        return renderer_boundary_ready && !has_blockers && !has_decoded_resource_blockers;
     }
 };
 
@@ -814,13 +835,50 @@ make_render_image_texture_frame_resource_packet_consumption_entry(
         consumption.upload_request_id = entry.upload_record.upload_request_id;
         consumption.upload_generation_id = entry.upload_record.upload_generation_id;
         consumption.uploaded_byte_count = entry.upload_record.uploaded_byte_count;
+        consumption.decoded_payload_hash = entry.upload_record.decoded_payload.stable_byte_hash;
+        consumption.decoded_byte_count = entry.upload_record.decoded_payload.decoded_byte_count;
+        consumption.upload_layout_byte_count = entry.upload_record.payload_layout.decoded_byte_count;
+        consumption.upload_layout_row_stride_byte_count =
+            entry.upload_record.payload_layout.row_stride_byte_count;
+        consumption.staging_payload_byte_count =
+            entry.upload_record.staging_payload_plan.total_staging_byte_count;
+        consumption.staging_row_copy_count = entry.upload_record.staging_payload_plan.row_copy_count;
+        consumption.decoded_payload_valid = entry.upload_record.decoded_payload.payload_valid;
+        consumption.upload_payload_layout_ready = entry.upload_record.payload_layout.ok();
+        consumption.staging_payload_ready = entry.upload_record.staging_payload_plan.ok();
     }
     if (entry.sampler_record_present) {
         consumption.sampler_key = entry.sampler_record.sampler_key;
     }
+    consumption.decoded_resource_ready = consumption.materialized
+        && consumption.decoded_payload_valid
+        && consumption.upload_payload_layout_ready
+        && consumption.staging_payload_ready;
+    consumption.decoded_resource_blocked = consumption.materialized && !consumption.decoded_resource_ready;
+    if (consumption.materialized && !consumption.decoded_payload_valid) {
+        consumption.decoded_resource_blocker_summary = entry.upload_record.decoded_payload.diagnostic.empty()
+            ? "decoded payload bytes are missing or invalid"
+            : entry.upload_record.decoded_payload.diagnostic;
+    } else if (consumption.materialized && !consumption.upload_payload_layout_ready) {
+        consumption.decoded_resource_blocker_summary = entry.upload_record.payload_layout.diagnostic.empty()
+            ? "upload payload layout is not ready"
+            : entry.upload_record.payload_layout.diagnostic;
+    } else if (consumption.materialized && !consumption.staging_payload_ready) {
+        consumption.decoded_resource_blocker_summary =
+            entry.upload_record.staging_payload_plan.blocker_summary.empty()
+            ? entry.upload_record.staging_payload_plan.diagnostic
+            : entry.upload_record.staging_payload_plan.blocker_summary;
+    } else if (!consumption.materialized && consumption.blocked) {
+        consumption.decoded_resource_blocker_summary = consumption.blocker_summary;
+    }
+    consumption.decoded_resource_summary = "decoded_bytes=" + std::to_string(consumption.decoded_byte_count)
+        + "; staging_bytes=" + std::to_string(consumption.staging_payload_byte_count)
+        + "; payload_hash=" + std::to_string(consumption.decoded_payload_hash);
 
     if (!consumption.stable_packet_identity_present) {
         consumption.diagnostic = "image frame resource packet consumption identity is missing";
+    } else if (consumption.decoded_resource_blocked) {
+        consumption.diagnostic = "image frame resource packet consumption decoded resource is blocked";
     } else if (consumption.placeholder_backed) {
         consumption.diagnostic = "image frame resource packet consumption identity uses placeholder";
     } else if (consumption.ok()) {
@@ -848,6 +906,7 @@ make_render_image_texture_frame_resource_packet_consumption_summary(
     };
 
     std::map<std::string, std::size_t> identity_counts;
+    std::map<std::uint64_t, bool> decoded_payload_hashes;
     for (const render_image_texture_frame_resource_packet_materialization_entry& entry : materialization.entries) {
         render_image_texture_frame_resource_packet_consumption_entry consumption =
             make_render_image_texture_frame_resource_packet_consumption_entry(entry);
@@ -857,10 +916,27 @@ make_render_image_texture_frame_resource_packet_consumption_summary(
             ++summary.missing_stable_packet_identity_count;
             summary.has_missing_stable_packet_identity = true;
         }
+        if (consumption.decoded_resource_ready) {
+            ++summary.decoded_resource_ready_count;
+            summary.decoded_payload_byte_count += consumption.decoded_byte_count;
+            summary.staging_payload_byte_count += consumption.staging_payload_byte_count;
+            if (consumption.decoded_payload_hash != 0) {
+                decoded_payload_hashes.emplace(consumption.decoded_payload_hash, true);
+            }
+        } else if (consumption.decoded_resource_blocked || consumption.blocked) {
+            ++summary.decoded_resource_blocked_count;
+            summary.has_decoded_resource_blockers = true;
+            append_render_image_texture_frame_upload_handoff_summary_fragment(
+                summary.decoded_resource_blocker_summary,
+                consumption.decoded_resource_blocker_summary.empty()
+                    ? consumption.blocker_summary
+                    : consumption.decoded_resource_blocker_summary);
+        }
         summary.entries.push_back(std::move(consumption));
     }
 
     summary.stable_packet_identity_count = identity_counts.size();
+    summary.decoded_payload_hash_count = decoded_payload_hashes.size();
     for (render_image_texture_frame_resource_packet_consumption_entry& entry : summary.entries) {
         const auto count = identity_counts.find(entry.stable_packet_identity);
         if (entry.stable_packet_identity_present && count != identity_counts.end() && count->second > 1) {
@@ -875,12 +951,21 @@ make_render_image_texture_frame_resource_packet_consumption_summary(
         + "; identities=" + std::to_string(summary.stable_packet_identity_count)
         + "; duplicate_identities=" + std::to_string(summary.duplicate_stable_packet_identity_count)
         + "; missing_identities=" + std::to_string(summary.missing_stable_packet_identity_count);
+    summary.decoded_resource_summary = "decoded_resources=" + std::to_string(summary.decoded_resource_ready_count)
+        + "; payload_hashes=" + std::to_string(summary.decoded_payload_hash_count)
+        + "; decoded_bytes=" + std::to_string(summary.decoded_payload_byte_count)
+        + "; staging_bytes=" + std::to_string(summary.staging_payload_byte_count);
+    if (summary.decoded_resource_blocker_summary.empty()) {
+        summary.decoded_resource_blocker_summary = "no decoded resource blockers";
+    }
     if (summary.packet_count == 0) {
         summary.diagnostic = "image frame resource packet consumption summary has no packets";
     } else if (summary.has_missing_stable_packet_identity) {
         summary.diagnostic = "image frame resource packet consumption summary has missing packet identities";
     } else if (summary.has_duplicate_stable_packet_identity) {
         summary.diagnostic = "image frame resource packet consumption summary has duplicate packet identities";
+    } else if (summary.has_decoded_resource_blockers) {
+        summary.diagnostic = "image frame resource packet consumption summary has decoded resource blockers";
     } else if (summary.has_blockers) {
         summary.diagnostic = "image frame resource packet consumption summary has blocked packets";
     } else if (summary.has_placeholders) {
@@ -932,12 +1017,25 @@ inline bool render_image_texture_frame_resource_packet_consumption_entry_equal(
         && before.upload_request_id == after.upload_request_id
         && before.upload_generation_id == after.upload_generation_id
         && before.uploaded_byte_count == after.uploaded_byte_count
+        && before.decoded_payload_hash == after.decoded_payload_hash
+        && before.decoded_byte_count == after.decoded_byte_count
+        && before.upload_layout_byte_count == after.upload_layout_byte_count
+        && before.upload_layout_row_stride_byte_count == after.upload_layout_row_stride_byte_count
+        && before.staging_payload_byte_count == after.staging_payload_byte_count
+        && before.staging_row_copy_count == after.staging_row_copy_count
         && before.materialized == after.materialized
         && before.placeholder_backed == after.placeholder_backed
         && before.blocked == after.blocked
         && before.removed == after.removed
         && before.renderer_boundary_ready == after.renderer_boundary_ready
-        && before.blocker_summary == after.blocker_summary;
+        && before.decoded_payload_valid == after.decoded_payload_valid
+        && before.upload_payload_layout_ready == after.upload_payload_layout_ready
+        && before.staging_payload_ready == after.staging_payload_ready
+        && before.decoded_resource_ready == after.decoded_resource_ready
+        && before.decoded_resource_blocked == after.decoded_resource_blocked
+        && before.blocker_summary == after.blocker_summary
+        && before.decoded_resource_summary == after.decoded_resource_summary
+        && before.decoded_resource_blocker_summary == after.decoded_resource_blocker_summary;
 }
 
 inline render_image_texture_frame_resource_packet_consumption_entry_diff

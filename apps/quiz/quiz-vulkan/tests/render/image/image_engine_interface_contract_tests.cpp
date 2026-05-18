@@ -3642,12 +3642,27 @@ static_assert(requires(
     { texture_frame_resource_packet_consumption_entry.upload_request_id } -> std::same_as<std::uint64_t&>;
     { texture_frame_resource_packet_consumption_entry.upload_generation_id } -> std::same_as<std::uint64_t&>;
     { texture_frame_resource_packet_consumption_entry.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_consumption_entry.decoded_payload_hash } -> std::same_as<std::uint64_t&>;
+    { texture_frame_resource_packet_consumption_entry.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_consumption_entry.upload_layout_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_consumption_entry.upload_layout_row_stride_byte_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_consumption_entry.staging_payload_byte_count } -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_consumption_entry.staging_row_copy_count } -> std::same_as<std::size_t&>;
     { texture_frame_resource_packet_consumption_entry.materialized } -> std::same_as<bool&>;
     { texture_frame_resource_packet_consumption_entry.placeholder_backed } -> std::same_as<bool&>;
     { texture_frame_resource_packet_consumption_entry.blocked } -> std::same_as<bool&>;
     { texture_frame_resource_packet_consumption_entry.removed } -> std::same_as<bool&>;
     { texture_frame_resource_packet_consumption_entry.renderer_boundary_ready } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_consumption_entry.decoded_payload_valid } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_consumption_entry.upload_payload_layout_ready } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_consumption_entry.staging_payload_ready } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_consumption_entry.decoded_resource_ready } -> std::same_as<bool&>;
+    { texture_frame_resource_packet_consumption_entry.decoded_resource_blocked } -> std::same_as<bool&>;
     { texture_frame_resource_packet_consumption_entry.blocker_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_consumption_entry.decoded_resource_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_consumption_entry.decoded_resource_blocker_summary }
+        -> std::same_as<std::string&>;
     { texture_frame_resource_packet_consumption_entry.diagnostic } -> std::same_as<std::string&>;
     { texture_frame_resource_packet_consumption_entry.ok() } -> std::same_as<bool>;
     { texture_frame_resource_packet_consumption_summary.frame_request_count } -> std::same_as<std::size_t&>;
@@ -3666,14 +3681,30 @@ static_assert(requires(
         -> std::same_as<std::size_t&>;
     { texture_frame_resource_packet_consumption_summary.missing_stable_packet_identity_count }
         -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_consumption_summary.decoded_resource_ready_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_consumption_summary.decoded_resource_blocked_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_consumption_summary.decoded_payload_hash_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_consumption_summary.decoded_payload_byte_count }
+        -> std::same_as<std::size_t&>;
+    { texture_frame_resource_packet_consumption_summary.staging_payload_byte_count }
+        -> std::same_as<std::size_t&>;
     { texture_frame_resource_packet_consumption_summary.renderer_boundary_ready } -> std::same_as<bool&>;
     { texture_frame_resource_packet_consumption_summary.has_duplicate_stable_packet_identity }
         -> std::same_as<bool&>;
     { texture_frame_resource_packet_consumption_summary.has_missing_stable_packet_identity }
         -> std::same_as<bool&>;
+    { texture_frame_resource_packet_consumption_summary.has_decoded_resource_blockers }
+        -> std::same_as<bool&>;
     { texture_frame_resource_packet_consumption_summary.entries }
         -> std::same_as<std::vector<render::render_image_texture_frame_resource_packet_consumption_entry>&>;
     { texture_frame_resource_packet_consumption_summary.identity_summary } -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_consumption_summary.decoded_resource_summary }
+        -> std::same_as<std::string&>;
+    { texture_frame_resource_packet_consumption_summary.decoded_resource_blocker_summary }
+        -> std::same_as<std::string&>;
     { texture_frame_resource_packet_consumption_summary.diagnostic } -> std::same_as<std::string&>;
     { texture_frame_resource_packet_consumption_summary.ok() } -> std::same_as<bool>;
     { texture_frame_resource_packet_consumption_entry_diff.request_index } -> std::same_as<std::size_t&>;
@@ -4099,6 +4130,9 @@ static_assert(requires(
         -> std::same_as<render::render_image_texture_pipeline_result>;
     { standard_pipeline.invalidate_source(render::render_image_cache_key{}) } -> std::same_as<void>;
     { standard_pipeline.invalidate_texture(render::render_image_texture_key{}) } -> std::same_as<void>;
+    { standard_pipeline.set_placeholder_texture_policy(placeholder_policy) } -> std::same_as<void>;
+    { standard_pipeline.placeholder_texture_policy() }
+        -> std::same_as<const render::fake_image_texture_placeholder_policy&>;
     { standard_pipeline.diagnostic_snapshot() } -> std::same_as<render::fake_image_texture_pipeline_snapshot>;
     { standard_pipeline.standard_diagnostic_snapshot() }
         -> std::same_as<render::standard_image_texture_pipeline_snapshot>;

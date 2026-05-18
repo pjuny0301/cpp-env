@@ -105,6 +105,23 @@ quiz_vulkan::render::render_image_texture_frame_resource_packet_plan_entry make_
         packet.next_retry_sequence = 11;
         packet.blocker_summary = "upload failed but can retry: invalid_image";
     }
+    if (bindable) {
+        render_decoded_image decoded{
+            .width = packet.texture_width,
+            .height = packet.texture_height,
+            .pixel_format = render_image_pixel_format::rgba8_srgb,
+            .pixels = {},
+        };
+        decoded.pixels.resize(
+            expected_render_decoded_image_byte_count(decoded),
+            placeholder ? std::byte{0x7f} : std::byte{0xff});
+        packet.decoded_payload = make_render_image_decoded_payload_evidence(decoded);
+        packet.payload_layout =
+            make_render_image_texture_upload_payload_layout_evidence(packet.texture_key, packet.sampler, decoded);
+        packet.staging_payload_plan = make_render_image_texture_staging_payload_plan(
+            packet.payload_layout,
+            make_render_image_texture_mipmap_upload_plan(decoded, packet.sampler));
+    }
 
     return packet;
 }
@@ -383,6 +400,21 @@ void test_consumption_summary_reports_compact_packet_identities()
     require(summary.entries[0].upload_request_id == 200, "consumption entry preserves upload request");
     require(summary.entries[0].upload_generation_id == 5, "consumption entry preserves upload generation");
     require(summary.entries[0].uploaded_byte_count == 8, "consumption entry preserves uploaded bytes");
+    require(summary.entries[0].decoded_payload_valid, "consumption entry preserves decoded payload validity");
+    require(summary.entries[0].decoded_byte_count == 16, "consumption entry preserves decoded byte count");
+    require(summary.entries[0].decoded_payload_hash != 0, "consumption entry preserves decoded payload hash");
+    require(summary.entries[0].upload_payload_layout_ready, "consumption entry preserves upload layout readiness");
+    require(summary.entries[0].upload_layout_row_stride_byte_count == 16, "consumption entry records row stride");
+    require(summary.entries[0].staging_payload_ready, "consumption entry preserves staging readiness");
+    require(summary.entries[0].staging_payload_byte_count == 16, "consumption entry records staging bytes");
+    require(summary.entries[0].staging_row_copy_count == 1, "consumption entry records staging row copies");
+    require(summary.entries[0].decoded_resource_ready, "consumption entry records decoded resource readiness");
+    require(
+        summary.decoded_resource_summary == "decoded_resources=2; payload_hashes=2; decoded_bytes=32; staging_bytes=32",
+        "consumption summary records decoded resource byte facts");
+    require(
+        summary.decoded_resource_blocker_summary == "no decoded resource blockers",
+        "consumption summary records no decoded resource blockers");
     require(summary.entries[1].placeholder_backed, "consumption entry preserves placeholder flag");
 }
 
@@ -430,6 +462,73 @@ void test_consumption_summary_reports_duplicate_and_missing_stable_identities()
     require(
         summary.diagnostic == "image frame resource packet consumption summary has missing packet identities",
         "missing identity diagnostic is stable");
+}
+
+void test_consumption_summary_reports_decoded_resource_blockers()
+{
+    using namespace quiz_vulkan::render;
+
+    render_image_texture_frame_resource_packet_plan_entry invalid_layout =
+        make_packet(
+            0,
+            "asset://textures/layout-mismatch.ppm",
+            render_image_texture_frame_resource_packet_status::resource_packet_ready);
+    render_decoded_image decoded{
+        .width = invalid_layout.texture_width,
+        .height = invalid_layout.texture_height,
+        .pixel_format = render_image_pixel_format::rgba8_srgb,
+        .pixels = {},
+    };
+    decoded.pixels.resize(expected_render_decoded_image_byte_count(decoded), std::byte{0xff});
+    render_image_sampler_policy mismatched_sampler = invalid_layout.sampler;
+    mismatched_sampler.wrap_u = render_image_wrap_mode::repeat;
+    invalid_layout.payload_layout =
+        make_render_image_texture_upload_payload_layout_evidence(
+            invalid_layout.texture_key,
+            mismatched_sampler,
+            decoded);
+    invalid_layout.staging_payload_plan = make_render_image_texture_staging_payload_plan(
+        invalid_layout.payload_layout,
+        make_render_image_texture_mipmap_upload_plan(decoded, mismatched_sampler));
+
+    render_image_texture_frame_resource_packet_plan_entry invalid_staging =
+        make_packet(
+            1,
+            "asset://textures/staging-mismatch.ppm",
+            render_image_texture_frame_resource_packet_status::resource_packet_ready);
+    invalid_staging.staging_payload_plan = make_render_image_texture_staging_payload_plan(
+        invalid_staging.payload_layout,
+        invalid_staging.staging_payload_plan.mipmap_upload_plan,
+        0);
+
+    const render_image_texture_frame_resource_packet_materialization materialization =
+        materialize_packets({invalid_layout, invalid_staging});
+    const render_image_texture_frame_resource_packet_consumption_summary summary =
+        make_render_image_texture_frame_resource_packet_consumption_summary(materialization);
+
+    require(!summary.ok(), "decoded resource blockers make consumption summary not ok");
+    require(summary.renderer_boundary_ready, "base materialization can be renderer-boundary ready before decoded checks");
+    require(summary.has_decoded_resource_blockers, "consumption summary records decoded resource blockers");
+    require(summary.decoded_resource_ready_count == 0, "decoded blocker summary records no ready decoded resources");
+    require(summary.decoded_resource_blocked_count == 2, "decoded blocker summary counts blocked resources");
+    require(summary.entries[0].decoded_resource_blocked, "invalid layout entry is decoded-resource blocked");
+    require(
+        summary.entries[0].decoded_resource_blocker_summary
+            == "image texture upload payload layout sampler does not match texture key",
+        "invalid layout blocker is preserved");
+    require(summary.entries[1].decoded_resource_blocked, "invalid staging entry is decoded-resource blocked");
+    require(
+        summary.entries[1].decoded_resource_blocker_summary == "staging row alignment must be non-zero",
+        "invalid staging blocker is preserved");
+    require(
+        summary.decoded_resource_blocker_summary.find("sampler does not match") != std::string::npos,
+        "decoded blocker aggregate includes layout mismatch");
+    require(
+        summary.decoded_resource_blocker_summary.find("alignment must be non-zero") != std::string::npos,
+        "decoded blocker aggregate includes staging mismatch");
+    require(
+        summary.diagnostic == "image frame resource packet consumption summary has decoded resource blockers",
+        "decoded blocker diagnostic is stable");
 }
 
 void test_consumption_diff_reports_stable_no_change_frame()
@@ -599,6 +698,7 @@ int main()
     test_materialization_status_helpers_are_stable();
     test_consumption_summary_reports_compact_packet_identities();
     test_consumption_summary_reports_duplicate_and_missing_stable_identities();
+    test_consumption_summary_reports_decoded_resource_blockers();
     test_consumption_diff_reports_stable_no_change_frame();
     test_consumption_diff_reports_identity_changes_and_readiness_transitions();
     return 0;

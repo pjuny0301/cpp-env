@@ -2579,6 +2579,16 @@ public:
         pipeline_.invalidate_texture(key);
     }
 
+    void set_placeholder_texture_policy(fake_image_texture_placeholder_policy policy)
+    {
+        texture_cache_.set_placeholder_texture_policy(std::move(policy));
+    }
+
+    const fake_image_texture_placeholder_policy& placeholder_texture_policy() const
+    {
+        return texture_cache_.placeholder_texture_policy();
+    }
+
     fake_image_texture_pipeline_snapshot diagnostic_snapshot() const
     {
         return pipeline_.diagnostic_snapshot();

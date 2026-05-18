@@ -1,6 +1,7 @@
 #include "render/image/image_decoder.h"
 #include "render/image/image_resolver.h"
 #include "render/image/image_source_bytes_loader.h"
+#include "render/image/image_texture_frame_resource_packet_materialization.h"
 #include "render/image/image_texture_pipeline.h"
 
 #include <cassert>
@@ -127,6 +128,13 @@ std::vector<std::byte> make_short_ppm_bytes()
     append_ascii(bytes, "P6\n1 1\n255\n");
     append_byte(bytes, 10);
     append_byte(bytes, 20);
+    return bytes;
+}
+
+std::vector<std::byte> make_zero_dimension_ppm_bytes()
+{
+    std::vector<std::byte> bytes;
+    append_ascii(bytes, "P6\n0 1\n255\n");
     return bytes;
 }
 
@@ -475,6 +483,154 @@ void test_standard_pipeline_decodes_and_uploads_distinct_cache_revision_after_in
     require(snapshot.pipeline.entries[1].upload_count_after == 2, "second cache revision upload is recorded");
 }
 
+void test_standard_pipeline_materializes_decoded_bytes_for_resource_consumption()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_texture_placeholder_policy placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    };
+
+    normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    set_source_bytes(loader, "textures/card.ppm", make_ppm_bytes());
+    set_source_bytes(loader, "textures/bad.ppm", make_short_ppm_bytes());
+    standard_image_texture_pipeline pipeline(resolver, loader);
+    pipeline.set_placeholder_texture_policy(placeholder_policy);
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.mag_filter = render_image_filter::nearest;
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(
+        std::vector<render_image_ref>{
+            render_image_ref{.uri = "textures/card.ppm", .sampler = nearest_sampler},
+            render_image_ref{.uri = "textures/bad.ppm"},
+        },
+        resolver,
+        render_image_texture_batch_plan_options{.placeholder_policy = placeholder_policy});
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(plan, pipeline);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(plan, execution);
+    const standard_image_texture_pipeline_snapshot standard_snapshot =
+        pipeline.standard_diagnostic_snapshot();
+    const render_image_texture_upload_result_snapshot upload_result =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
+            standard_snapshot.pipeline.upload_snapshot);
+    const render_image_texture_frame_resource_packet_materialization materialization =
+        materialize_render_image_texture_frame_resource_packets(frame, upload_result);
+    const render_image_texture_frame_resource_packet_consumption_summary consumption =
+        make_render_image_texture_frame_resource_packet_consumption_summary(materialization);
+
+    require(execution.ok(), "standard decoded materialization batch executes with placeholder fallback");
+    require(standard_snapshot.decoder.decode_attempt_count == 2, "standard materialization decodes both cache misses");
+    require(standard_snapshot.decoder.decoded_count == 1, "standard materialization records one real decoded image");
+    require(standard_snapshot.decoder.failed_decode_count == 1, "standard materialization records one failed decode");
+    require(upload_result.packet_count == 2, "standard materialization records real and placeholder uploads");
+    require(materialization.ok(), "standard decoded resource packets materialize");
+    require(materialization.placeholder_packet_count == 1, "standard materialization records placeholder packet");
+    require(consumption.ok(), "standard decoded resource consumption is renderer-boundary ready");
+    require(consumption.decoded_resource_ready_count == 2, "consumption records real and placeholder decoded resources");
+    require(consumption.decoded_payload_byte_count == 20, "consumption sums decoded RGBA bytes");
+    require(consumption.staging_payload_byte_count == 20, "consumption sums staging payload bytes");
+    require(consumption.decoded_payload_hash_count == 2, "consumption records stable decoded payload hashes");
+    require(
+        consumption.decoded_resource_summary == "decoded_resources=2; payload_hashes=2; decoded_bytes=20; staging_bytes=20",
+        "standard consumption decoded resource summary is stable");
+
+    const render_image_texture_frame_resource_packet_consumption_entry& ready = consumption.entries[0];
+    require(ready.ok(), "real decoded resource consumption entry is ready");
+    require(ready.request_index == 0, "real decoded resource preserves request index");
+    require(ready.decoded_payload_valid, "real decoded resource preserves payload validity");
+    require(ready.decoded_payload_hash != 0, "real decoded resource preserves payload hash");
+    require(ready.decoded_byte_count == 4, "real decoded resource records RGBA byte count");
+    require(ready.upload_layout_byte_count == 4, "real decoded resource records layout bytes");
+    require(ready.upload_layout_row_stride_byte_count == 4, "real decoded resource records row stride");
+    require(ready.staging_payload_byte_count == 4, "real decoded resource records staging bytes");
+    require(ready.staging_row_copy_count == 1, "real decoded resource records staging row copy");
+    require(ready.upload_payload_layout_ready, "real decoded resource preserves upload layout readiness");
+    require(ready.staging_payload_ready, "real decoded resource preserves staging readiness");
+    require(
+        ready.stable_texture_cache_key.find("textures/card.ppm") != std::string::npos,
+        "real decoded resource preserves stable cache identity");
+    require(
+        ready.sampler_key == render_image_sampler_policy_stable_fragment(nearest_sampler),
+        "real decoded resource preserves sampler identity");
+
+    const render_image_texture_frame_resource_packet_consumption_entry& placeholder = consumption.entries[1];
+    require(placeholder.ok(), "placeholder decoded resource consumption entry is ready");
+    require(placeholder.placeholder_backed, "placeholder decoded resource records placeholder state");
+    require(placeholder.decoded_payload_valid, "placeholder decoded resource has valid decoded bytes");
+    require(placeholder.decoded_byte_count == 16, "placeholder decoded resource records generated RGBA bytes");
+    require(placeholder.staging_payload_byte_count == 16, "placeholder decoded resource records staging bytes");
+    require(
+        is_fake_image_texture_placeholder_key(materialization.entries[1].cache_record.texture_key),
+        "placeholder materialization preserves placeholder texture key");
+}
+
+void test_standard_pipeline_materialization_reports_source_and_decode_blockers()
+{
+    using namespace quiz_vulkan::render;
+
+    normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    set_source_bytes(loader, "textures/card.jpg", make_bytes({0xff, 0xd8, 0xff, 0xd9}));
+    set_source_bytes(loader, "textures/zero.ppm", make_zero_dimension_ppm_bytes());
+    set_source_bytes(loader, "textures/short.ppm", make_short_ppm_bytes());
+    standard_image_texture_pipeline pipeline(resolver, loader);
+
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(
+        std::vector<render_image_ref>{
+            render_image_ref{.uri = "textures/missing.ppm"},
+            render_image_ref{.uri = "textures/card.jpg"},
+            render_image_ref{.uri = "textures/zero.ppm"},
+            render_image_ref{.uri = "textures/short.ppm"},
+        },
+        resolver);
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(plan, pipeline);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(plan, execution);
+    const render_image_texture_upload_result_snapshot upload_result =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
+            pipeline.standard_diagnostic_snapshot().pipeline.upload_snapshot);
+    const render_image_texture_frame_resource_packet_materialization materialization =
+        materialize_render_image_texture_frame_resource_packets(frame, upload_result);
+    const render_image_texture_frame_resource_packet_consumption_summary consumption =
+        make_render_image_texture_frame_resource_packet_consumption_summary(materialization);
+
+    require(!execution.ok(), "standard blocker batch records failed texture requests");
+    require(!materialization.ok(), "standard blocker materialization is not renderer-ready");
+    require(!consumption.ok(), "standard blocker consumption summary is not ready");
+    require(consumption.blocked_packet_count == 4, "standard blocker consumption records blocked packets");
+    require(consumption.decoded_resource_blocked_count == 4, "standard blocker consumption counts decoded blockers");
+    require(consumption.decoded_resource_ready_count == 0, "standard blocker consumption records no decoded resources");
+    require(consumption.has_decoded_resource_blockers, "standard blocker consumption exposes decoded blockers");
+    require(
+        consumption.decoded_resource_blocker_summary.find("fake image source bytes loader has no bytes for source")
+            != std::string::npos,
+        "standard blocker summary preserves missing source bytes reason");
+    require(
+        consumption.decoded_resource_blocker_summary.find("decoder chain exhausted all candidates")
+                != std::string::npos
+            || consumption.decoded_resource_blocker_summary.find("stb_image decoder failed")
+                != std::string::npos
+            || consumption.decoded_resource_blocker_summary.find("no image decoder in the chain supports the source")
+                != std::string::npos,
+        "standard blocker summary preserves unsupported format reason");
+    require(
+        consumption.decoded_resource_blocker_summary.find("positive width, height, and max value")
+            != std::string::npos,
+        "standard blocker summary preserves invalid dimension reason");
+    require(
+        consumption.decoded_resource_blocker_summary.find("pixel data size does not match dimensions")
+            != std::string::npos,
+        "standard blocker summary preserves pixel byte-count mismatch reason");
+}
+
 void test_standard_pipeline_reports_unsupported_decode_with_candidate_diagnostics()
 {
     using namespace quiz_vulkan::render;
@@ -576,6 +732,8 @@ int main()
     test_standard_pipeline_uploads_zlib_stored_png();
     test_standard_pipeline_reuses_cached_decode_and_upload_for_same_normalized_key();
     test_standard_pipeline_decodes_and_uploads_distinct_cache_revision_after_invalidation();
+    test_standard_pipeline_materializes_decoded_bytes_for_resource_consumption();
+    test_standard_pipeline_materialization_reports_source_and_decode_blockers();
     test_standard_pipeline_reports_unsupported_decode_with_candidate_diagnostics();
     test_standard_pipeline_reports_invalid_decode_with_candidate_diagnostics();
     test_standard_pipeline_reports_invalid_png_inflater_failure();

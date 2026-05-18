@@ -571,6 +571,21 @@ void test_staging_payload_plan_records_rows_alignment_and_blockers()
         aligned_diff.diagnostic == "image texture staging payload plan changed staging bytes",
         "aligned staging diff diagnostic is stable");
 
+    const render_image_texture_staging_payload_plan invalid_alignment_plan =
+        make_render_image_texture_staging_payload_plan(layout, base_mipmap_plan, 0);
+    require(!invalid_alignment_plan.ok(), "staging payload plan rejects zero row alignment");
+    require(
+        invalid_alignment_plan.status == render_image_texture_staging_payload_plan_status::blocked_invalid_alignment,
+        "zero-alignment staging plan reports invalid-alignment blocker");
+    require(invalid_alignment_plan.alignment_byte_count == 0, "zero-alignment staging plan records requested alignment");
+    require(invalid_alignment_plan.row_copy_count == 0, "zero-alignment staging plan records no row copies");
+    require(invalid_alignment_plan.total_staging_byte_count == 0, "zero-alignment staging plan records no staging bytes");
+    require(invalid_alignment_plan.layout_ready, "zero-alignment staging plan preserves layout readiness");
+    require(invalid_alignment_plan.decoded_payload_available, "zero-alignment staging plan preserves payload availability");
+    require(
+        invalid_alignment_plan.blocker_summary == "staging row alignment must be non-zero",
+        "zero-alignment staging plan blocker is stable");
+
     render_image_sampler_policy mipmapped_sampler = sampler;
     mipmapped_sampler.mipmap_mode = render_image_mipmap_mode::linear;
     const render_image_texture_key mipmapped_key{
@@ -603,6 +618,28 @@ void test_staging_payload_plan_records_rows_alignment_and_blockers()
     require(mipmapped_plan.mip_level_references[1].generated_mip_reference, "generated mip reference is explicit");
     require(mipmapped_plan.row_copies[4].mip_level == 1, "mipmapped row copy begins level one after base rows");
     require(mipmapped_plan.row_copies[6].mip_level == 2, "mipmapped row copy records terminal level");
+
+    render_image_sampler_policy mismatched_sampler = sampler;
+    mismatched_sampler.wrap_u = render_image_wrap_mode::repeat;
+    const render_image_texture_upload_payload_layout_evidence mismatched_layout =
+        make_render_image_texture_upload_payload_layout_evidence(key, mismatched_sampler, base_image);
+    const render_image_texture_mipmap_upload_plan mismatched_mipmap_plan =
+        make_render_image_texture_mipmap_upload_plan(base_image, mismatched_sampler);
+    const render_image_texture_staging_payload_plan invalid_layout_plan =
+        make_render_image_texture_staging_payload_plan(mismatched_layout, mismatched_mipmap_plan);
+    require(!invalid_layout_plan.ok(), "staging payload plan blocks invalid layout evidence");
+    require(
+        invalid_layout_plan.status == render_image_texture_staging_payload_plan_status::blocked_invalid_layout,
+        "invalid-layout staging plan reports layout blocker");
+    require(invalid_layout_plan.decoded_payload_available, "invalid-layout staging plan preserves payload availability");
+    require(!invalid_layout_plan.layout_ready, "invalid-layout staging plan records layout blocker");
+    require(invalid_layout_plan.mipmap_plan_ready, "invalid-layout staging plan preserves mipmap readiness");
+    require(invalid_layout_plan.row_copy_count == 0, "invalid-layout staging plan records no row copies");
+    require(invalid_layout_plan.total_staging_byte_count == 0, "invalid-layout staging plan records no staging bytes");
+    require(
+        invalid_layout_plan.blocker_summary
+            == "image texture upload payload layout sampler does not match texture key",
+        "invalid-layout staging plan preserves layout diagnostic");
 
     render_decoded_image invalid_payload = base_image;
     invalid_payload.pixels.pop_back();

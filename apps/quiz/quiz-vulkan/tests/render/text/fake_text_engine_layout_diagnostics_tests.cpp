@@ -3092,6 +3092,57 @@ void test_fake_text_engine_traces_repeated_layout_to_clean_atlas_page()
         diagnostics.glyph_atlas_materialization_policy.clean_reuse_count == 1,
         "materialization policy counts clean reuse");
     require(
+        diagnostics.has_line_run_atlas_uploads(),
+        "repeated layout records line/run atlas upload bridge");
+    require(
+        diagnostics.line_run_atlas_upload_policy.cluster_count == 1U,
+        "repeated layout line/run upload bridge counts one cluster");
+    require(
+        diagnostics.line_run_atlas_upload_policy.clean_reuse_cluster_count == 1U,
+        "line/run upload bridge counts clean atlas reuse");
+    require(
+        diagnostics.line_run_atlas_upload_policy.reused_cluster_count == 1U,
+        "line/run upload bridge reports reused atlas data");
+    require(
+        diagnostics.line_run_atlas_upload_policy.upload_ready_cluster_count == 0U,
+        "clean reuse line/run upload emits no new upload-ready payload");
+    require(
+        diagnostics.line_run_atlas_upload_policy.blocked_cluster_count == 0U,
+        "clean reuse line/run upload is not blocked");
+    require(
+        diagnostics.line_run_atlas_upload_policy.unique_cache_key_count == 1U,
+        "clean reuse line/run upload preserves cache key coverage");
+    require(
+        diagnostics.line_run_atlas_upload_policy.unique_page_key_count == 1U,
+        "clean reuse line/run upload preserves atlas page coverage");
+    const fake_text_engine_line_run_atlas_upload_snapshot& line_upload =
+        diagnostics.line_run_atlas_uploads.front();
+    require(line_upload.has_line_run_evidence, "clean reuse line/run upload links line evidence");
+    require(line_upload.line_index == 0U && line_upload.run_index == 0U, "clean reuse line/run upload preserves line/run ids");
+    require(line_upload.cluster_index == 0U, "clean reuse line/run upload preserves cluster id");
+    require(line_upload.has_cache_key, "clean reuse line/run upload records required atlas cache key");
+    require(line_upload.cache_key == materialization.cache_key, "clean reuse line/run upload preserves cache key");
+    require(line_upload.page.id == materialization.page.id, "clean reuse line/run upload preserves atlas page id");
+    require(!line_upload.stable_page_key.empty(), "clean reuse line/run upload records stable page key");
+    require(line_upload.has_materialization, "clean reuse line/run upload links materialization");
+    require(line_upload.has_raster_payload, "clean reuse line/run upload still has raster payload facts");
+    require(line_upload.raster_payload_upload_ready, "clean reuse line/run upload keeps raster payload readiness");
+    require(line_upload.clean_reuse, "line/run upload marks clean reuse");
+    require(line_upload.reused, "line/run upload marks reused atlas data");
+    require(!line_upload.has_upload_request, "clean reuse line/run upload does not expose a new upload request");
+    require(!line_upload.upload_ready, "clean reuse line/run upload does not claim a new upload");
+    require(!line_upload.blocked, "clean reuse line/run upload is not blocked");
+    require(line_upload.blocker_reason.empty(), "clean reuse line/run upload has no blocker reason");
+    require(
+        line_upload.upload_status == render_text_atlas_upload_request_status::clean_reuse,
+        "line/run upload records clean-reuse upload status");
+    require(
+        line_upload.materialization_status == render_text_glyph_atlas_materialization_status::materialized_clean_reuse,
+        "line/run upload records clean-reuse materialization status");
+    require(
+        line_upload.upload_request_id == diagnostics.atlas_upload_request_bridge.requests.front().request_id,
+        "line/run upload keeps stable upload request identity for reuse evidence");
+    require(
         diagnostics.glyph_atlas_page_policy.repeated_layout_clean_page_count > 0,
         "atlas page policy records repeated clean page");
 }

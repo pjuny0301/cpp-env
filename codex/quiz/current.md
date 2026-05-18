@@ -20,14 +20,12 @@ Historical integration notes are kept in git history, not repeated here.
 ## Active Bottlenecks
 
 - Vulkan: present image execution evidence and descriptor allocation merge
-  guard tests are integrated. Next useful work is descriptor payload / command
-  packet executor evidence before real queue submission is widened.
+  guard tests are integrated. Active worker work is descriptor payload bind
+  recording before real queue submission is widened.
 - Text: atlas packet consumption and HarfBuzz shaping handoff diagnostics are
-  integrated. Next useful work is real font-backed layout/raster data feeding
-  the existing atlas packet contract.
+  integrated. Active worker work is real font-backed atlas handoff.
 - Image: staging payload blocker coverage and staging payload diff summaries are
-  integrated. Next useful work is real decoded image bytes moving through the
-  staged upload contract without changing scene/domain ownership.
+  integrated. Active worker work is decoded-byte resource materialization.
 - Asset: materialized byte payload request/review evidence and shader byte
   pipeline summary are integrated.
 - Input/IME: wheel modifier diagnostics are integrated; input is idle unless
@@ -35,14 +33,14 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Active Workers
 
-- `codex-vulkan-native-command-packet-executor-20260516`: idle after native
-  descriptor set evidence work, now integrated as a focused regression test.
-- `codex-text-freetype-prototype-20260514`: idle after HarfBuzz shaping handoff
-  diagnostics.
+- `codex-vulkan-native-command-packet-executor-20260516`: busy on
+  `codex/vulkan-descriptor-payload-bind-recording-20260518`.
+- `codex-text-freetype-prototype-20260514`: busy on
+  `codex/text-real-font-atlas-handoff-20260518`.
 - `codex-asset-unified-cache-key-20260514`: idle after shader byte source
   pipeline summary and focused-header split.
-- `codex-image-texture-next-20260514`: idle after staging payload diff
-  summaries.
+- `codex-image-texture-next-20260514`: busy on
+  `codex/image-decoded-byte-resource-materialization-20260518`.
 - `codex-input-ime`: idle after wheel/drag/touch-like diagnostics work.
 - Idle sessions are intentionally kept alive. Give them fresh baseline branches
   before new work; do not re-merge historical ahead commits.
@@ -75,9 +73,10 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `0a5bed7` after
+- Main branch `codex/quiz-vulkan-remake-baseline` is at `9809fae` after
   HarfBuzz shaping handoff diagnostics, image staging payload diff summaries,
-  and Vulkan descriptor allocation merge guard integration.
+  Vulkan descriptor allocation merge guard integration, and the next engine
+  worker prompts.
 - Last full Windows MinGW CTest batch should be treated as stale. Run focused
   tests during normal integration; run full CTest after the next meaningful
   engine batch.

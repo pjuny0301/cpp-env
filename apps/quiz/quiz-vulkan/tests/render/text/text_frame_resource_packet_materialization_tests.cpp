@@ -214,6 +214,12 @@ void test_resource_packets_materialize_upload_and_clean_reuse()
 
     const render_text_frame_resource_packet_materialization packets =
         materialize(draw_plan, handoff);
+    const render_text_frame_resource_packet_materialization_entry& uploaded_entry =
+        packets.entries.front();
+    const render_text_frame_resource_packet_materialization_entry& clean_entry =
+        packets.entries[1];
+    const render_text_frame_resource_packet_materialization_entry& real_entry =
+        packets.entries[2];
 
     require(packets.ok(), "uploaded and clean-reuse resource packets are renderer-boundary ready");
     require(packets.entries.size() == 3U, "materialization preserves each draw packet");
@@ -223,17 +229,50 @@ void test_resource_packets_materialize_upload_and_clean_reuse()
     require(packets.policy.total_upload_rgba_bytes == 512U, "uploaded bytes total only upload payloads");
     require(packets.policy.used_deterministic_fallback, "deterministic fallback flag is preserved");
     require(packets.policy.used_real_backend, "real backend flag is preserved");
-    require(!packets.entries.front().sampler_key.empty(), "resource packet exposes a text atlas sampler key");
-    require(packets.entries.front().uv_bounds.valid, "resource packet preserves UV bounds");
-    require(packets.entries.front().renderer_boundary_ready, "ready upload packet is renderer-boundary ready");
     require(
-        packets.entries.front().status
+        uploaded_entry.frame_id == uploaded_draw.frame_id,
+        "resource packet preserves frame identity");
+    require(
+        uploaded_entry.resource_packet_id
+            == render_text_frame_resource_packet_id_for(uploaded_draw.frame_id, uploaded_draw.packet_id),
+        "resource packet id is stable from frame and draw packet identity");
+    require(uploaded_entry.draw_packet_id == uploaded_draw.packet_id, "draw packet id is preserved");
+    require(
+        uploaded_entry.upload_request_id == uploaded_draw.atlas_upload_request_id,
+        "upload request id is preserved");
+    require(uploaded_entry.cache_key.face_id == uploaded_draw.cache_key.face_id, "cache key face is preserved");
+    require(uploaded_entry.cache_key.glyph_id == uploaded_draw.cache_key.glyph_id, "cache key glyph is preserved");
+    require(
+        uploaded_entry.cache_key.pixel_size == uploaded_draw.cache_key.pixel_size,
+        "cache key pixel size is preserved");
+    require(uploaded_entry.page_id == uploaded_draw.page_id, "atlas page id is preserved");
+    require(uploaded_entry.page_revision == uploaded_draw.page_revision, "atlas page revision is preserved");
+    require(uploaded_entry.page_width == uploaded_draw.page_width, "atlas page width is preserved");
+    require(uploaded_entry.page_height == uploaded_draw.page_height, "atlas page height is preserved");
+    require(
+        uploaded_entry.layout_bounds.x == uploaded_draw.layout_bounds.x
+            && uploaded_entry.layout_bounds.y == uploaded_draw.layout_bounds.y
+            && uploaded_entry.layout_bounds.width == uploaded_draw.layout_bounds.width
+            && uploaded_entry.layout_bounds.height == uploaded_draw.layout_bounds.height,
+        "layout bounds are preserved");
+    require(!uploaded_entry.sampler_key.empty(), "resource packet exposes a text atlas sampler key");
+    require(!uploaded_entry.sampler_summary.empty(), "resource packet exposes a text atlas sampler summary");
+    require(uploaded_entry.uv_bounds.valid, "resource packet preserves UV bounds");
+    require(uploaded_entry.renderer_boundary_ready, "ready upload packet is renderer-boundary ready");
+    require(uploaded_entry.uploaded, "uploaded packet records upload readiness");
+    require(uploaded_entry.upload_rgba_bytes == 256U, "uploaded packet preserves byte count");
+    require(uploaded_entry.used_deterministic_fallback, "uploaded packet preserves deterministic fallback flag");
+    require(
+        uploaded_entry.status
             == render_text_frame_resource_packet_materialization_status::materialized_uploaded,
         "upload packet reports uploaded materialization status");
     require(
-        packets.entries[1].status
+        clean_entry.status
             == render_text_frame_resource_packet_materialization_status::materialized_clean_reuse,
         "clean packet reports clean reuse materialization status");
+    require(clean_entry.clean_reuse, "clean packet records reuse readiness");
+    require(clean_entry.upload_rgba_bytes == 0U, "clean reuse packet does not claim upload bytes");
+    require(real_entry.used_real_backend, "real-backend flag is preserved on resource packets");
     require(packets.pages.size() == 1U, "page summary groups packets by atlas page");
     require(packets.pages.front().ready_packet_count == 3U, "page summary counts ready packets");
     require(packets.policy.sampler_count == 1U, "policy counts referenced text atlas sampler");

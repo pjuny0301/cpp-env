@@ -359,6 +359,8 @@ std::string_view native_command_packet_execution_status_name(
         return "pipeline_layout_unavailable";
     case vulkan_native_command_packet_execution_status::descriptor_sets_unavailable:
         return "descriptor_sets_unavailable";
+    case vulkan_native_command_packet_execution_status::descriptor_payloads_unavailable:
+        return "descriptor_payloads_unavailable";
     case vulkan_native_command_packet_execution_status::invalid_packet_data:
         return "invalid_packet_data";
     }

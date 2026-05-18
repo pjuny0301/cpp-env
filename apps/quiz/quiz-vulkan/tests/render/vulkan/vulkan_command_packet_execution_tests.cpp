@@ -619,15 +619,8 @@ make_ready_image_command_recorder_operation_plan(
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
 
-    vulkan_backend::vulkan_backend_frame_result frame =
-        make_native_packet_frame_without_descriptor_handles();
-    frame.command_packets = bridge;
-    const vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
-        vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
-            frame,
-            allocation,
-            make_native_functions());
-    vulkan_backend::vulkan_native_command_packet_executor executor(evidence);
+    (void)allocation;
+    vulkan_backend::fake_vulkan_command_packet_executor executor;
     const vulkan_backend::vulkan_command_packet_execution_result execution =
         executor.execute_packets(bridge);
     return vulkan_backend::build_vulkan_command_recorder_operation_plan(bridge, execution);
@@ -697,6 +690,12 @@ void test_vulkan_command_packet_execution_names_are_stable()
             vulkan_backend::vulkan_native_command_packet_execution_status::invalid_packet_data)
             == std::string_view{"invalid_packet_data"},
         "native packet execution status name for invalid packet data is stable");
+    require(
+        vulkan_backend::native_command_packet_execution_status_name(
+            vulkan_backend::vulkan_native_command_packet_execution_status::
+                descriptor_payloads_unavailable)
+            == std::string_view{"descriptor_payloads_unavailable"},
+        "native packet execution status name for descriptor payloads unavailable is stable");
     require(
         vulkan_backend::native_command_packet_call_kind_name(
             vulkan_backend::vulkan_native_command_packet_call_kind::bind_pipeline)
@@ -1319,11 +1318,29 @@ void test_vulkan_native_descriptor_set_allocation_uses_image_materialization()
     vulkan_backend::vulkan_backend_frame_result frame =
         make_native_packet_frame_without_descriptor_handles();
     frame.command_packets = bridge;
-    const vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+    const vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result handoff =
+        make_ready_descriptor_write_payload_handoff(bridge, allocation);
+    const vulkan_backend::vulkan_command_recorder_operation_plan operation_plan =
+        make_ready_image_command_recorder_operation_plan(bridge, allocation);
+    const vulkan_backend::vulkan_native_descriptor_payload_command_recording_result
+        payload_recording =
+            vulkan_backend::build_vulkan_native_descriptor_payload_command_recording_result(
+                bridge,
+                allocation,
+                handoff,
+                operation_plan);
+
+    vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
         vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
             frame,
             allocation,
             make_native_functions());
+    evidence = vulkan_backend::merge_vulkan_native_descriptor_write_payload_handoff_result(
+        evidence,
+        handoff);
+    evidence = vulkan_backend::merge_vulkan_native_descriptor_payload_command_recording_result(
+        evidence,
+        payload_recording);
     vulkan_backend::vulkan_native_command_packet_executor executor(evidence);
     const vulkan_backend::vulkan_command_packet_execution_result result =
         executor.execute_packets(bridge);
@@ -1333,6 +1350,9 @@ void test_vulkan_native_descriptor_set_allocation_uses_image_materialization()
     require(result.completed(), "image materialization descriptor evidence completes execution");
     require(native_result.completed(), "image materialization descriptor evidence completes native execution");
     require(native_result.descriptor_sets_ready, "image materialization descriptor evidence is ready");
+    require(
+        native_result.descriptor_payload_binds_ready,
+        "image materialization descriptor payload bind evidence is ready");
     require(native_result.calls.size() == 5, "single image packet emits five native calls");
     require(
         native_result.calls[1].descriptor_set_count == 1,
@@ -1822,6 +1842,281 @@ void test_vulkan_native_descriptor_payload_command_recording_blocks_mismatched_p
     require(
         result.failed_resource_id == "fixture://renderer/card.png",
         "mismatched descriptor payload records expected texture resource id");
+}
+
+void test_vulkan_native_command_packet_executor_binds_descriptor_payloads_for_image_packets()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_image_resource_bridge();
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        make_ready_image_descriptor_set_allocation(bridge);
+    const vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result handoff =
+        make_ready_descriptor_write_payload_handoff(bridge, allocation);
+    const vulkan_backend::vulkan_command_recorder_operation_plan operation_plan =
+        make_ready_image_command_recorder_operation_plan(bridge, allocation);
+    const vulkan_backend::vulkan_native_descriptor_payload_command_recording_result
+        payload_recording =
+            vulkan_backend::build_vulkan_native_descriptor_payload_command_recording_result(
+                bridge,
+                allocation,
+                handoff,
+                operation_plan);
+
+    vulkan_backend::vulkan_backend_frame_result frame =
+        make_native_packet_frame_without_descriptor_handles();
+    frame.command_packets = bridge;
+    vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+        vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
+            frame,
+            allocation,
+            make_native_functions());
+    require(
+        evidence.descriptor_payload_binds.empty(),
+        "default executor evidence does not fabricate descriptor payload binds");
+
+    evidence = vulkan_backend::merge_vulkan_native_descriptor_write_payload_handoff_result(
+        std::move(evidence),
+        handoff);
+    evidence = vulkan_backend::merge_vulkan_native_descriptor_payload_command_recording_result(
+        std::move(evidence),
+        payload_recording);
+
+    require(payload_recording.completed(), "payload command recording evidence is complete");
+    require(
+        evidence.descriptor_payload_binds.size() == 1,
+        "executor evidence receives one image descriptor payload bind");
+    const vulkan_backend::vulkan_native_command_packet_descriptor_payload_bind& bind =
+        evidence.descriptor_payload_binds.front();
+    require(bind.completed(), "descriptor payload bind evidence is complete");
+    require(bind.bind_ready, "descriptor payload bind evidence is bind-ready");
+    require(bind.draw_ready, "descriptor payload bind evidence is draw-ready");
+    require(bind.pipeline_layout.value == 5500, "bind evidence owns pipeline layout handle");
+    require(
+        bind.descriptor_sets.front().descriptor_set.value == 9100,
+        "bind evidence owns descriptor set handle");
+    require(
+        bind.descriptor_payloads.size() == 3,
+        "bind evidence owns descriptor payload identities");
+    require(
+        bind.descriptor_payloads[1].stable_identity
+            == "packet:0:set:0:binding:1:kind:image_texture:resource:fixture://renderer/card.png",
+        "texture payload identity is stable");
+
+    vulkan_backend::vulkan_native_command_packet_executor executor(evidence);
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(bridge);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(result.completed(), "descriptor payload bind evidence completes packet execution");
+    require(native_result.completed(), "descriptor payload bind evidence completes native execution");
+    require(native_result.descriptor_payload_binds_ready, "descriptor payload bind evidence is ready");
+    require(native_result.descriptor_payload_bind_count == 1, "native result records bind count");
+    require(
+        native_result.descriptor_payload_identity_count == 3,
+        "native result records payload identity count");
+    require(native_result.calls.size() == 5, "image packet emits five native command calls");
+    require(
+        native_result.calls[1].kind
+            == vulkan_backend::vulkan_native_command_packet_call_kind::bind_descriptor_sets,
+        "image packet bind call is recorded");
+    require(
+        native_result.calls[1].pipeline_layout.value == 5500,
+        "bind call records pipeline layout handle");
+    require(
+        native_result.calls[1].descriptor_sets.front().descriptor_set.value == 9100,
+        "bind call records descriptor set handle");
+    require(
+        native_result.calls[1].descriptor_payloads[1].image_view.value == 12000,
+        "bind call records image view payload identity");
+    require(
+        native_result.calls[1].descriptor_payloads[2].sampler.value == 13000,
+        "bind call records sampler payload identity");
+}
+
+void test_vulkan_native_command_packet_executor_blocks_missing_descriptor_payload_bind()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_image_resource_bridge();
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        make_ready_image_descriptor_set_allocation(bridge);
+    vulkan_backend::vulkan_backend_frame_result frame =
+        make_native_packet_frame_without_descriptor_handles();
+    frame.command_packets = bridge;
+    const vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+        vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
+            frame,
+            allocation,
+            make_native_functions());
+
+    vulkan_backend::vulkan_native_command_packet_executor executor(evidence);
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(bridge);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(!result.completed(), "missing descriptor payload bind blocks image execution");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::
+                descriptor_payloads_unavailable,
+        "missing descriptor payload bind reports descriptor payload unavailable");
+    require(
+        !native_result.descriptor_payload_binds_ready,
+        "missing descriptor payload bind keeps payload bind readiness false");
+    require(native_result.calls.empty(), "missing descriptor payload bind records no native calls");
+}
+
+void test_vulkan_native_command_packet_executor_blocks_duplicate_descriptor_payload_bind()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_image_resource_bridge();
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        make_ready_image_descriptor_set_allocation(bridge);
+    const vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result handoff =
+        make_ready_descriptor_write_payload_handoff(bridge, allocation);
+    const vulkan_backend::vulkan_command_recorder_operation_plan operation_plan =
+        make_ready_image_command_recorder_operation_plan(bridge, allocation);
+    const vulkan_backend::vulkan_native_descriptor_payload_command_recording_result
+        payload_recording =
+            vulkan_backend::build_vulkan_native_descriptor_payload_command_recording_result(
+                bridge,
+                allocation,
+                handoff,
+                operation_plan);
+    vulkan_backend::vulkan_backend_frame_result frame =
+        make_native_packet_frame_without_descriptor_handles();
+    frame.command_packets = bridge;
+    vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+        vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
+            frame,
+            allocation,
+            make_native_functions());
+    evidence = vulkan_backend::merge_vulkan_native_descriptor_payload_command_recording_result(
+        std::move(evidence),
+        payload_recording);
+    evidence.descriptor_payload_binds.push_back(evidence.descriptor_payload_binds.front());
+
+    vulkan_backend::vulkan_native_command_packet_executor executor(evidence);
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(bridge);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(!result.completed(), "duplicate descriptor payload bind blocks image execution");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::
+                descriptor_payloads_unavailable,
+        "duplicate descriptor payload bind reports descriptor payload unavailable");
+    require(
+        native_result.diagnostic.find("duplicate") != std::string::npos,
+        "duplicate descriptor payload bind diagnostic names duplicate evidence");
+}
+
+void test_vulkan_native_command_packet_executor_blocks_incomplete_descriptor_payload_bind()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_image_resource_bridge();
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        make_ready_image_descriptor_set_allocation(bridge);
+    const vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result handoff =
+        make_ready_descriptor_write_payload_handoff(bridge, allocation);
+    const vulkan_backend::vulkan_command_recorder_operation_plan operation_plan =
+        make_ready_image_command_recorder_operation_plan(bridge, allocation);
+    const vulkan_backend::vulkan_native_descriptor_payload_command_recording_result
+        payload_recording =
+            vulkan_backend::build_vulkan_native_descriptor_payload_command_recording_result(
+                bridge,
+                allocation,
+                handoff,
+                operation_plan);
+    vulkan_backend::vulkan_backend_frame_result frame =
+        make_native_packet_frame_without_descriptor_handles();
+    frame.command_packets = bridge;
+    vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+        vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
+            frame,
+            allocation,
+            make_native_functions());
+    evidence = vulkan_backend::merge_vulkan_native_descriptor_payload_command_recording_result(
+        std::move(evidence),
+        payload_recording);
+    evidence.descriptor_payload_binds.front().descriptor_payloads[1].image_view = {};
+
+    vulkan_backend::vulkan_native_command_packet_executor executor(evidence);
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(bridge);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(!result.completed(), "incomplete descriptor payload bind blocks image execution");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::
+                descriptor_payloads_unavailable,
+        "incomplete descriptor payload bind reports descriptor payload unavailable");
+    require(
+        native_result.diagnostic.find("incomplete") != std::string::npos,
+        "incomplete descriptor payload bind diagnostic names incomplete evidence");
+}
+
+void test_vulkan_native_command_packet_executor_blocks_mismatched_descriptor_payload_bind()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_image_resource_bridge();
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        make_ready_image_descriptor_set_allocation(bridge);
+    const vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result handoff =
+        make_ready_descriptor_write_payload_handoff(bridge, allocation);
+    const vulkan_backend::vulkan_command_recorder_operation_plan operation_plan =
+        make_ready_image_command_recorder_operation_plan(bridge, allocation);
+    const vulkan_backend::vulkan_native_descriptor_payload_command_recording_result
+        payload_recording =
+            vulkan_backend::build_vulkan_native_descriptor_payload_command_recording_result(
+                bridge,
+                allocation,
+                handoff,
+                operation_plan);
+    vulkan_backend::vulkan_backend_frame_result frame =
+        make_native_packet_frame_without_descriptor_handles();
+    frame.command_packets = bridge;
+    vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+        vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
+            frame,
+            allocation,
+            make_native_functions());
+    evidence = vulkan_backend::merge_vulkan_native_descriptor_payload_command_recording_result(
+        std::move(evidence),
+        payload_recording);
+    evidence.descriptor_payload_binds.front().descriptor_payloads[1].resource_id =
+        "fixture://renderer/other.png";
+
+    vulkan_backend::vulkan_native_command_packet_executor executor(evidence);
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(bridge);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(!result.completed(), "mismatched descriptor payload bind blocks image execution");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::
+                descriptor_payloads_unavailable,
+        "mismatched descriptor payload bind reports descriptor payload unavailable");
+    require(
+        native_result.diagnostic.find("mismatched") != std::string::npos,
+        "mismatched descriptor payload bind diagnostic names mismatched evidence");
 }
 
 void test_vulkan_native_command_packet_evidence_preserves_descriptor_handle_gap()
@@ -2347,6 +2642,11 @@ int main()
     test_vulkan_native_descriptor_payload_command_recording_blocks_duplicate_payload();
     test_vulkan_native_descriptor_payload_command_recording_blocks_incomplete_payload();
     test_vulkan_native_descriptor_payload_command_recording_blocks_mismatched_payload();
+    test_vulkan_native_command_packet_executor_binds_descriptor_payloads_for_image_packets();
+    test_vulkan_native_command_packet_executor_blocks_missing_descriptor_payload_bind();
+    test_vulkan_native_command_packet_executor_blocks_duplicate_descriptor_payload_bind();
+    test_vulkan_native_command_packet_executor_blocks_incomplete_descriptor_payload_bind();
+    test_vulkan_native_command_packet_executor_blocks_mismatched_descriptor_payload_bind();
     test_vulkan_native_command_packet_evidence_preserves_descriptor_handle_gap();
     test_vulkan_native_command_packet_executor_blocks_incomplete_descriptor_evidence();
     test_vulkan_native_command_packet_executor_ignores_incomplete_descriptor_allocation_handles();

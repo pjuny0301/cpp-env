@@ -36,6 +36,20 @@ void require_range(
     require(range.end_byte == end_byte, message);
 }
 
+void require_modifiers(
+    quiz_vulkan::input::input_modifier_state modifiers,
+    bool alt,
+    bool ctrl,
+    bool shift,
+    bool meta,
+    const char* message)
+{
+    require(modifiers.alt == alt, message);
+    require(modifiers.ctrl == ctrl, message);
+    require(modifiers.shift == shift, message);
+    require(modifiers.meta == meta, message);
+}
+
 bool contains_pointer_id(const std::vector<std::int32_t>& pointer_ids, std::int32_t pointer_id)
 {
     for (const std::int32_t existing_id : pointer_ids) {
@@ -123,7 +137,11 @@ quiz_vulkan::raw_platform_input_event platform_scroll(
     float y,
     float delta_x,
     float delta_y,
-    quiz_vulkan::raw_platform_scroll_delta_unit unit)
+    quiz_vulkan::raw_platform_scroll_delta_unit unit,
+    bool alt = false,
+    bool ctrl = false,
+    bool shift = false,
+    bool meta = false)
 {
     return quiz_vulkan::raw_platform_scroll_event{
         .timestamp_ms = timestamp_ms,
@@ -132,6 +150,10 @@ quiz_vulkan::raw_platform_input_event platform_scroll(
         .delta_x = delta_x,
         .delta_y = delta_y,
         .unit = unit,
+        .alt = alt,
+        .ctrl = ctrl,
+        .shift = shift,
+        .meta = meta,
     };
 }
 
@@ -166,7 +188,16 @@ void test_mixed_fixture_records_stable_summary_counts()
     const std::array steps{
         step("mouse-down", pointer(raw_platform_pointer_phase::down, 100, 4.0f, 6.0f, raw_platform_pointer_button::primary, 3)),
         step("mouse-up", pointer(raw_platform_pointer_phase::up, 130, 5.0f, 7.0f, raw_platform_pointer_button::primary, 3)),
-        step("wheel", platform_scroll(140, 20.0f, 30.0f, 0.0f, -2.0f, raw_platform_scroll_delta_unit::lines)),
+        step("wheel", platform_scroll(
+            140,
+            20.0f,
+            30.0f,
+            0.0f,
+            -2.0f,
+            raw_platform_scroll_delta_unit::lines,
+            true,
+            false,
+            true)),
         step("text", text(150, "x")),
         step("backspace", key(160, "Backspace")),
         step("ime-preedit", ime(raw_platform_ime_phase::preedit_update, 170, utf8(u8"ㅎ"))),
@@ -193,6 +224,20 @@ void test_mixed_fixture_records_stable_summary_counts()
         "mixed replay mouse up batch counts tap");
     require(recording.batches[2].summary.normalized_events.wheel == 1,
         "mixed replay wheel batch counts wheel");
+    require(recording.batches[2].pointer.timeline.size() == 1,
+        "mixed replay wheel batch records pointer timeline evidence");
+    require_modifiers(recording.batches[2].pointer.timeline[0].modifiers,
+        true,
+        false,
+        true,
+        false,
+        "mixed replay wheel timeline preserves modifier evidence");
+    require_modifiers(recording.batches[2].pointer.timeline[0].normalized_event.modifiers,
+        true,
+        false,
+        true,
+        false,
+        "mixed replay wheel normalized event preserves modifier evidence");
     require(recording.batches[5].summary.routes.ime == 1,
         "mixed replay preedit batch counts ime route");
     require(!recording.batches[5].end_state.preedit_clean,
@@ -1123,7 +1168,17 @@ void test_pointer_replay_timeline_records_gestures_capture_and_wheel()
         step("multi-touch-second-down", pointer(raw_platform_pointer_phase::down, 5010, 1.0f, 1.0f, raw_platform_pointer_button::none, 62)),
         step("multi-touch-first-cancel", pointer(raw_platform_pointer_phase::cancel, 5020, 0.0f, 0.0f, raw_platform_pointer_button::none, 61)),
         step("multi-touch-second-up", pointer(raw_platform_pointer_phase::up, 5030, 1.0f, 1.0f, raw_platform_pointer_button::none, 62)),
-        step("wheel", platform_scroll(6000, 20.0f, 30.0f, 1.0f, -3.0f, raw_platform_scroll_delta_unit::lines)),
+        step("wheel", platform_scroll(
+            6000,
+            20.0f,
+            30.0f,
+            1.0f,
+            -3.0f,
+            raw_platform_scroll_delta_unit::lines,
+            false,
+            true,
+            false,
+            true)),
     };
 
     const normalized_input_replay_recording recording = replay_normalized_input_fixture(engine, steps);
@@ -1233,6 +1288,12 @@ void test_pointer_replay_timeline_records_gestures_capture_and_wheel()
     require(wheel.timeline[0].line_delta_x == 1.0f, "pointer replay wheel records line x delta");
     require(wheel.timeline[0].line_delta_y == -3.0f, "pointer replay wheel records line y delta");
     require(wheel.timeline[0].pixel_delta_y == 0.0f, "pointer replay wheel records pixel delta");
+    require_modifiers(wheel.timeline[0].modifiers,
+        false,
+        true,
+        false,
+        true,
+        "pointer replay wheel records modifier evidence");
 }
 
 void test_combined_focus_ime_text_pointer_replay_evidence_stays_input_owned()
@@ -1258,7 +1319,16 @@ void test_combined_focus_ime_text_pointer_replay_evidence_stays_input_owned()
         step("touch-down", pointer(raw_platform_pointer_phase::down, 7120, 0.0f, 0.0f, raw_platform_pointer_button::none, 90)),
         step("touch-drag", pointer(raw_platform_pointer_phase::move, 7140, 12.0f, 0.0f, raw_platform_pointer_button::none, 90)),
         step("touch-cancel", pointer(raw_platform_pointer_phase::cancel, 7160, 12.0f, 0.0f, raw_platform_pointer_button::none, 90)),
-        step("wheel", platform_scroll(7170, 2.0f, 3.0f, 0.0f, -1.0f, raw_platform_scroll_delta_unit::lines)),
+        step("wheel", platform_scroll(
+            7170,
+            2.0f,
+            3.0f,
+            0.0f,
+            -1.0f,
+            raw_platform_scroll_delta_unit::lines,
+            false,
+            true,
+            true)),
         step("focus-lost", focus(raw_platform_focus_phase::lost, 7180)),
     };
 
@@ -1431,6 +1501,12 @@ void test_combined_focus_ime_text_pointer_replay_evidence_stays_input_owned()
     require(wheel_summary.kinds.wheel == 1, "combined replay wheel batch records wheel");
     require(wheel_summary.timeline[0].line_delta_y == -1.0f,
         "combined replay wheel batch records normalized line delta");
+    require_modifiers(wheel_summary.timeline[0].modifiers,
+        false,
+        true,
+        true,
+        false,
+        "combined replay wheel batch records modifier evidence");
 
     require(!recording.final_state.has_text_focus,
         "combined replay final state has no app-level focus dispatch");

@@ -79,6 +79,7 @@ struct input_action_candidate {
 
     keyboard_chord_diagnostic keyboard;
     normalized_input_event_summary normalized_event;
+    input_modifier_state modifiers;
     gesture_policy_snapshot gesture_policy;
     text_input_presentation_diff text_presentation_diff;
     normalized_input_replay_end_state end_state;
@@ -267,6 +268,7 @@ struct input_action_resolution_result_summary {
     gesture_policy_decision gesture_decision = gesture_policy_decision::none;
     gesture_direction gesture_direction_hint = gesture_direction::none;
     input_event_summary_kind normalized_event_kind = input_event_summary_kind::tap;
+    input_modifier_state modifiers;
 
     std::int64_t duration_ms = 0;
     float start_x = 0.0f;
@@ -815,6 +817,7 @@ inline void accumulate_input_action_candidate_result_counts(
         .tracked_pointer_count_before = entry.tracked_pointer_count_before,
         .tracked_pointer_count_after = entry.tracked_pointer_count_after,
         .normalized_event = entry.normalized_event,
+        .modifiers = entry.modifiers,
         .gesture_policy = entry.gesture_policy,
         .duration_ms = entry.duration_ms,
         .start_x = entry.start_x,
@@ -1359,6 +1362,7 @@ summarize_input_action_candidate_result(
         .gesture_decision = candidate.gesture_policy.decision,
         .gesture_direction_hint = candidate.gesture_policy.direction,
         .normalized_event_kind = candidate.normalized_event.kind,
+        .modifiers = candidate.modifiers,
         .duration_ms = candidate.duration_ms,
         .start_x = candidate.start_x,
         .start_y = candidate.start_y,

@@ -5222,17 +5222,32 @@ vulkan_native_swapchain_operation::enumerate_swapchain_images(
         });
     }
     result.enumerated_image_count = result.images.size();
+    result.image_count_matches_create_execution =
+        result.expected_image_count == 0
+        || result.enumerated_image_count == result.expected_image_count;
+    result.image_handles_ready = std::all_of(
+        result.images.begin(),
+        result.images.end(),
+        [](const vulkan_native_swapchain_image_binding& image) {
+            return image.valid();
+        });
     if (result.enumerated_image_count == 0) {
         result.status = vulkan_native_swapchain_images_execution_status::zero_images;
         result.diagnostic = "Native Vulkan swapchain image enumeration returned no images";
         return result;
     }
-    if (result.expected_image_count > 0
-        && result.enumerated_image_count != result.expected_image_count) {
+    if (!result.image_count_matches_create_execution) {
         result.status =
             vulkan_native_swapchain_images_execution_status::image_count_unavailable;
         result.diagnostic =
             "Native Vulkan swapchain image enumeration count did not match create evidence";
+        return result;
+    }
+    if (!result.image_handles_ready) {
+        result.status =
+            vulkan_native_swapchain_images_execution_status::image_count_unavailable;
+        result.diagnostic =
+            "Native Vulkan swapchain image enumeration returned an invalid image handle";
         return result;
     }
 
@@ -5327,6 +5342,7 @@ vulkan_native_swapchain_operation::acquire_next_image(
     result.vk_acquire_next_image_called = true;
     result.native_result = static_cast<std::int32_t>(native_result);
     result.selected_image_index = image_index;
+    result.acquire_result_recorded = true;
 
     if (native_result == VK_TIMEOUT) {
         result.status = vulkan_native_swapchain_acquire_execution_status::timeout;
@@ -5355,6 +5371,8 @@ vulkan_native_swapchain_operation::acquire_next_image(
         swapchain_detail::find_native_swapchain_image_binding_by_index(
             request.images_execution.images,
             result.selected_image_index);
+    result.selected_image_index_ready =
+        result.selected_image_index < result.available_image_count;
     result.image_id = selected_image.image_id;
     result.image_handle = selected_image.handle;
     result.image_binding_ready = selected_image.valid();

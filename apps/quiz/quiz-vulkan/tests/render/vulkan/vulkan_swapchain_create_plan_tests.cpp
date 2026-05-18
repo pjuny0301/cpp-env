@@ -1644,9 +1644,22 @@ void test_native_swapchain_image_execution_enumerates_created_swapchain_images()
     require(images.ready_for_acquire(), "native swapchain image execution reaches acquire gate");
     require(!images.blocked(), "native swapchain image execution is not blocked");
     require(images.device.value == 77, "image execution preserves device handle");
+    require(
+        images.created_swapchain.value == 222,
+        "image execution records created swapchain handoff handle");
+    require(
+        images.created_swapchain_ready,
+        "image execution records ready created swapchain handle");
+    require(
+        images.created_swapchain_handoff,
+        "image execution records created swapchain handoff readiness");
     require(images.swapchain.value == 222, "image execution consumes created swapchain handle");
     require(images.expected_image_count == 3, "image execution preserves expected image count");
     require(images.enumerated_image_count == 3, "image execution records enumerated image count");
+    require(
+        images.image_count_matches_create_execution,
+        "image execution records count parity with create evidence");
+    require(images.image_handles_ready, "image execution records ready image handles");
     require(images.images.size() == 3, "image execution stores image bindings");
     require(images.images[0].image_id.value == 1, "image execution assigns first image id");
     require(images.images[0].handle.value == 6001, "image execution records first image handle");
@@ -1711,6 +1724,12 @@ void test_native_swapchain_acquire_execution_reports_acquired_and_suboptimal_ima
         acquired.ready_for_command_recording(),
         "native acquire execution reaches command recording gate");
     require(acquired.selected_image_index == 1, "native acquire execution records image index");
+    require(acquired.available_image_count == 3, "native acquire preserves available image count");
+    require(
+        acquired.image_execution_handoff_ready,
+        "native acquire records ready image execution handoff");
+    require(acquired.acquire_result_recorded, "native acquire records native acquire result");
+    require(acquired.selected_image_index_ready, "native acquire records selected index readiness");
     require(acquired.image_id.value == 2, "native acquire execution records image id");
     require(acquired.image_handle.value == 6002, "native acquire execution records image handle");
     require(acquired.timeout_nanoseconds == 16000000, "native acquire preserves timeout");
@@ -1761,6 +1780,11 @@ void test_native_swapchain_acquire_execution_reports_acquired_and_suboptimal_ima
         "native acquire execution reports suboptimal");
     require(suboptimal.ready_for_command_recording(), "suboptimal acquire remains recordable");
     require(suboptimal.suboptimal, "native acquire execution records suboptimal flag");
+    require(
+        suboptimal.image_execution_handoff_ready,
+        "suboptimal acquire records ready image execution handoff");
+    require(suboptimal.acquire_result_recorded, "suboptimal acquire records native result");
+    require(suboptimal.selected_image_index_ready, "suboptimal acquire records index readiness");
     require(suboptimal.image_id.value == 3, "suboptimal acquire records selected image id");
     require(suboptimal.image_handle.value == 7003, "suboptimal acquire records selected handle");
 }
@@ -1803,6 +1827,35 @@ void test_native_swapchain_image_acquire_execution_reports_blockers_and_results(
         zero_images.status
             == vulkan_backend::vulkan_native_swapchain_images_execution_status::zero_images,
         "image execution reports zero images");
+    require(
+        !zero_images.image_count_matches_create_execution,
+        "zero image execution records count mismatch");
+    require(!zero_images.image_handles_ready, "zero image execution is not handle-ready");
+
+    vulkan_backend::fake_vulkan_native_swapchain_operation invalid_image_operation(
+        vulkan_backend::fake_vulkan_native_swapchain_operation_options{
+            .image_handles =
+                {
+                    vulkan_backend::vulkan_swapchain_image_handle{.value = 9101},
+                    vulkan_backend::vulkan_swapchain_image_handle{},
+                    vulkan_backend::vulkan_swapchain_image_handle{.value = 9103},
+                },
+        });
+    const vulkan_backend::vulkan_native_swapchain_images_execution_result invalid_image =
+        vulkan_backend::enumerate_native_vulkan_swapchain_images(
+            invalid_image_operation,
+            vulkan_backend::vulkan_native_swapchain_images_execution_request{
+                .create_execution = make_ready_native_swapchain_create_execution(),
+                .dispatch_table = dispatch,
+            });
+    require(
+        invalid_image.status
+            == vulkan_backend::vulkan_native_swapchain_images_execution_status::image_count_unavailable,
+        "image execution reports invalid image handle");
+    require(
+        invalid_image.image_count_matches_create_execution,
+        "invalid image execution still records matching image count");
+    require(!invalid_image.image_handles_ready, "invalid image execution records handle blocker");
 
     const vulkan_backend::vulkan_native_swapchain_images_execution_result images =
         make_ready_native_swapchain_images_execution();
@@ -1824,6 +1877,10 @@ void test_native_swapchain_image_acquire_execution_reports_blockers_and_results(
             == vulkan_backend::vulkan_native_swapchain_acquire_execution_status::timeout,
         "acquire execution reports timeout");
     require(timeout.timed_out, "acquire execution records timeout flag");
+    require(timeout.acquire_result_recorded, "timeout acquire records native result");
+    require(
+        !timeout.selected_image_index_ready,
+        "timeout acquire does not report selected image readiness");
     require(!timeout.ready_for_command_recording(), "timeout acquire is not recordable");
 
     vulkan_backend::fake_vulkan_native_swapchain_operation out_of_date_operation(
@@ -1844,6 +1901,10 @@ void test_native_swapchain_image_acquire_execution_reports_blockers_and_results(
             == vulkan_backend::vulkan_native_swapchain_acquire_execution_status::out_of_date,
         "acquire execution reports out-of-date");
     require(out_of_date.out_of_date, "acquire execution records out-of-date flag");
+    require(out_of_date.acquire_result_recorded, "out-of-date acquire records native result");
+    require(
+        !out_of_date.selected_image_index_ready,
+        "out-of-date acquire does not report selected image readiness");
 
     vulkan_backend::fake_vulkan_native_swapchain_operation failing_acquire(
         vulkan_backend::fake_vulkan_native_swapchain_operation_options{
@@ -1864,6 +1925,10 @@ void test_native_swapchain_image_acquire_execution_reports_blockers_and_results(
             == vulkan_backend::vulkan_native_swapchain_acquire_execution_status::acquire_failed,
         "acquire execution reports failure");
     require(failed.native_result == -9, "acquire execution records native failure result");
+    require(failed.acquire_result_recorded, "failed acquire records native result");
+    require(
+        !failed.selected_image_index_ready,
+        "failed acquire does not report selected image readiness");
 
     vulkan_backend::fake_vulkan_native_swapchain_operation missing_binding_operation(
         vulkan_backend::fake_vulkan_native_swapchain_operation_options{
@@ -1883,6 +1948,12 @@ void test_native_swapchain_image_acquire_execution_reports_blockers_and_results(
         missing_binding.status
             == vulkan_backend::vulkan_native_swapchain_acquire_execution_status::image_binding_unavailable,
         "acquire execution reports missing image binding");
+    require(
+        missing_binding.acquire_result_recorded,
+        "missing binding acquire records native result");
+    require(
+        !missing_binding.selected_image_index_ready,
+        "missing binding acquire records selected index blocker");
 }
 
 void test_native_image_view_dispatch_table_resolves_create_destroy_symbols()

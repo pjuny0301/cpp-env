@@ -4147,6 +4147,8 @@ static_assert(requires(
     { result.dispatch_table } -> std::same_as<
         render::vulkan_backend::vulkan_native_swapchain_operation_dispatch_table&>;
     { result.device } -> std::same_as<render::vulkan_backend::vulkan_device_handle&>;
+    { result.created_swapchain }
+        -> std::same_as<render::vulkan_backend::vulkan_swapchain_handle&>;
     { result.swapchain } -> std::same_as<render::vulkan_backend::vulkan_swapchain_handle&>;
     { result.expected_image_count } -> std::same_as<std::size_t&>;
     { result.enumerated_image_count } -> std::same_as<std::size_t&>;
@@ -4160,7 +4162,11 @@ static_assert(requires(
     { result.get_swapchain_images_symbol }
         -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
     { result.create_execution_ready } -> std::same_as<bool&>;
+    { result.created_swapchain_ready } -> std::same_as<bool&>;
+    { result.created_swapchain_handoff } -> std::same_as<bool&>;
     { result.dispatch_table_ready } -> std::same_as<bool&>;
+    { result.image_count_matches_create_execution } -> std::same_as<bool&>;
+    { result.image_handles_ready } -> std::same_as<bool&>;
     { result.vk_get_swapchain_images_called } -> std::same_as<bool&>;
     { result.native_result } -> std::same_as<std::int32_t&>;
     { result.diagnostic } -> std::same_as<std::string&>;
@@ -4218,6 +4224,10 @@ static_assert(requires(
     { result.acquire_plan_ready } -> std::same_as<bool&>;
     { result.dispatch_table_ready } -> std::same_as<bool&>;
     { result.sync_primitives_ready } -> std::same_as<bool&>;
+    { result.available_image_count } -> std::same_as<std::size_t&>;
+    { result.image_execution_handoff_ready } -> std::same_as<bool&>;
+    { result.acquire_result_recorded } -> std::same_as<bool&>;
+    { result.selected_image_index_ready } -> std::same_as<bool&>;
     { result.image_binding_ready } -> std::same_as<bool&>;
     { result.image_available } -> std::same_as<bool&>;
     { result.image_acquired } -> std::same_as<bool&>;

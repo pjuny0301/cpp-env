@@ -3063,6 +3063,10 @@ void record_glyph_atlas_materialization_diagnostics(
             .has_atlas_update = update != nullptr,
             .atlas_update_bounds = update == nullptr ? render_rect{} : update->updated_bounds,
             .atlas_update_rgba_bytes = update == nullptr ? 0U : update->rgba.size(),
+            .line_index = cluster == nullptr ? 0U : cluster->snapshot.line_index,
+            .pen_x = cluster == nullptr ? 0.0f : cluster->bounds.x,
+            .pen_y = cluster == nullptr ? 0.0f : cluster->bounds.y,
+            .baseline = cluster == nullptr ? 0.0f : cluster->snapshot.baseline,
         };
 
         append_render_text_glyph_atlas_materialization(

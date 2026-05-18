@@ -23,8 +23,8 @@ Historical integration notes are kept in git history, not repeated here.
   work is present/finish evidence after acquired image ownership.
 - Text: atlas packet consumption evidence is integrated. Active worker work is
   HarfBuzz-shaped layout handoff versus deterministic fallback evidence.
-- Image: staging payload blocker coverage is integrated. The image worker is
-  idle until the next texture upload/materialization step.
+- Image: staging payload blocker coverage is integrated. Active worker work is
+  staging payload diff/regression evidence.
 - Asset: materialized byte payload request/review evidence is integrated. Active
   worker work is shader byte pipeline summary for render consumers.
 - Input/IME: wheel modifier diagnostics are integrated; input is idle unless
@@ -38,8 +38,8 @@ Historical integration notes are kept in git history, not repeated here.
   `codex/text-harfbuzz-layout-handoff-20260515`.
 - `codex-asset-unified-cache-key-20260514`: idle after shader byte source
   pipeline summary and focused-header split.
-- `codex-image-texture-next-20260514`: idle after staging payload blocker
-  evidence tests.
+- `codex-image-texture-next-20260514`: busy on
+  `codex/image-staging-payload-diff-20260515`.
 - `codex-input-ime`: idle after wheel/drag/touch-like diagnostics work.
 - Idle sessions are intentionally kept alive. Give them fresh baseline branches
   before new work; do not re-merge historical ahead commits.

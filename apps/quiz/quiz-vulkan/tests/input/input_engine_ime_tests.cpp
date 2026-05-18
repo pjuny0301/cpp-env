@@ -98,6 +98,16 @@ quiz_vulkan::raw_platform_input_event key(
     };
 }
 
+quiz_vulkan::raw_platform_input_event focus(
+    quiz_vulkan::raw_platform_focus_phase phase,
+    std::int64_t timestamp_ms)
+{
+    return quiz_vulkan::raw_platform_focus_event{
+        .timestamp_ms = timestamp_ms,
+        .phase = phase,
+    };
+}
+
 void test_keyboard_navigation_diagnostics_preserve_ime_composition()
 {
     using namespace quiz_vulkan;
@@ -632,6 +642,94 @@ void test_clear_text_focus_diagnoses_preedit_and_selection_cleanup()
         "clear focus does not route text without a new focus target");
 }
 
+void test_raw_focus_loss_records_utf8_selection_cleanup_without_text_or_ime_route()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+    const std::string selected = utf8(u8"한");
+    const std::string base = std::string("A") + selected + "B";
+
+    require(engine.process_raw_event(text(300, base)).size() == 1,
+        "raw focus loss base text commits");
+    require(engine.process_raw_event(key(310, "Home")).size() == 1,
+        "raw focus loss home moves caret");
+    require(engine.process_raw_event(key(320, "ArrowRight")).size() == 1,
+        "raw focus loss arrow moves past ascii");
+    require(engine.process_raw_event(key(330, "ArrowRight", false, raw_platform_key_phase::down, false, true)).size() == 1,
+        "raw focus loss shift arrow selects utf8 codepoint");
+    std::optional<text_range> selection = engine.text_model().selection_range();
+    require(selection.has_value(), "raw focus loss selection is active");
+    require_range(*selection, 1, 1 + selected.size(),
+        "raw focus loss selected range covers full utf8 codepoint");
+
+    std::vector<input_event> events = engine.process_raw_event(focus(raw_platform_focus_phase::lost, 340));
+    require(events.size() == 1, "raw focus loss emits one focus-lost text event");
+    const text_event& lost = require_event<text_event>(events, 0);
+    require(lost.kind == text_event_kind::focus_lost, "raw focus loss event kind is focus lost");
+    require(lost.target_id == "answer", "raw focus loss event preserves old target");
+    require(lost.utf8_text.empty(), "raw focus loss event carries no submitted text");
+
+    require(!engine.has_text_focus(), "raw focus loss clears text focus");
+    require(engine.text_focus_id().empty(), "raw focus loss clears target id");
+    require(engine.text_model().text() == base, "raw focus loss preserves committed text");
+    require(engine.text_model().display_text() == base, "raw focus loss display has no preedit");
+    require(!engine.text_model().selection_range().has_value(), "raw focus loss clears selection");
+    require(engine.text_model().caret_byte_offset() == 1 + selected.size(),
+        "raw focus loss keeps caret on utf8-safe boundary");
+    require(engine.text_model().preedit_text().empty(), "raw focus loss has no preedit text");
+    require(!engine.text_model().ime_composition().active, "raw focus loss has no composition");
+    require(!engine.text_model().has_submit_text(), "raw focus loss does not submit text");
+
+    const input_routing_diagnostics& diagnostics = engine.routing_diagnostics();
+    require(diagnostics.normalized_events.empty(),
+        "raw focus loss emits no gesture or wheel normalized events");
+    require(diagnostics.action_routes.size() == 1,
+        "raw focus loss emits exactly one focus route");
+    const action_route_policy_diagnostic& focus_policy = require_policy(
+        diagnostics,
+        0,
+        action_route_policy_kind::focus_loss,
+        "raw focus loss records focus cleanup policy");
+    require(focus_policy.emits_input_event, "raw focus loss route points at focus event");
+    require(focus_policy.event_index == 0, "raw focus loss route points at first event");
+    require(focus_policy.target_id == "answer", "raw focus loss route preserves old target");
+    require(focus_policy.text_byte_count_before == base.size(),
+        "raw focus loss route records committed bytes before");
+    require(focus_policy.text_byte_count_after == base.size(),
+        "raw focus loss route records committed bytes after");
+    require(focus_policy.had_selection_before,
+        "raw focus loss route records active selection before");
+    require(!focus_policy.has_selection_after,
+        "raw focus loss route records cleared selection after");
+    require_range(focus_policy.selection_before, 1, 1 + selected.size(),
+        "raw focus loss route selection before is utf8-safe");
+    require_range(focus_policy.selection_after, 0, 0,
+        "raw focus loss route selection after is cleared");
+    require_range(focus_policy.caret_before, 1 + selected.size(), 1 + selected.size(),
+        "raw focus loss route caret before is utf8-safe");
+    require_range(focus_policy.caret_after, 1 + selected.size(), 1 + selected.size(),
+        "raw focus loss route caret after is utf8-safe");
+    require(!focus_policy.composition.active, "raw focus loss route has no composition snapshot");
+    require(focus_policy.composition.preedit_text.empty(),
+        "raw focus loss route has no preedit snapshot");
+
+    const input_diagnostic_summary& summary = diagnostics.summary;
+    require(summary.normalized_event_count == 0,
+        "raw focus loss summary has no normalized input events");
+    require(summary.routes.focus == 1, "raw focus loss summary counts one focus route");
+    require(summary.routes.text == 0, "raw focus loss summary counts no text route");
+    require(summary.routes.ime == 0, "raw focus loss summary counts no ime route");
+    require(summary.routes.pointer == 0, "raw focus loss summary counts no pointer route");
+    require(summary.routes.total == 1, "raw focus loss summary counts only focus cleanup");
+    require(summary.focus_ended_cleanly, "raw focus loss summary ends with clean focus");
+    require(summary.preedit_ended_cleanly, "raw focus loss summary ends with clean preedit");
+    require(summary.pointer_capture_ended_cleanly,
+        "raw focus loss summary ends with clean pointer capture");
+}
+
 void test_ime_preedit_commit_edges()
 {
     using namespace quiz_vulkan;
@@ -1012,6 +1110,7 @@ int main()
     test_ime_suppressed_text_and_shortcuts_emit_route_diagnostics();
     test_focus_target_change_clears_stale_preedit_with_diagnostics();
     test_clear_text_focus_diagnoses_preedit_and_selection_cleanup();
+    test_raw_focus_loss_records_utf8_selection_cleanup_without_text_or_ime_route();
     test_ime_preedit_commit_edges();
     test_ime_composition_restart_cancels_visible_preedit();
     test_empty_ime_commit_and_end_cancel_preedit();

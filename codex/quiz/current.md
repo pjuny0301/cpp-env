@@ -72,8 +72,8 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `ad6287e` after
-  swapchain image acquire handoff evidence and source-document cleanup.
+- Main branch `codex/quiz-vulkan-remake-baseline` is at `c56535c` after
+  Vulkan present image execution evidence.
 - Last full Windows MinGW CTest batch should be treated as stale. Run focused
   tests during normal integration; run full CTest after the next meaningful
   engine batch.
@@ -100,6 +100,14 @@ Historical integration notes are kept in git history, not repeated here.
 - After `ad6287e`, repository assignment source documents were removed; Desktop
   PDF exports were regenerated and checked for student id, repository URL, and
   absence of assignment/LMS/source-MD metadata.
+- After `c56535c`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests`,
+  `quiz_vulkan_vulkan_native_frame_operation_tests`,
+  `quiz_vulkan_vulkan_present_completion_plan_tests`,
+  `quiz_vulkan_vulkan_queue_submit_adapter_tests`,
+  `quiz_vulkan_vulkan_swapchain_create_plan_tests`, and
+  `quiz_vulkan_renderer_tests`; focused CTest passed 5/5 for renderer,
+  native-frame, present-completion, queue-submit, and swapchain-create targets.
 
 ## Useful Commands
 

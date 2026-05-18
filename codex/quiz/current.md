@@ -23,9 +23,8 @@ Historical integration notes are kept in git history, not repeated here.
   work is present/finish evidence after acquired image ownership.
 - Text: atlas packet consumption evidence is integrated. Active worker work is
   HarfBuzz-shaped layout handoff versus deterministic fallback evidence.
-- Image: renderer-bound resource packet consumption diff evidence is integrated.
-  Active worker work is decoded texture staging payload planning before Vulkan
-  upload.
+- Image: staging payload blocker coverage is integrated. The image worker is
+  idle until the next texture upload/materialization step.
 - Asset: materialized byte payload request/review evidence is integrated. Active
   worker work is shader byte pipeline summary for render consumers.
 - Input/IME: wheel modifier diagnostics are integrated; input is idle unless
@@ -39,8 +38,8 @@ Historical integration notes are kept in git history, not repeated here.
   `codex/text-harfbuzz-layout-handoff-20260515`.
 - `codex-asset-unified-cache-key-20260514`: idle after shader byte source
   pipeline summary and focused-header split.
-- `codex-image-texture-next-20260514`: busy on
-  `codex/image-staging-payload-plan-20260515`.
+- `codex-image-texture-next-20260514`: idle after staging payload blocker
+  evidence tests.
 - `codex-input-ime`: idle after wheel/drag/touch-like diagnostics work.
 - Idle sessions are intentionally kept alive. Give them fresh baseline branches
   before new work; do not re-merge historical ahead commits.
@@ -73,8 +72,8 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `cd5f0c5` after
-  text atlas packet consumption evidence integration.
+- Main branch `codex/quiz-vulkan-remake-baseline` is at `d8f8f6f` after image
+  staging payload blocker evidence test integration.
 - Last full Windows MinGW CTest batch should be treated as stale. Run focused
   tests during normal integration; run full CTest after the next meaningful
   engine batch.
@@ -123,6 +122,11 @@ Historical integration notes are kept in git history, not repeated here.
   `quiz_vulkan_text_frame_resource_packet_materialization_tests`; focused CTest
   passed 4/4 for the text raster payload, shaped atlas update, renderer glyph
   quad packet, and text frame resource packet materialization targets.
+- After `d8f8f6f`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests`,
+  `quiz_vulkan_fake_image_texture_uploader_tests`, and
+  `quiz_vulkan_image_texture_pipeline_tests`; focused CTest passed 2/2 for image
+  texture uploader and image texture pipeline.
 
 ## Useful Commands
 

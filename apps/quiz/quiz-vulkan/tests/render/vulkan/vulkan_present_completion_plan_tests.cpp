@@ -120,13 +120,25 @@ make_completed_queue_present()
                 vulkan_backend::vulkan_command_recording_command_buffer_handle{.value = 99},
             .sync_primitives = make_sync(),
             .batch_count = 1,
+            .wait_intent_count = 1,
+            .signal_intent_count = 2,
+            .command_submit_ready = true,
+            .submitted_frame_ready = true,
         },
         .present_call = vulkan_backend::vulkan_queue_submit_adapter_present_call{
             .queue = vulkan_backend::vulkan_queue_handle{.value = 101},
+            .queue_family_index = 1,
+            .queue_family_ready = true,
             .swapchain = vulkan_backend::vulkan_swapchain_handle{.value = 90},
+            .acquired_image_index = 5,
             .image_id = vulkan_backend::vulkan_swapchain_image_id{.value = 5},
+            .image_handle = vulkan_backend::vulkan_swapchain_image_handle{.value = 5005},
             .wait_render_finished_semaphore =
                 vulkan_backend::vulkan_command_submit_sync_handle{.value = 12},
+            .wait_intent_count = 1,
+            .signal_intent_count = 2,
+            .command_submit_ready = true,
+            .submitted_frame_ready = true,
         },
         .submit_result = vulkan_backend::vulkan_queue_submit_adapter_operation_result{
             .checked = true,
@@ -142,6 +154,17 @@ make_completed_queue_present()
         .present_called = true,
         .submit_order = 1,
         .present_order = 2,
+        .acquired_image_index = 5,
+        .image_handle = vulkan_backend::vulkan_swapchain_image_handle{.value = 5005},
+        .present_queue_family_index = 1,
+        .acquired_image_index_ready = true,
+        .acquired_image_handle_ready = true,
+        .present_queue_family_ready = true,
+        .command_submit_ready = true,
+        .submitted_frame_ready = true,
+        .present_wait_intent_ready = true,
+        .submit_signal_intent_ready = true,
+        .present_execution_ready = true,
         .diagnostic = "submitted and presented",
     };
 }
@@ -375,10 +398,19 @@ void test_vulkan_present_completion_plan_uses_queue_present_adapter_summary()
     require(plan.frame_completion_ready, "frame completion readiness is exposed");
     require(plan.request.source_adapter_checked, "present request comes from adapter");
     require(plan.request.present_queue.value == 101, "present completion preserves adapter present queue");
+    require(plan.request.present_queue_family_index == 1, "present completion preserves present family index");
+    require(plan.request.present_queue_family_ready, "present completion records present family readiness");
     require(plan.request.swapchain.value == 90, "present completion preserves adapter swapchain");
+    require(plan.request.acquired_image_index == 5, "present completion preserves acquired image index");
     require(plan.request.image_id.value == 5, "present completion preserves adapter image");
+    require(plan.request.image_handle.value == 5005, "present completion preserves image handle");
+    require(plan.request.wait_intent_count == 1, "present completion preserves wait intent count");
+    require(plan.request.signal_intent_count == 2, "present completion preserves signal intent count");
+    require(plan.request.command_submit_ready, "present completion records command submit readiness");
+    require(plan.request.submitted_frame_ready, "present completion records submitted frame readiness");
     require(plan.result.present_called, "present completion records present call");
     require(plan.result.submit_before_present, "present completion records submit-before-present order");
+    require(plan.result.present_execution_ready, "present completion records present execution readiness");
 }
 
 void test_vulkan_present_completion_plan_accepts_existing_frame_present_path()
@@ -534,9 +566,18 @@ void test_native_queue_present_operation_reports_ready_completion()
     require(operation.device.value == 77, "native present preserves device handle");
     require(operation.swapchain.value == 90, "native present preserves swapchain handle");
     require(operation.present_queue.value == 101, "native present preserves present queue");
+    require(operation.present_queue_family_index == 1, "native present preserves present queue family index");
+    require(operation.present_queue_family_ready, "native present records present queue family readiness");
+    require(operation.acquired_image_index == 5, "native present preserves acquired image index");
     require(operation.image_id.value == 5, "native present preserves image id");
     require(operation.image_handle.value == 5005, "native present preserves image handle");
     require(operation.wait_render_finished_semaphore.value == 12, "native present preserves wait semaphore");
+    require(operation.acquired_image_index_ready, "native present records acquired index readiness");
+    require(operation.acquired_image_handle_ready, "native present records acquired handle readiness");
+    require(operation.command_submit_ready, "native present records command submit readiness");
+    require(operation.present_wait_intent_ready, "native present records present wait readiness");
+    require(operation.present_signal_intent_ready, "native present records present signal readiness");
+    require(operation.present_execution_ready, "native present records present execution readiness");
     require(operation.submit_before_present, "native present records submit-before-present order");
     require(operation.operation.ready_for_frame_completion(), "native present summary is frame-ready");
     require(

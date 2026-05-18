@@ -2346,14 +2346,25 @@ struct vulkan_present_request_summary {
     bool requested = false;
     bool source_adapter_checked = false;
     vulkan_queue_handle present_queue;
+    std::size_t present_queue_family_index = 0;
+    bool present_queue_family_ready = false;
     vulkan_swapchain_handle swapchain;
+    std::size_t acquired_image_index = 0;
     vulkan_swapchain_image_id image_id;
+    vulkan_swapchain_image_handle image_handle;
     vulkan_command_submit_sync_handle wait_render_finished_semaphore;
+    std::size_t wait_intent_count = 0;
+    std::size_t signal_intent_count = 0;
+    bool command_submit_ready = false;
+    bool submitted_frame_ready = false;
 
     bool completed() const
     {
         return requested && present_queue.valid() && swapchain.valid()
-            && image_id.value > 0 && wait_render_finished_semaphore.valid();
+            && present_queue_family_ready && image_id.value > 0
+            && wait_render_finished_semaphore.valid() && wait_intent_count > 0
+            && signal_intent_count > 0 && command_submit_ready
+            && submitted_frame_ready;
     }
 };
 
@@ -2363,6 +2374,7 @@ struct vulkan_present_result_summary {
         vulkan_queue_submit_adapter_call_status::not_called;
     bool present_called = false;
     bool submit_before_present = false;
+    bool present_execution_ready = false;
     bool recoverable_failure = false;
     bool fatal_failure = false;
     std::string diagnostic;
@@ -2370,8 +2382,8 @@ struct vulkan_present_result_summary {
     bool completed() const
     {
         return checked && status == vulkan_queue_submit_adapter_call_status::completed
-            && present_called && submit_before_present && !recoverable_failure
-            && !fatal_failure;
+            && present_called && submit_before_present && present_execution_ready
+            && !recoverable_failure && !fatal_failure;
     }
 
     bool failed() const
@@ -2479,6 +2491,9 @@ struct vulkan_native_queue_present_operation_summary {
     vulkan_device_handle device;
     vulkan_swapchain_handle swapchain;
     vulkan_queue_handle present_queue;
+    std::size_t present_queue_family_index = 0;
+    bool present_queue_family_ready = false;
+    std::size_t acquired_image_index = 0;
     vulkan_swapchain_image_id image_id;
     vulkan_swapchain_image_handle image_handle;
     vulkan_command_submit_sync_handle wait_render_finished_semaphore;
@@ -2498,6 +2513,12 @@ struct vulkan_native_queue_present_operation_summary {
     bool submitted_frame_ready = false;
     bool present_request_ready = false;
     bool present_adapter_result_ready = false;
+    bool acquired_image_index_ready = false;
+    bool acquired_image_handle_ready = false;
+    bool command_submit_ready = false;
+    bool present_wait_intent_ready = false;
+    bool present_signal_intent_ready = false;
+    bool present_execution_ready = false;
     bool present_result_checked = false;
     bool present_result_completed = false;
     bool submit_before_present = false;
@@ -2528,6 +2549,9 @@ struct vulkan_native_queue_present_operation_result {
     vulkan_device_handle device;
     vulkan_swapchain_handle swapchain;
     vulkan_queue_handle present_queue;
+    std::size_t present_queue_family_index = 0;
+    bool present_queue_family_ready = false;
+    std::size_t acquired_image_index = 0;
     vulkan_swapchain_image_id image_id;
     vulkan_swapchain_image_handle image_handle;
     vulkan_command_submit_sync_handle wait_render_finished_semaphore;
@@ -2547,6 +2571,12 @@ struct vulkan_native_queue_present_operation_result {
     bool submitted_frame_ready = false;
     bool present_request_ready = false;
     bool present_adapter_result_ready = false;
+    bool acquired_image_index_ready = false;
+    bool acquired_image_handle_ready = false;
+    bool command_submit_ready = false;
+    bool present_wait_intent_ready = false;
+    bool present_signal_intent_ready = false;
+    bool present_execution_ready = false;
     bool present_result_checked = false;
     bool present_result_completed = false;
     bool submit_before_present = false;

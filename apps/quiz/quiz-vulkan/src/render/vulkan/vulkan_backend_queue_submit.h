@@ -66,6 +66,10 @@ struct vulkan_queue_submit_adapter_submit_call {
     vulkan_command_recording_command_buffer_handle command_buffer;
     vulkan_command_submit_sync_primitives sync_primitives;
     std::size_t batch_count = 0;
+    std::size_t wait_intent_count = 0;
+    std::size_t signal_intent_count = 0;
+    bool command_submit_ready = false;
+    bool submitted_frame_ready = false;
 
     bool valid() const
     {
@@ -78,9 +82,17 @@ struct vulkan_queue_submit_adapter_submit_call {
 
 struct vulkan_queue_submit_adapter_present_call {
     vulkan_queue_handle queue;
+    std::size_t queue_family_index = 0;
+    bool queue_family_ready = false;
     vulkan_swapchain_handle swapchain;
+    std::size_t acquired_image_index = 0;
     vulkan_swapchain_image_id image_id;
+    vulkan_swapchain_image_handle image_handle;
     vulkan_command_submit_sync_handle wait_render_finished_semaphore;
+    std::size_t wait_intent_count = 0;
+    std::size_t signal_intent_count = 0;
+    bool command_submit_ready = false;
+    bool submitted_frame_ready = false;
 
     bool valid() const
     {
@@ -167,7 +179,21 @@ inline std::string_view queue_submit_present_status_name(
 struct vulkan_queue_submit_present_request {
     bool require_present = true;
     vulkan_swapchain_image_id image_id{.value = 1};
+    std::size_t acquired_image_index = 0;
+    vulkan_swapchain_image_handle image_handle;
 };
+
+inline vulkan_queue_submit_present_request make_vulkan_queue_submit_present_request_from_acquire(
+    const vulkan_native_swapchain_acquire_operation_result& acquire_operation,
+    bool require_present = true)
+{
+    return vulkan_queue_submit_present_request{
+        .require_present = require_present,
+        .image_id = acquire_operation.image_id,
+        .acquired_image_index = acquire_operation.selected_image_index,
+        .image_handle = acquire_operation.image_handle,
+    };
+}
 
 struct vulkan_queue_submit_present_result {
     bool checked = false;
@@ -182,6 +208,17 @@ struct vulkan_queue_submit_present_result {
     bool present_called = false;
     std::size_t submit_order = 0;
     std::size_t present_order = 0;
+    std::size_t acquired_image_index = 0;
+    vulkan_swapchain_image_handle image_handle;
+    std::size_t present_queue_family_index = 0;
+    bool acquired_image_index_ready = false;
+    bool acquired_image_handle_ready = false;
+    bool present_queue_family_ready = false;
+    bool command_submit_ready = false;
+    bool submitted_frame_ready = false;
+    bool present_wait_intent_ready = false;
+    bool submit_signal_intent_ready = false;
+    bool present_execution_ready = false;
     std::string diagnostic;
 
     bool submit_before_present() const
@@ -194,7 +231,7 @@ struct vulkan_queue_submit_present_result {
     {
         return checked && status == vulkan_queue_submit_present_status::submitted_and_presented
             && submit_result.completed() && present_result.completed()
-            && submit_before_present();
+            && submit_before_present() && present_execution_ready;
     }
 
     bool recoverable_failure() const
@@ -282,6 +319,19 @@ inline vulkan_queue_handle selected_present_queue(
     return {};
 }
 
+inline vulkan_device_queue_selection selected_present_queue_selection(
+    const vulkan_command_submit_readiness_result& readiness)
+{
+    for (const vulkan_device_queue_selection& queue :
+         readiness.command_recording.render_pass.swapchain.device.selected_queues) {
+        if (queue.capability == vulkan_device_queue_capability::present && queue.valid()) {
+            return queue;
+        }
+    }
+
+    return {};
+}
+
 inline vulkan_queue_submit_present_result make_queue_submit_present_result(
     const vulkan_command_submit_readiness_result& readiness)
 {
@@ -297,6 +347,17 @@ inline vulkan_queue_submit_present_result make_queue_submit_present_result(
         .present_called = false,
         .submit_order = 0,
         .present_order = 0,
+        .acquired_image_index = 0,
+        .image_handle = {},
+        .present_queue_family_index = 0,
+        .acquired_image_index_ready = false,
+        .acquired_image_handle_ready = false,
+        .present_queue_family_ready = false,
+        .command_submit_ready = false,
+        .submitted_frame_ready = false,
+        .present_wait_intent_ready = false,
+        .submit_signal_intent_ready = false,
+        .present_execution_ready = false,
         .diagnostic = {},
     };
 }
@@ -377,6 +438,28 @@ inline bool readiness_has_submit_failure(
     const vulkan_command_submit_readiness_result& readiness)
 {
     return readiness.recoverable_submit_failure() || readiness.fatal_submit_failure();
+}
+
+inline std::size_t submit_wait_intent_count(
+    const vulkan_command_submit_sync_primitives& sync_primitives)
+{
+    return sync_primitives.image_available_semaphore.valid() ? 1U : 0U;
+}
+
+inline std::size_t submit_signal_intent_count(
+    const vulkan_command_submit_sync_primitives& sync_primitives)
+{
+    return (sync_primitives.render_finished_semaphore.valid() ? 1U : 0U)
+        + (sync_primitives.frame_fence.valid() ? 1U : 0U);
+}
+
+inline bool present_execution_ready(
+    const vulkan_queue_submit_present_result& result)
+{
+    return result.command_submit_ready && result.submitted_frame_ready
+        && result.present_queue_family_ready && result.present_wait_intent_ready
+        && result.submit_signal_intent_ready && result.present_call.valid()
+        && result.submit_before_present();
 }
 
 } // namespace queue_submit_detail
@@ -495,11 +578,28 @@ inline vulkan_queue_submit_present_result submit_and_present_vulkan_queue_frame(
         return result;
     }
 
+    result.acquired_image_index = request.acquired_image_index;
+    result.image_handle = request.image_handle;
+    result.acquired_image_index_ready =
+        request.acquired_image_index > 0 || request.image_handle.valid();
+    result.acquired_image_handle_ready = request.image_handle.valid();
+    result.command_submit_ready = readiness.ready_for_submit();
+    result.present_wait_intent_ready =
+        readiness.sync_primitives.render_finished_semaphore.valid();
+    result.submit_signal_intent_ready =
+        queue_submit_detail::submit_signal_intent_count(readiness.sync_primitives) > 0;
+
     result.submit_call = vulkan_queue_submit_adapter_submit_call{
         .queue = readiness.submit_queue,
         .command_buffer = readiness.command_buffer,
         .sync_primitives = readiness.sync_primitives,
         .batch_count = readiness.planned_batch_count,
+        .wait_intent_count =
+            queue_submit_detail::submit_wait_intent_count(readiness.sync_primitives),
+        .signal_intent_count =
+            queue_submit_detail::submit_signal_intent_count(readiness.sync_primitives),
+        .command_submit_ready = result.command_submit_ready,
+        .submitted_frame_ready = readiness.frame_result.completed(),
     };
     if (!result.submit_call.valid()) {
         result.status = vulkan_queue_submit_present_status::submit_queue_unavailable;
@@ -514,14 +614,28 @@ inline vulkan_queue_submit_present_result submit_and_present_vulkan_queue_frame(
         queue_submit_detail::map_submit_failure(result, result.submit_result);
         return result;
     }
+    result.submitted_frame_ready = true;
 
-    const vulkan_queue_handle present_queue = queue_submit_detail::selected_present_queue(readiness);
+    const vulkan_device_queue_selection present_queue =
+        queue_submit_detail::selected_present_queue_selection(readiness);
+    result.present_queue_family_index = present_queue.family_index;
+    result.present_queue_family_ready = present_queue.valid();
     result.present_call = vulkan_queue_submit_adapter_present_call{
-        .queue = present_queue,
+        .queue = present_queue.queue,
+        .queue_family_index = present_queue.family_index,
+        .queue_family_ready = present_queue.valid(),
         .swapchain = readiness.command_recording.render_pass.swapchain.handle,
+        .acquired_image_index = request.acquired_image_index,
         .image_id = request.image_id.value > 0 ? request.image_id : readiness.image_id,
+        .image_handle = request.image_handle,
         .wait_render_finished_semaphore =
             readiness.sync_primitives.render_finished_semaphore,
+        .wait_intent_count =
+            queue_submit_detail::submit_wait_intent_count(readiness.sync_primitives),
+        .signal_intent_count =
+            queue_submit_detail::submit_signal_intent_count(readiness.sync_primitives),
+        .command_submit_ready = result.command_submit_ready,
+        .submitted_frame_ready = result.submitted_frame_ready,
     };
     if (request.require_present && (!readiness.present_target_available || !result.present_call.valid())) {
         result.status = vulkan_queue_submit_present_status::present_target_unavailable;
@@ -533,9 +647,12 @@ inline vulkan_queue_submit_present_result submit_and_present_vulkan_queue_frame(
     result.present_order = 2;
     result.present_result = adapter.functions.present(adapter.user_data, result.present_call);
     if (!result.present_result.completed()) {
+        result.present_execution_ready =
+            queue_submit_detail::present_execution_ready(result);
         queue_submit_detail::map_present_failure(result, result.present_result);
         return result;
     }
+    result.present_execution_ready = queue_submit_detail::present_execution_ready(result);
 
     result.status = vulkan_queue_submit_present_status::submitted_and_presented;
     result.command_submit.frame_result.checked = true;

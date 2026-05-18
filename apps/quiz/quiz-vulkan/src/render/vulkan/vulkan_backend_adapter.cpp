@@ -1732,10 +1732,18 @@ vulkan_present_request_summary present_request_from_submit_batch(
         .requested = submit_batch.present_ready,
         .source_adapter_checked = queue_present_checked,
         .present_queue = submit_batch.submit_queue,
+        .present_queue_family_index = 0,
+        .present_queue_family_ready = submit_batch.submit_queue.valid(),
         .swapchain = vulkan_swapchain_handle{.value = 1},
+        .acquired_image_index = submit_batch.image_id.value,
         .image_id = submit_batch.image_id,
+        .image_handle = {},
         .wait_render_finished_semaphore =
             submit_batch.sync_primitives.render_finished_semaphore,
+        .wait_intent_count = submit_batch.wait_intent_count,
+        .signal_intent_count = submit_batch.signal_intent_count,
+        .command_submit_ready = submit_batch.submit_ready,
+        .submitted_frame_ready = submit_batch.completed(),
     };
 }
 
@@ -1746,10 +1754,18 @@ vulkan_present_request_summary present_request_from_queue_present(
         .requested = true,
         .source_adapter_checked = true,
         .present_queue = queue_present.present_call.queue,
+        .present_queue_family_index = queue_present.present_call.queue_family_index,
+        .present_queue_family_ready = queue_present.present_call.queue_family_ready,
         .swapchain = queue_present.present_call.swapchain,
+        .acquired_image_index = queue_present.present_call.acquired_image_index,
         .image_id = queue_present.present_call.image_id,
+        .image_handle = queue_present.present_call.image_handle,
         .wait_render_finished_semaphore =
             queue_present.present_call.wait_render_finished_semaphore,
+        .wait_intent_count = queue_present.present_call.wait_intent_count,
+        .signal_intent_count = queue_present.present_call.signal_intent_count,
+        .command_submit_ready = queue_present.present_call.command_submit_ready,
+        .submitted_frame_ready = queue_present.present_call.submitted_frame_ready,
     };
 }
 
@@ -1761,6 +1777,7 @@ vulkan_present_result_summary present_result_from_queue_present(
         .status = queue_present.present_result.status,
         .present_called = queue_present.present_called,
         .submit_before_present = queue_present.submit_before_present(),
+        .present_execution_ready = queue_present.present_execution_ready,
         .recoverable_failure = queue_present.status
             == vulkan_queue_submit_present_status::present_failed_recoverable,
         .fatal_failure = queue_present.status
@@ -1778,6 +1795,7 @@ vulkan_present_result_summary deterministic_present_result_summary()
         .status = vulkan_queue_submit_adapter_call_status::completed,
         .present_called = true,
         .submit_before_present = true,
+        .present_execution_ready = true,
         .recoverable_failure = false,
         .fatal_failure = false,
         .diagnostic =
@@ -1829,6 +1847,9 @@ void finalize_native_queue_present_operation(
         .device = result.device,
         .swapchain = result.swapchain,
         .present_queue = result.present_queue,
+        .present_queue_family_index = result.present_queue_family_index,
+        .present_queue_family_ready = result.present_queue_family_ready,
+        .acquired_image_index = result.acquired_image_index,
         .image_id = result.image_id,
         .image_handle = result.image_handle,
         .wait_render_finished_semaphore = result.wait_render_finished_semaphore,
@@ -1847,6 +1868,12 @@ void finalize_native_queue_present_operation(
         .submitted_frame_ready = result.submitted_frame_ready,
         .present_request_ready = result.present_request_ready,
         .present_adapter_result_ready = result.present_adapter_result_ready,
+        .acquired_image_index_ready = result.acquired_image_index_ready,
+        .acquired_image_handle_ready = result.acquired_image_handle_ready,
+        .command_submit_ready = result.command_submit_ready,
+        .present_wait_intent_ready = result.present_wait_intent_ready,
+        .present_signal_intent_ready = result.present_signal_intent_ready,
+        .present_execution_ready = result.present_execution_ready,
         .present_result_checked = result.present_result_checked,
         .present_result_completed = result.present_result_completed,
         .submit_before_present = result.submit_before_present,
@@ -8029,6 +8056,9 @@ vulkan_native_queue_present_operation_result build_vulkan_native_queue_present_o
         .device = request.acquire_operation.device,
         .swapchain = selected_swapchain,
         .present_queue = present_request.present_queue,
+        .present_queue_family_index = present_request.present_queue_family_index,
+        .present_queue_family_ready = present_request.present_queue_family_ready,
+        .acquired_image_index = request.acquire_operation.selected_image_index,
         .image_id = selected_image_id,
         .image_handle = request.acquire_operation.image_handle,
         .wait_render_finished_semaphore =
@@ -8051,6 +8081,16 @@ vulkan_native_queue_present_operation_result build_vulkan_native_queue_present_o
             && frame_status_has_submitted_frame(request.present_completion.frame_status),
         .present_request_ready = present_request.completed(),
         .present_adapter_result_ready = request.present_completion.result.completed(),
+        .acquired_image_index_ready =
+            request.acquire_operation.selected_image_index > 0
+            || request.acquire_operation.image_handle.valid(),
+        .acquired_image_handle_ready = request.acquire_operation.image_handle.valid(),
+        .command_submit_ready = present_request.command_submit_ready,
+        .present_wait_intent_ready =
+            present_request.wait_render_finished_semaphore.valid()
+            && present_request.wait_intent_count > 0,
+        .present_signal_intent_ready = present_request.signal_intent_count > 0,
+        .present_execution_ready = request.present_completion.result.present_execution_ready,
         .present_result_checked =
             request.present_result.status != vulkan_swapchain_present_status::not_requested,
         .present_result_completed = request.present_result.completed(),
@@ -8146,11 +8186,26 @@ vulkan_native_queue_present_operation_result build_vulkan_native_queue_present_o
             "Native Vulkan queue present operation has no valid present queue");
         return result;
     }
+    if (!result.present_queue_family_ready) {
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::present_queue_unavailable,
+            "Native Vulkan queue present operation has no present queue family evidence");
+        return result;
+    }
     if (!result.swapchain_ready) {
         block_native_queue_present_operation(
             result,
             vulkan_native_queue_present_operation_status::swapchain_unavailable,
             "Native Vulkan queue present operation has no valid swapchain handle");
+        return result;
+    }
+    if (!result.command_submit_ready || !result.present_wait_intent_ready
+        || !result.present_signal_intent_ready) {
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::submitted_frame_unavailable,
+            "Native Vulkan queue present operation is missing submit or present sync evidence");
         return result;
     }
     if (!result.present_request_ready) {
@@ -8198,6 +8253,13 @@ vulkan_native_queue_present_operation_result build_vulkan_native_queue_present_o
             request.present_completion.diagnostic.empty()
                 ? "Native Vulkan queue present operation has no ready present completion plan"
                 : request.present_completion.diagnostic);
+        return result;
+    }
+    if (!result.present_execution_ready) {
+        block_native_queue_present_operation(
+            result,
+            vulkan_native_queue_present_operation_status::present_result_unavailable,
+            "Native Vulkan queue present operation has no ready present execution evidence");
         return result;
     }
 

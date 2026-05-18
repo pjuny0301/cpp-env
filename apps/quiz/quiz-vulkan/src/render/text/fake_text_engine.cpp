@@ -466,6 +466,16 @@ void record_font_fallback_chain_plan(
     diagnostics.font_fallback_chain_diagnostic = std::move(plan.diagnostic);
 }
 
+void record_text_frame_draw_plan(fake_text_engine_diagnostics& diagnostics)
+{
+    diagnostics.text_frame_draw_plan =
+        plan_render_text_frame_draw_packets(render_text_frame_draw_plan_request{
+            .frame = diagnostics.text_frame_snapshot,
+            .materializations = diagnostics.glyph_atlas_materializations,
+            .item_index = 0U,
+        });
+}
+
 void record_atlas_upload_request_bridge(
     fake_text_engine_diagnostics& diagnostics,
     const render_text_request& request)
@@ -511,6 +521,7 @@ void record_atlas_upload_request_bridge(
             .atlas_upload_bridge = diagnostics.atlas_upload_request_bridge,
             .queued_atlas_upload_request_ids = diagnostics.queued_atlas_upload_request_ids,
         });
+    record_text_frame_draw_plan(diagnostics);
 }
 
 void record_font_backend_capability(
@@ -3663,6 +3674,7 @@ std::vector<render_text_atlas_update> fake_text_engine::consume_atlas_updates()
         std::move(diagnostics_.text_frame_snapshot),
         diagnostics_.consumed_atlas_upload_request_ids,
         updates.size());
+    record_text_frame_draw_plan(diagnostics_);
     return updates;
 }
 

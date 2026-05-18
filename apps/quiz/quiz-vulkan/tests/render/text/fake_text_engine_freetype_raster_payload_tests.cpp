@@ -139,6 +139,18 @@ void test_file_backed_freetype_selection_rasterizes_real_payload()
     const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
 
     require(layout.glyphs.size() == 1U, "file-backed font lays out one glyph");
+    if (render_text_harfbuzz_shaping_adapter_available()) {
+        require(diagnostics.has_shaping_handoffs(), "file-backed font records shaping handoff");
+        require(
+            diagnostics.shaping_handoff_policy.harfbuzz_run_count == 1U,
+            "file-backed font uses HarfBuzz shaping before raster handoff");
+        require(
+            diagnostics.shaping_handoffs.front().materialized_font_bytes,
+            "HarfBuzz handoff records materialized font bytes");
+        require(
+            diagnostics.shaping_handoffs.front().used_harfbuzz,
+            "HarfBuzz handoff marks real shaping backend");
+    }
     require(
         diagnostics.font_backend_rasterization_selection.selected.library
             == render_text_font_backend_library::freetype,
@@ -190,6 +202,8 @@ void test_file_backed_freetype_selection_rasterizes_real_payload()
     require(
         materialization.raster_font_backend_library == render_text_font_backend_library::freetype,
         "materialization records FreeType raster backend");
+    require(materialization.cache_key == payload.cache_key, "materialization preserves payload atlas key");
+    require(materialization.payload_rgba_bytes == payload.rgba_bytes, "materialization preserves payload byte count");
 
     require(diagnostics.has_line_run_atlas_uploads(), "file-backed font records line/run upload handoff");
     const fake_text_engine_line_run_atlas_upload_snapshot& line_upload =
@@ -197,6 +211,67 @@ void test_file_backed_freetype_selection_rasterizes_real_payload()
     require(line_upload.has_raster_payload, "line/run upload links raster payload");
     require(line_upload.raster_payload_upload_ready, "line/run upload records upload-ready raster payload");
     require(line_upload.upload_ready, "line/run upload is upload-ready");
+    require(line_upload.cache_key == materialization.cache_key, "line/run upload preserves atlas key");
+    require(
+        line_upload.upload_request_id == diagnostics.atlas_upload_request_bridge.requests.front().request_id,
+        "line/run upload preserves upload request id");
+
+    require(diagnostics.has_text_frame_draw_plan(), "file-backed font records renderer draw plan evidence");
+    require(
+        diagnostics.text_frame_draw_plan.policy.packet_count == 1U,
+        "pending draw plan records one glyph packet");
+    require(
+        diagnostics.text_frame_draw_plan.policy.frame_not_ready_count == 1U,
+        "pending draw plan blocks before atlas upload consumption");
+    require(
+        diagnostics.text_frame_draw_plan.policy.real_backend_count == 1U,
+        "pending draw plan preserves real backend materialization evidence");
+
+    const std::string upload_request_id = line_upload.upload_request_id;
+    const glyph_atlas_key cache_key = line_upload.cache_key;
+    const render_text_atlas_page_id page_id = line_upload.page.id;
+    const render_text_revision page_revision = line_upload.page.revision;
+    const std::vector<render_text_atlas_update> consumed_updates = engine.consume_atlas_updates();
+    require(!consumed_updates.empty(), "file-backed font exposes atlas update for consumption");
+
+    const fake_text_engine_diagnostics& ready_diagnostics = engine.last_diagnostics();
+    require(
+        ready_diagnostics.text_frame_snapshot.ready_for_renderer(),
+        "consumed atlas update makes text frame renderer-ready");
+    require(
+        ready_diagnostics.text_frame_draw_plan.frame_ready_for_renderer,
+        "draw plan sees renderer-ready text frame");
+    require(
+        ready_diagnostics.text_frame_draw_plan.policy.draw_ready_count == 1U,
+        "draw plan exposes one renderer-ready glyph packet");
+    require(
+        ready_diagnostics.text_frame_draw_plan.policy.upload_consumed_count == 1U,
+        "draw plan records consumed upload request");
+    require(
+        ready_diagnostics.text_frame_draw_plan.policy.real_backend_count == 1U,
+        "ready draw plan keeps real backend count");
+
+    const render_text_frame_draw_packet_snapshot& draw_packet =
+        ready_diagnostics.text_frame_draw_plan.packets.front();
+    require(draw_packet.drawable(), "real font draw packet is drawable after upload consumption");
+    require(
+        draw_packet.status == render_text_frame_draw_packet_status::draw_ready,
+        "real font draw packet is draw-ready");
+    require(draw_packet.used_real_backend, "draw packet records real backend use");
+    require(!draw_packet.used_deterministic_fallback, "draw packet does not record deterministic fallback");
+    require(draw_packet.upload_consumed, "draw packet records consumed upload");
+    require(draw_packet.cache_key == cache_key, "draw packet preserves atlas cache key");
+    require(draw_packet.atlas_upload_request_id == upload_request_id, "draw packet preserves upload request id");
+    require(draw_packet.page_id == page_id, "draw packet preserves atlas page id");
+    require(draw_packet.page_revision == page_revision, "draw packet preserves atlas page revision");
+    require(draw_packet.uv_bounds.valid, "draw packet derives valid UV bounds");
+    require(
+        draw_packet.atlas_consumption.cache_key == cache_key,
+        "draw packet atlas consumption preserves cache key");
+    require(
+        draw_packet.atlas_consumption.upload_generation == page_revision,
+        "draw packet atlas consumption records upload generation");
+    require(!draw_packet.atlas_consumption.missing_glyph, "draw packet atlas consumption has glyph coverage");
 }
 
 void test_missing_file_backed_freetype_payload_falls_back_and_skips()
@@ -268,6 +343,32 @@ void test_missing_file_backed_freetype_payload_falls_back_and_skips()
         diagnostics.glyph_atlas_materializations.front().status
             == render_text_glyph_atlas_materialization_status::skipped_raster_payload,
         "missing-byte materialization skips cleanly on raster payload");
+
+    require(diagnostics.has_line_run_atlas_uploads(), "missing bytes record line/run upload blocker");
+    const fake_text_engine_line_run_atlas_upload_snapshot& line_upload =
+        diagnostics.line_run_atlas_uploads.front();
+    require(line_upload.blocked, "missing bytes line/run upload is blocked");
+    require(!line_upload.upload_ready, "missing bytes line/run upload is not upload-ready");
+    require(
+        line_upload.blocker_reason.find("font bytes") != std::string::npos,
+        "missing bytes line/run upload blocker names font bytes");
+
+    require(diagnostics.has_text_frame_draw_plan(), "missing bytes record draw packet evidence");
+    require(
+        diagnostics.text_frame_draw_plan.policy.packet_count == 1U,
+        "missing bytes draw plan records one packet");
+    require(
+        diagnostics.text_frame_draw_plan.policy.skipped_count == 1U,
+        "missing bytes draw plan records skipped packet");
+    const render_text_frame_draw_packet_snapshot& draw_packet =
+        diagnostics.text_frame_draw_plan.packets.front();
+    require(!draw_packet.drawable(), "missing bytes draw packet is not drawable");
+    require(
+        draw_packet.status != render_text_frame_draw_packet_status::draw_ready,
+        "missing bytes draw packet records blocked renderer evidence");
+    require(
+        !draw_packet.diagnostic.empty(),
+        "missing bytes draw packet preserves blocker diagnostic");
 }
 
 } // namespace

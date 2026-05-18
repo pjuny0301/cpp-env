@@ -319,6 +319,7 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.consumed_atlas_upload_request_ids } -> std::same_as<std::vector<std::string>&>;
     { diagnostics.consumed_atlas_update_count } -> std::same_as<std::size_t&>;
     { diagnostics.text_frame_snapshot } -> std::same_as<render::render_text_frame_snapshot&>;
+    { diagnostics.text_frame_draw_plan } -> std::same_as<render::render_text_frame_draw_plan_snapshot&>;
     { diagnostics.shaped_atlas_update_traces }
         -> std::same_as<std::vector<render::render_text_shaped_atlas_update_trace_snapshot>&>;
     { diagnostics.shaped_atlas_update_trace_policy }
@@ -373,6 +374,7 @@ static_assert(requires(render::fake_text_engine_diagnostics diagnostics) {
     { diagnostics.has_queued_atlas_upload_request_ids() } -> std::same_as<bool>;
     { diagnostics.has_consumed_atlas_upload_request_ids() } -> std::same_as<bool>;
     { diagnostics.has_text_frame_snapshot() } -> std::same_as<bool>;
+    { diagnostics.has_text_frame_draw_plan() } -> std::same_as<bool>;
     { diagnostics.has_shaped_atlas_update_traces() } -> std::same_as<bool>;
     { diagnostics.has_shaped_atlas_update_trace_policy() } -> std::same_as<bool>;
     { diagnostics.has_line_breaks() } -> std::same_as<bool>;

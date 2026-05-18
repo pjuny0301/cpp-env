@@ -22,8 +22,8 @@ Historical integration notes are kept in git history, not repeated here.
 - Vulkan: present image execution evidence and descriptor allocation merge
   guard tests are integrated. Active worker work is descriptor payload bind
   recording before real queue submission is widened.
-- Text: atlas packet consumption and HarfBuzz shaping handoff diagnostics are
-  integrated. Active worker work is real font-backed atlas handoff.
+- Text: atlas packet consumption, HarfBuzz shaping handoff diagnostics, and real
+  font atlas draw evidence are integrated. Text worker is idle.
 - Image: staging payload blocker coverage and staging payload diff summaries are
   integrated. Active worker work is decoded-byte resource materialization.
 - Asset: materialized byte payload request/review evidence and shader byte
@@ -35,8 +35,8 @@ Historical integration notes are kept in git history, not repeated here.
 
 - `codex-vulkan-native-command-packet-executor-20260516`: busy on
   `codex/vulkan-descriptor-payload-bind-recording-20260518`.
-- `codex-text-freetype-prototype-20260514`: busy on
-  `codex/text-real-font-atlas-handoff-20260518`.
+- `codex-text-freetype-prototype-20260514`: idle after real font atlas draw
+  evidence integration.
 - `codex-asset-unified-cache-key-20260514`: idle after shader byte source
   pipeline summary and focused-header split.
 - `codex-image-texture-next-20260514`: busy on
@@ -73,10 +73,10 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `9809fae` after
+- Main branch `codex/quiz-vulkan-remake-baseline` is at `d369e09` after
   HarfBuzz shaping handoff diagnostics, image staging payload diff summaries,
-  Vulkan descriptor allocation merge guard integration, and the next engine
-  worker prompts.
+  Vulkan descriptor allocation merge guard integration, next engine worker
+  prompts, and real font atlas draw evidence.
 - Last full Windows MinGW CTest batch should be treated as stale. Run focused
   tests during normal integration; run full CTest after the next meaningful
   engine batch.
@@ -146,6 +146,16 @@ Historical integration notes are kept in git history, not repeated here.
   `quiz_vulkan_interface_contract_compile_tests` and
   `quiz_vulkan_vulkan_command_packet_execution_tests`; focused CTest passed 1/1
   for Vulkan command packet execution.
+- After `d369e09`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests`,
+  `quiz_vulkan_fake_text_engine_tests`,
+  `quiz_vulkan_fake_text_engine_layout_diagnostics_tests`,
+  `quiz_vulkan_fake_text_engine_freetype_raster_payload_tests`,
+  `quiz_vulkan_font_shaped_atlas_update_tests`,
+  `quiz_vulkan_text_renderer_glyph_quad_packet_tests`, and
+  `quiz_vulkan_text_frame_resource_packet_materialization_tests`; focused CTest
+  passed 6/6 across the changed text engine, FreeType raster payload, shaped
+  atlas update, glyph quad packet, and text frame resource packet targets.
 
 ## Useful Commands
 

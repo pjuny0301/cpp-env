@@ -1942,6 +1942,229 @@ void test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads()
     require(duplicate_entries == 2U, "shader pipeline keeps both duplicate shader entries as blocked evidence");
 }
 
+void test_shader_byte_pipeline_source_summary_combines_manifest_fallback_and_payload_evidence()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture",
+        .aliases = {"fallback_shaders"},
+        .root_path = fixture_root / "packaged",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "external_shader_pack",
+        .root_path = fixture_root / "build" / "external" / "shader_pack",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "manifest_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/manifest.vert.spv",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "external_shader",
+        .type = asset_type::shader,
+        .uri = "shaders/external.vert.spv",
+        .root_id = "external_shader_pack",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "fixture_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/fixture.vert.spv",
+        .root_id = "fixture",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "fallback_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/fallback.vert.spv",
+        .root_id = "fallback_shaders",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "traversal_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/%2e%2e/secret.vert.spv",
+        .root_id = "fixture",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "missing_root_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/missing-root.vert.spv",
+        .root_id = "missing",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_runtime_resolver_policy_summary resolver_policy =
+        summarize_asset_runtime_resolver_policy(manifest, resolver);
+    const asset_pack_index_root_selection_summary root_selection =
+        summarize_asset_pack_index_root_selection(manifest);
+
+    asset_materialized_byte_payload_bundle bundle;
+    bundle.shaders.blocked.push_back(make_shader_payload_bundle_entry(
+        "manifest_shader",
+        "asset://shaders/manifest.vert.spv",
+        "/assets/shaders/manifest.vert.spv",
+        {},
+        asset_materialized_bytes_handoff_status::materialization_blocked));
+    bundle.shaders.ready.push_back(make_shader_payload_bundle_entry(
+        "external_shader",
+        "shaders/external.vert.spv",
+        "/assets/shaders/external.vert.spv",
+        make_spirv_fixture_bytes()));
+    bundle.shaders.ready.push_back(make_shader_payload_bundle_entry(
+        "fixture_shader",
+        "asset://shaders/fixture.vert.spv",
+        "/assets/shaders/fixture.vert.spv",
+        make_spirv_fixture_bytes()));
+    bundle.shaders.ready.push_back(make_shader_payload_bundle_entry(
+        "fallback_shader",
+        "asset://shaders/fallback.vert.spv",
+        "/assets/shaders/fallback.vert.spv",
+        make_spirv_fixture_bytes()));
+    bundle.shaders.ready.push_back(make_shader_payload_bundle_entry(
+        "stale_shader",
+        "asset://shaders/stale.vert.spv",
+        "/assets/shaders/stale.vert.spv",
+        make_spirv_fixture_bytes()));
+
+    const asset_shader_materialized_byte_pipeline_summary shader_pipeline =
+        summarize_shader_materialized_byte_pipeline(bundle);
+    const std::vector<std::string> expected_shader_ids{
+        "manifest_shader",
+        "external_shader",
+        "fixture_shader",
+        "fallback_shader",
+        "traversal_shader",
+        "missing_root_shader",
+        "missing_shader",
+        "stale_shader",
+    };
+
+    const asset_shader_byte_pipeline_source_summary source_summary =
+        summarize_shader_byte_pipeline_sources(
+            shader_pipeline,
+            resolver_policy,
+            root_selection,
+            expected_shader_ids);
+
+    require(!source_summary.ok(), "shader source summary reports blocked source evidence");
+    require(source_summary.input_shader_count == 5U, "shader source summary preserves payload input count");
+    require(source_summary.requested_shader_count == 8U, "shader source summary records expected shader ids");
+    require(source_summary.entry_count() == 8U, "shader source summary emits requested missing source evidence");
+    require(source_summary.ready_count() == 3U, "shader source summary only marks consumer-ready shader bytes ready");
+    require(source_summary.blocked_count() == 5U, "shader source summary blocks source and payload problems");
+    require(source_summary.manifest_source_count == 1U, "shader source summary classifies direct manifest sources");
+    require(source_summary.build_external_source_count == 1U, "shader source summary classifies build external roots");
+    require(source_summary.local_fixture_source_count == 1U, "shader source summary classifies local fixture roots");
+    require(source_summary.fallback_source_count == 1U, "shader source summary classifies fallback root sources");
+    require(source_summary.missing_source_count == 4U, "shader source summary classifies missing source evidence");
+    require(source_summary.traversal_rejection_count == 1U, "shader source summary counts traversal rejections");
+    require(source_summary.missing_root_count == 1U, "shader source summary counts missing roots");
+    require(source_summary.missing_manifest_count == 1U, "shader source summary counts missing manifest entries");
+    require(source_summary.stale_manifest_count == 1U, "shader source summary counts stale payload manifest evidence");
+    require(
+        asset_shader_byte_pipeline_source_kind_name(asset_shader_byte_pipeline_source_kind::fallback)
+            == "fallback",
+        "shader source summary exposes stable source kind names");
+    require(
+        asset_shader_byte_pipeline_blocker_kind_name(asset_shader_byte_pipeline_blocker_kind::traversal_rejected)
+            == "traversal_rejected",
+        "shader source summary exposes stable blocker names");
+
+    const asset_shader_byte_pipeline_source_entry* external = source_summary.find_ready("external_shader");
+    require(external != nullptr, "shader source summary finds build external ready shaders");
+    require(external->ok(), "build external shader source is ready for consumers");
+    require(
+        external->source_kind == asset_shader_byte_pipeline_source_kind::build_external,
+        "build external shader source kind is explicit");
+    require(
+        external->root_space == asset_runtime_resolver_root_space::build_external,
+        "build external shader keeps root-space classification");
+    require(external->manifest_entry_found, "build external shader keeps manifest evidence");
+    require(external->cache_key == "shader|shaders/external.vert.spv", "build external shader keeps cache key");
+    require(external->source_uri == "shaders/external.vert.spv", "build external shader keeps source uri");
+    require(external->byte_count == 8U, "build external shader keeps reported byte count");
+    require(external->payload_byte_count == 8U, "build external shader keeps owned byte count");
+    require(
+        external->content_hash == make_asset_bytes_content_hash(make_spirv_fixture_bytes()),
+        "build external shader keeps content hash");
+    require(
+        external->materialized_byte_identity
+            == "shader|shaders/external.vert.spv|hash="
+                + make_asset_bytes_content_hash(make_spirv_fixture_bytes()) + "|bytes=8",
+        "build external shader has stable byte identity");
+
+    const asset_shader_byte_pipeline_source_entry* fixture = source_summary.find_ready("fixture_shader");
+    require(fixture != nullptr, "shader source summary finds fixture ready shaders");
+    require(
+        fixture->source_kind == asset_shader_byte_pipeline_source_kind::local_fixture,
+        "fixture shader source kind is explicit");
+    require(
+        fixture->root_space == asset_runtime_resolver_root_space::local_fixture,
+        "fixture shader keeps root-space classification");
+
+    const asset_shader_byte_pipeline_source_entry* fallback = source_summary.find_ready("fallback_shader");
+    require(fallback != nullptr, "shader source summary finds fallback ready shaders");
+    require(
+        fallback->source_kind == asset_shader_byte_pipeline_source_kind::fallback,
+        "fallback shader source kind is explicit");
+    require(fallback->fallback_selected, "fallback shader records fallback selection");
+    require(fallback->requested_root_id == "fallback_shaders", "fallback shader keeps requested root id");
+    require(fallback->selected_root_id == "fixture", "fallback shader keeps selected root id");
+
+    const asset_shader_byte_pipeline_source_entry* manifest_only =
+        source_summary.find_blocked("manifest_shader");
+    require(manifest_only != nullptr, "shader source summary finds rootless manifest shaders");
+    require(
+        manifest_only->source_kind == asset_shader_byte_pipeline_source_kind::manifest,
+        "rootless manifest shader source kind remains manifest");
+    require(
+        manifest_only->blocker == asset_shader_byte_pipeline_blocker_kind::materialization_blocked,
+        "rootless manifest shader records materialization blocker");
+    require(manifest_only->manifest_entry_found, "rootless manifest shader keeps manifest evidence");
+
+    const asset_shader_byte_pipeline_source_entry* traversal =
+        source_summary.find_blocked("traversal_shader");
+    require(traversal != nullptr, "shader source summary includes traversal rejection evidence");
+    require(
+        traversal->blocker == asset_shader_byte_pipeline_blocker_kind::traversal_rejected,
+        "traversal shader records traversal blocker");
+    require(traversal->traversal_rejected, "traversal shader exposes traversal rejection flag");
+    require(
+        traversal->source_kind == asset_shader_byte_pipeline_source_kind::missing_source,
+        "traversal shader is not source-ready");
+
+    const asset_shader_byte_pipeline_source_entry* missing_root =
+        source_summary.find_blocked("missing_root_shader");
+    require(missing_root != nullptr, "shader source summary includes missing root evidence");
+    require(
+        missing_root->blocker == asset_shader_byte_pipeline_blocker_kind::missing_root,
+        "missing root shader records missing root blocker");
+    require(
+        missing_root->cache_key == "shader|asset://shaders/missing-root.vert.spv",
+        "missing root shader preserves diagnostic cache key");
+
+    const asset_shader_byte_pipeline_source_entry* missing_manifest =
+        source_summary.find_blocked("missing_shader");
+    require(missing_manifest != nullptr, "shader source summary includes requested missing ids");
+    require(
+        missing_manifest->blocker == asset_shader_byte_pipeline_blocker_kind::missing_manifest_entry,
+        "missing shader records missing manifest blocker");
+    require(!missing_manifest->manifest_entry_found, "missing shader records absent manifest evidence");
+
+    const asset_shader_byte_pipeline_source_entry* stale = source_summary.find_blocked("stale_shader");
+    require(stale != nullptr, "shader source summary includes stale payload evidence");
+    require(
+        stale->blocker == asset_shader_byte_pipeline_blocker_kind::stale_manifest_entry,
+        "stale shader records stale manifest blocker");
+    require(!stale->ready, "stale shader bytes are not consumer-ready without manifest evidence");
+    require(!stale->materialized_byte_identity.empty(), "stale shader keeps materialized byte identity");
+    require(
+        stale->diagnostic == "shader byte pipeline payload has no current manifest evidence",
+        "stale shader diagnostic is stable");
+}
+
 void test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics()
 {
     using namespace quiz_vulkan::assets;
@@ -2753,6 +2976,7 @@ int main()
     test_materialized_asset_byte_payload_bundle_groups_loaded_bytes_by_type();
     test_materialized_asset_byte_payload_bundle_diff_tracks_snapshot_changes();
     test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads();
+    test_shader_byte_pipeline_source_summary_combines_manifest_fallback_and_payload_evidence();
     test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics();
     test_materialized_asset_byte_payload_request_transaction_preserves_order_and_counts();
     test_materialized_asset_byte_payload_request_transaction_review_summary_groups_by_expected_type();

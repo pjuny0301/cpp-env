@@ -938,6 +938,19 @@ VkSurfaceKHR vk_surface_handle_from(vulkan_surface_handle surface)
 #endif
 }
 
+vulkan_surface_handle surface_handle_from_vk(VkSurfaceKHR surface)
+{
+#if defined(VK_USE_64_BIT_PTR_DEFINES) && VK_USE_64_BIT_PTR_DEFINES
+    return vulkan_surface_handle{
+        .value = reinterpret_cast<std::uintptr_t>(surface),
+    };
+#else
+    return vulkan_surface_handle{
+        .value = static_cast<std::uintptr_t>(surface),
+    };
+#endif
+}
+
 VkSwapchainKHR vk_swapchain_handle_from(vulkan_swapchain_handle swapchain)
 {
 #if defined(VK_USE_64_BIT_PTR_DEFINES) && VK_USE_64_BIT_PTR_DEFINES
@@ -4656,6 +4669,66 @@ collect_vulkan_native_surface_query_dispatch_table(
     table.status = vulkan_native_surface_query_dispatch_table_status::ready;
     table.diagnostic = "Native Vulkan surface query dispatch table is ready";
     return table;
+}
+
+vulkan_win32_surface_bridge_result
+vulkan_win32_surface_bridge::create_win32_surface(
+    const vulkan_win32_surface_bridge_request& request)
+{
+    vulkan_win32_surface_bridge_result result =
+        swapchain_detail::make_win32_surface_bridge_result(request);
+
+    if (swapchain_detail::block_unready_win32_surface_bridge_result(result)) {
+        return result;
+    }
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS && defined(VK_USE_PLATFORM_WIN32_KHR)
+    const auto create_win32_surface =
+        reinterpret_cast<PFN_vkCreateWin32SurfaceKHR>(
+            request.create_win32_surface.value);
+    if (create_win32_surface == nullptr) {
+        result.status = vulkan_win32_surface_bridge_status::create_symbol_unavailable;
+        result.diagnostic =
+            "Win32 Vulkan surface bridge has an invalid vkCreateWin32SurfaceKHR pointer";
+        return result;
+    }
+
+    VkWin32SurfaceCreateInfoKHR create_info{};
+    create_info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+    create_info.hinstance = reinterpret_cast<HINSTANCE>(result.window.hinstance);
+    create_info.hwnd = reinterpret_cast<HWND>(result.window.hwnd);
+
+    VkSurfaceKHR native_surface = VK_NULL_HANDLE;
+    const VkResult native_result = create_win32_surface(
+        reinterpret_cast<VkInstance>(result.instance.value),
+        &create_info,
+        nullptr,
+        &native_surface);
+    result.vk_create_win32_surface_called = true;
+    result.native_result = static_cast<std::int32_t>(native_result);
+    if (native_result != VK_SUCCESS) {
+        result.status = vulkan_win32_surface_bridge_status::creation_failed;
+        result.diagnostic = "Win32 Vulkan surface creation failed";
+        return result;
+    }
+
+    result.surface = surface_handle_from_vk(native_surface);
+    if (!result.surface.valid()) {
+        result.status = vulkan_win32_surface_bridge_status::invalid_created_handle;
+        result.diagnostic =
+            "Win32 Vulkan surface creation returned an invalid surface handle";
+        return result;
+    }
+
+    result.status = vulkan_win32_surface_bridge_status::created;
+    result.diagnostic = "Win32 Vulkan surface created";
+    return result;
+#else
+    result.status = vulkan_win32_surface_bridge_status::headers_unavailable;
+    result.diagnostic =
+        "Vulkan Win32 surface declarations are unavailable for native surface creation";
+    return result;
+#endif
 }
 
 vulkan_native_surface_capability_query_result

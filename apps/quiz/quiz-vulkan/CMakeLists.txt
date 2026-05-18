@@ -353,6 +353,7 @@ target_sources(
             src/render/text/text_frame_snapshot.h
             src/render/text/text_frame_upload_handoff.h
             src/render/text/text_engine.h
+            src/render/text/text_atlas_packet_consumption_evidence.h
             src/render/text/utf8_line_break.h
             src/render/text/utf8_text_run.h
 )

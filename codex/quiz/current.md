@@ -19,27 +19,30 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Active Bottlenecks
 
-- Vulkan: swapchain image acquire handoff evidence is integrated. Active worker
-  work is present/finish evidence after acquired image ownership.
-- Text: atlas packet consumption evidence is integrated. Active worker work is
-  HarfBuzz-shaped layout handoff versus deterministic fallback evidence.
-- Image: staging payload blocker coverage is integrated. Active worker work is
-  staging payload diff/regression evidence.
-- Asset: materialized byte payload request/review evidence is integrated. Active
-  worker work is shader byte pipeline summary for render consumers.
+- Vulkan: present image execution evidence is integrated. Next useful work is
+  descriptor payload / command packet executor evidence before real queue
+  submission is widened.
+- Text: atlas packet consumption and HarfBuzz shaping handoff diagnostics are
+  integrated. Next useful work is real font-backed layout/raster data feeding
+  the existing atlas packet contract.
+- Image: staging payload blocker coverage and staging payload diff summaries are
+  integrated. Next useful work is real decoded image bytes moving through the
+  staged upload contract without changing scene/domain ownership.
+- Asset: materialized byte payload request/review evidence and shader byte
+  pipeline summary are integrated.
 - Input/IME: wheel modifier diagnostics are integrated; input is idle unless
   gesture routing becomes the active bottleneck again.
 
 ## Active Workers
 
-- `codex-vulkan-native-command-packet-executor-20260516`: busy on native command
-  packet executor evidence.
-- `codex-text-freetype-prototype-20260514`: busy on
-  `codex/text-harfbuzz-layout-handoff-20260515`.
+- `codex-vulkan-native-command-packet-executor-20260516`: idle after native
+  descriptor set evidence work; review before integration.
+- `codex-text-freetype-prototype-20260514`: idle after HarfBuzz shaping handoff
+  diagnostics.
 - `codex-asset-unified-cache-key-20260514`: idle after shader byte source
   pipeline summary and focused-header split.
-- `codex-image-texture-next-20260514`: busy on
-  `codex/image-staging-payload-diff-20260515`.
+- `codex-image-texture-next-20260514`: idle after staging payload diff
+  summaries.
 - `codex-input-ime`: idle after wheel/drag/touch-like diagnostics work.
 - Idle sessions are intentionally kept alive. Give them fresh baseline branches
   before new work; do not re-merge historical ahead commits.
@@ -72,8 +75,9 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `d8f8f6f` after image
-  staging payload blocker evidence test integration.
+- Main branch `codex/quiz-vulkan-remake-baseline` is at `aaa0256` after
+  HarfBuzz shaping handoff diagnostics and image staging payload diff summary
+  integration.
 - Last full Windows MinGW CTest batch should be treated as stale. Run focused
   tests during normal integration; run full CTest after the next meaningful
   engine batch.
@@ -127,6 +131,18 @@ Historical integration notes are kept in git history, not repeated here.
   `quiz_vulkan_fake_image_texture_uploader_tests`, and
   `quiz_vulkan_image_texture_pipeline_tests`; focused CTest passed 2/2 for image
   texture uploader and image texture pipeline.
+- After `889ee2d`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests`,
+  `quiz_vulkan_font_shaping_backend_tests`, `quiz_vulkan_fake_text_engine_tests`,
+  and `quiz_vulkan_fake_text_engine_layout_diagnostics_tests`; focused CTest
+  passed 3/3 for font shaping backend, fake text engine, and fake text engine
+  layout diagnostics.
+- After `aaa0256`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests`,
+  `quiz_vulkan_fake_image_texture_uploader_tests`, and
+  `quiz_vulkan_image_texture_pipeline_tests`; focused CTest passed 8/8 for the
+  image texture filtered suite, including uploader, staging materialization diff,
+  packet materialization/plan, pipeline, and standard image texture pipeline.
 
 ## Useful Commands
 

@@ -21,10 +21,11 @@ Historical integration notes are kept in git history, not repeated here.
 
 - Vulkan: swapchain image acquire handoff evidence is integrated. Active worker
   work is present/finish evidence after acquired image ownership.
-- Text: FreeType raster payload, draw-list frame composition, and line/run atlas
-  reuse evidence are integrated. Active worker work is atlas packet consumption.
-- Image: renderer-bound resource packet consumption diff evidence is integrated;
-  the image worker is idle until the next renderer texture handoff step.
+- Text: atlas packet consumption evidence is integrated. Active worker work is
+  HarfBuzz-shaped layout handoff versus deterministic fallback evidence.
+- Image: renderer-bound resource packet consumption diff evidence is integrated.
+  Active worker work is decoded texture staging payload planning before Vulkan
+  upload.
 - Asset: materialized byte payload request/review evidence is integrated. Active
   worker work is shader byte pipeline summary for render consumers.
 - Input/IME: wheel modifier diagnostics are integrated; input is idle unless
@@ -32,14 +33,14 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Active Workers
 
-- `codex-vulkan-real-backend-probe-20260514`: busy on
-  `codex/vulkan-present-image-execution-20260518`.
-- `codex-text-freetype-prototype-20260514`: idle after text atlas packet
-  consumption evidence and focused-header split.
+- `codex-vulkan-native-command-packet-executor-20260516`: busy on native command
+  packet executor evidence.
+- `codex-text-freetype-prototype-20260514`: busy on
+  `codex/text-harfbuzz-layout-handoff-20260515`.
 - `codex-asset-unified-cache-key-20260514`: idle after shader byte source
   pipeline summary and focused-header split.
-- `codex-image-texture-next-20260514`: idle after renderer resource-packet
-  consumption diff work.
+- `codex-image-texture-next-20260514`: busy on
+  `codex/image-staging-payload-plan-20260515`.
 - `codex-input-ime`: idle after wheel/drag/touch-like diagnostics work.
 - Idle sessions are intentionally kept alive. Give them fresh baseline branches
   before new work; do not re-merge historical ahead commits.

@@ -578,6 +578,52 @@ void test_draw_list_texture_frame_composition_links_ready_commands_to_resources(
     const render_image_texture_frame_resource_packet_plan resources =
         make_ready_resource_packet_plan(batch_plan);
 
+    require(handoff.entries.size() == 2, "draw-list handoff exposes only image command entries");
+    require(handoff.planned_images.size() == 2, "draw-list handoff emits planned image refs");
+    require(handoff.planned_requests.size() == 2, "draw-list handoff emits texture requests");
+    require(handoff.entries[0].draw_command_index == 1, "handoff keeps source draw command index");
+    require(handoff.entries[0].texture_request_index == 0, "handoff assigns first texture request index");
+    require(handoff.entries[0].planned_texture_request, "ready handoff entry is texture-request planned");
+    require(handoff.entries[0].sampler_policy.valid, "handoff preserves valid sampler diagnostics");
+    require(handoff.entries[0].texture_key_diagnostic.valid, "handoff preserves valid texture key diagnostics");
+    require(
+        handoff.entries[0].texture_key.source_key == "asset://textures/card-front.ppm",
+        "handoff normalizes first image texture key");
+    require(
+        handoff.planned_images[0].uri == draw_list.commands[1].image.uri,
+        "handoff planned image keeps draw-list image ref");
+    require(
+        handoff.planned_requests[0].uri == "asset://textures/card-front.ppm",
+        "handoff planned request keeps normalized uri");
+
+    require(batch_plan.entries.size() == 2, "texture batch plan keeps one entry per ready handoff");
+    require(batch_plan.entries[0].request_index == handoff.entries[0].texture_request_index, "batch entry maps to handoff request index");
+    require(batch_plan.entries[0].image.uri == handoff.entries[0].image.uri, "batch entry preserves handoff image ref");
+    require(batch_plan.entries[0].pipeline_request.uri == handoff.entries[0].pipeline_request.uri, "batch entry preserves handoff request uri");
+    require(batch_plan.entries[0].sampler_policy.valid, "batch entry keeps sampler diagnostics");
+    require(batch_plan.entries[0].texture_key_diagnostic.valid, "batch entry keeps texture key diagnostics");
+    require(batch_plan.entries[0].texture_key == handoff.entries[0].texture_key, "batch entry preserves handoff texture key");
+    require(
+        batch_plan.entries[0].stable_texture_cache_key == handoff.entries[0].stable_texture_cache_key,
+        "batch entry preserves handoff cache identity");
+
+    require(frame.entries.size() == 2, "texture frame snapshot keeps one entry per planned image");
+    require(frame.entries[0].request_index == batch_plan.entries[0].request_index, "frame entry maps to batch request");
+    require(frame.entries[0].render_image_uri == batch_plan.entries[0].image.uri, "frame entry preserves batch image uri");
+    require(frame.entries[0].sampler_policy.valid, "frame entry keeps sampler diagnostics");
+    require(
+        frame.entries[0].stable_texture_cache_key == batch_plan.entries[0].stable_texture_cache_key,
+        "frame entry preserves batch cache identity");
+    require(frame.entries[0].renderer_handoff_ready, "frame entry is ready for renderer handoff");
+
+    require(resources.entries.size() == 2, "resource packet plan keeps one entry per planned image");
+    require(resources.entries[0].request_index == batch_plan.entries[0].request_index, "resource packet maps to batch request");
+    require(
+        resources.entries[0].stable_texture_cache_key == batch_plan.entries[0].stable_texture_cache_key,
+        "resource packet preserves batch cache identity");
+    require(resources.entries[0].sampler_summary.find("min=nearest") != std::string::npos, "resource packet preserves sampler evidence");
+    require(resources.entries[0].resource_packet_ready, "resource packet is ready before composition");
+
     const render_image_draw_list_texture_frame_composition composition =
         make_render_image_draw_list_texture_frame_composition(handoff, batch_plan, frame, resources);
 

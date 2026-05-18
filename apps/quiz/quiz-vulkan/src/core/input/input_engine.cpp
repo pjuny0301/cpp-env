@@ -92,6 +92,7 @@ normalized_input_event_summary summarize_gesture(const gesture_event& gesture)
         .y = gesture.y,
         .delta_x = gesture.delta_x,
         .delta_y = gesture.delta_y,
+        .modifiers = {},
     };
 }
 
@@ -106,6 +107,7 @@ normalized_input_event_summary summarize_scroll(const scroll_event& scroll)
         .pixel_delta_y = scroll.pixel_delta_y,
         .line_delta_x = scroll.line_delta_x,
         .line_delta_y = scroll.line_delta_y,
+        .modifiers = scroll.modifiers,
     };
 }
 
@@ -310,6 +312,12 @@ std::vector<input_event> input_engine::process_raw_event(const raw_platform_inpu
                     .delta_x = raw_event.delta_x,
                     .delta_y = raw_event.delta_y,
                     .unit = to_scroll_delta_unit(raw_event.unit),
+                    .modifiers = input_modifier_state{
+                        .alt = raw_event.alt,
+                        .ctrl = raw_event.ctrl,
+                        .shift = raw_event.shift,
+                        .meta = raw_event.meta,
+                    },
                 });
             } else {
                 return process_focus_event(raw_event);
@@ -341,6 +349,7 @@ std::vector<input_event> input_engine::process_scroll_event(const raw_scroll_eve
         .timestamp_ms = event.timestamp_ms,
         .x = event.x,
         .y = event.y,
+        .modifiers = event.modifiers,
     };
 
     if (event.unit == scroll_delta_unit::lines) {

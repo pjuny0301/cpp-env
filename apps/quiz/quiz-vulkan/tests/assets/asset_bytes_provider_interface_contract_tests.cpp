@@ -434,6 +434,38 @@ static_assert(requires(
 });
 
 static_assert(requires(
+    asset_materialized_byte_payload_request_transaction_type_summary summary,
+    const asset_materialized_byte_payload_request_transaction_type_summary& const_summary) {
+    { summary.expected_type } -> std::same_as<asset_type&>;
+    { summary.request_indexes } -> std::same_as<std::vector<std::size_t>&>;
+    { summary.request_count } -> std::same_as<std::size_t&>;
+    { summary.selected_count } -> std::same_as<std::size_t&>;
+    { summary.ready_count } -> std::same_as<std::size_t&>;
+    { summary.blocked_count } -> std::same_as<std::size_t&>;
+    { summary.missing_count } -> std::same_as<std::size_t&>;
+    { summary.wrong_type_count } -> std::same_as<std::size_t&>;
+    { summary.cache_key_mismatch_count } -> std::same_as<std::size_t&>;
+    { summary.integrity_failure_count } -> std::same_as<std::size_t&>;
+    { summary.duplicate_count } -> std::same_as<std::size_t&>;
+    { const_summary.failed_count() } -> std::same_as<std::size_t>;
+    { const_summary.ok() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_materialized_byte_payload_request_transaction_review_summary summary,
+    const asset_materialized_byte_payload_request_transaction_review_summary& const_summary,
+    asset_type type) {
+    { summary.total } -> std::same_as<asset_materialized_byte_payload_request_transaction_summary&>;
+    { summary.by_expected_type } ->
+        std::same_as<std::vector<asset_materialized_byte_payload_request_transaction_type_summary>&>;
+    { summary.diagnostic } -> std::same_as<std::string&>;
+    { const_summary.ok() } -> std::same_as<bool>;
+    { const_summary.type_count() } -> std::same_as<std::size_t>;
+    { const_summary.find_expected_type(type) } ->
+        std::same_as<const asset_materialized_byte_payload_request_transaction_type_summary*>;
+});
+
+static_assert(requires(
     asset_materialized_byte_payload_request_transaction_count_delta delta,
     const asset_materialized_byte_payload_request_transaction_count_delta& const_delta) {
     { delta.request_delta } -> std::same_as<std::ptrdiff_t&>;
@@ -634,6 +666,8 @@ static_assert(requires(
         std::same_as<asset_materialized_byte_payload_filter_result>;
     { make_materialized_asset_byte_payload_request_transaction(payload_bundle, selection_requests) } ->
         std::same_as<asset_materialized_byte_payload_request_transaction>;
+    { summarize_materialized_asset_byte_payload_request_transaction(payload_transaction) } ->
+        std::same_as<asset_materialized_byte_payload_request_transaction_review_summary>;
     { diff_materialized_asset_byte_payload_request_transactions(payload_transaction, payload_transaction) } ->
         std::same_as<asset_materialized_byte_payload_request_transaction_diff_summary>;
     { summarize_shader_materialized_byte_pipeline(payload_bundle) } ->

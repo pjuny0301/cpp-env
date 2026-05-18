@@ -87,6 +87,10 @@ struct raw_platform_scroll_event {
     float delta_x = 0.0f;
     float delta_y = 0.0f;
     raw_platform_scroll_delta_unit unit = raw_platform_scroll_delta_unit::pixels;
+    bool alt = false;
+    bool ctrl = false;
+    bool shift = false;
+    bool meta = false;
 };
 
 using raw_platform_input_event = std::variant<

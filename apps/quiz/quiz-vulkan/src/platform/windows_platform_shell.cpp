@@ -190,6 +190,10 @@ public:
                 .delta_y = static_cast<float>(GET_WHEEL_DELTA_WPARAM(w_param)) / static_cast<float>(WHEEL_DELTA),
                 .scroll_unit = raw_platform_scroll_delta_unit::lines,
                 .logical_key = {},
+                .alt = virtual_key_down(VK_MENU),
+                .ctrl = virtual_key_down(VK_CONTROL),
+                .shift = virtual_key_down(VK_SHIFT),
+                .meta = virtual_key_down(VK_LWIN) || virtual_key_down(VK_RWIN),
             });
             return 0;
         }
@@ -296,6 +300,7 @@ public:
         }
 
         SetWindowLongPtrW(window_handle_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+        state_.native_window = native_window_handle();
         state_.client_size = client_size_for_window(window_handle_, state_.client_size);
         ShowWindow(window_handle_, SW_SHOW);
         UpdateWindow(window_handle_);
@@ -328,7 +333,19 @@ public:
     {
         platform_shell_state current_state = state_;
         current_state.client_size = client_size_for_window(window_handle_, state_.client_size);
+        current_state.native_window = native_window_handle();
         return current_state;
+    }
+
+    [[nodiscard]] platform_native_window_handle native_window_handle() const override
+    {
+        return platform_native_window_handle{
+            .kind = window_handle_ == nullptr
+                ? platform_native_window_kind::none
+                : platform_native_window_kind::win32_hwnd,
+            .value = reinterpret_cast<std::uintptr_t>(window_handle_),
+            .display = reinterpret_cast<std::uintptr_t>(instance_handle_),
+        };
     }
 
     void present_framebuffer(std::size_t width, std::size_t height, const unsigned char* rgba) override

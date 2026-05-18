@@ -1,6 +1,6 @@
 # Quiz Current Handoff
 
-Last updated: 2026-05-17
+Last updated: 2026-05-18
 
 This file is intentionally short. Use it as the first read before `big_plan.md`,
 `requirements_traceability_matrix.md`, or per-requirement implementation notes.
@@ -19,31 +19,31 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Active Bottlenecks
 
-- Vulkan: descriptor write payload handoff is now integrated; the next Vulkan
-  gap is consuming those payloads in the native command recording path without
-  pulling scene/UI/domain state into the backend.
-- Text: glyph quad packet evidence is now integrated; the next text gap is real
-  renderer/font atlas consumption after the image/Vulkan resource contracts
-  settle. Glyph quad packet diff evidence is also integrated.
-- Image: draw-list texture frame composition is now integrated; the next image
-  gap is renderer-bound texture quad/resource consumption after Vulkan
-  descriptor evidence settles. Renderer texture quad packet evidence is also
-  integrated, including texture quad packet diff evidence.
-- Input/IME: suppressed raw text and shortcut attempts during active IME
-  composition now emit diagnostics without app/domain dispatch. Programmatic
-  text focus changes now also diagnose stale IME preedit/selection cleanup.
+- Vulkan: descriptor payload command recording and Win32 surface bridge
+  diagnostics are integrated. Active work is swapchain image enumeration/acquire
+  behind the Vulkan-owned boundary.
+- Text: text resource packet handoff, draw-list text frame composition, and
+  FreeType raster payload handoff evidence are integrated. Active work is
+  line/run atlas upload readiness.
+- Image: draw-list texture frame composition coverage is integrated. Active
+  work is image-owned resource packet consumption diff evidence.
+- Asset: materialized byte payload request transaction review is integrated.
+  Active work is shader materialized-byte pipeline summary.
+- Input/IME: focus-loss cleanup diagnostics are integrated. Active work is
+  wheel, drag, and touch-like pointer gesture normalization.
 
 ## Active Workers
 
+- `codex-vulkan-real-backend-probe-20260514`: busy on
+  `codex/vulkan-swapchain-image-execution-20260518`.
+- `codex-text-freetype-prototype-20260514`: busy on
+  `codex/text-line-run-atlas-upload-20260515-224725`.
 - `codex-image-texture-next-20260514`: busy on
-  `codex/image-texture-quad-packet-consumption-20260517`.
+  `codex/image-resource-packet-consumption-diff-20260517`.
+- `codex-asset-unified-cache-key-20260514`: busy on shader materialized-byte
+  pipeline work from the latest baseline.
 - `codex-input-ime`: busy on
   `codex/input-wheel-drag-touch-gestures-20260517`.
-- `codex-vulkan-native-descriptor-set-evidence-20260516`: busy on
-  `codex/vulkan-descriptor-payload-command-recording-20260517`.
-- `codex-text-freetype-prototype-20260514`: idle on an already-integrated
-  text glyph quad diff branch. Keep the session alive and assign a fresh
-  baseline branch before any new text work.
 - Idle sessions are intentionally kept alive. Give them fresh baseline branches
   before new work; do not re-merge historical ahead commits.
 
@@ -75,11 +75,12 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `5f35d5a` after the
-  placed-scene boundary split, IME focus-loss diagnostics integration, and image
-  texture quad packet diff evidence.
-- Last full Windows MinGW CTest batch passed `108/108` from
-  `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
+- Main branch `codex/quiz-vulkan-remake-baseline` is at `1da632d` after
+  assignment doc cleanup plus asset payload transaction review, raw focus-loss
+  diagnostics, and text draw-list frame composition evidence.
+- Last full Windows MinGW CTest batch should be treated as stale. Run focused
+  tests during normal integration; run full CTest after the next meaningful
+  engine batch.
 - After `51e6a40`, Windows MinGW built
   `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_architecture_boundary_tests`,
   `quiz_vulkan_renderer_tests`, and `quiz_vulkan_app_demo_tests`; focused CTest
@@ -92,6 +93,10 @@ Historical integration notes are kept in git history, not repeated here.
   `quiz_vulkan_interface_contract_compile_tests` and
   `quiz_vulkan_image_texture_frame_resource_packet_plan_tests`; focused image
   CTest passed 1/1.
+- After `1da632d`, Windows MinGW built
+  `quiz_vulkan_asset_bytes_provider_tests`, `quiz_vulkan_input_engine_ime_tests`,
+  and `quiz_vulkan_text_draw_list_frame_composition_tests`; focused CTest passed
+  3/3 for those targets.
 
 ## Useful Commands
 
@@ -100,5 +105,5 @@ git status --short --branch
 ./codex-workers/worker-status.sh
 tmux capture-pane -pt codex-image-texture-next-20260514 -S -120
 tmux capture-pane -pt codex-text-freetype-prototype-20260514 -S -120
-tmux capture-pane -pt codex-vulkan-native-descriptor-set-evidence-20260516 -S -120
+tmux capture-pane -pt codex-vulkan-real-backend-probe-20260514 -S -120
 ```

@@ -51,6 +51,20 @@ void require_capture_snapshot(
     require(snapshot.tracked_pointer_count == tracked_pointer_count, message);
 }
 
+void require_modifiers(
+    quiz_vulkan::input::input_modifier_state modifiers,
+    bool alt,
+    bool ctrl,
+    bool shift,
+    bool meta,
+    const char* message)
+{
+    require(modifiers.alt == alt, message);
+    require(modifiers.ctrl == ctrl, message);
+    require(modifiers.shift == shift, message);
+    require(modifiers.meta == meta, message);
+}
+
 const quiz_vulkan::input::action_route_policy_diagnostic& require_policy(
     const quiz_vulkan::input::input_routing_diagnostics& diagnostics,
     std::size_t index,
@@ -146,7 +160,8 @@ quiz_vulkan::input::raw_scroll_event scroll(
     float y,
     float delta_x,
     float delta_y,
-    quiz_vulkan::input::scroll_delta_unit unit)
+    quiz_vulkan::input::scroll_delta_unit unit,
+    quiz_vulkan::input::input_modifier_state modifiers = {})
 {
     return quiz_vulkan::input::raw_scroll_event{
         .timestamp_ms = timestamp_ms,
@@ -155,6 +170,7 @@ quiz_vulkan::input::raw_scroll_event scroll(
         .delta_x = delta_x,
         .delta_y = delta_y,
         .unit = unit,
+        .modifiers = modifiers,
     };
 }
 
@@ -164,7 +180,11 @@ quiz_vulkan::raw_platform_input_event platform_scroll(
     float y,
     float delta_x,
     float delta_y,
-    quiz_vulkan::raw_platform_scroll_delta_unit unit)
+    quiz_vulkan::raw_platform_scroll_delta_unit unit,
+    bool alt = false,
+    bool ctrl = false,
+    bool shift = false,
+    bool meta = false)
 {
     return quiz_vulkan::raw_platform_scroll_event{
         .timestamp_ms = timestamp_ms,
@@ -173,6 +193,10 @@ quiz_vulkan::raw_platform_input_event platform_scroll(
         .delta_x = delta_x,
         .delta_y = delta_y,
         .unit = unit,
+        .alt = alt,
+        .ctrl = ctrl,
+        .shift = shift,
+        .meta = meta,
     };
 }
 
@@ -503,6 +527,128 @@ void test_pointer_capture_routes_drag_and_ignores_other_pointers()
     require(tap.pointer_id == 2, "capture route second pointer tap preserves id");
 }
 
+void test_touch_pointer_does_not_corrupt_mouse_drag_capture()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                100,
+                0.0f,
+                0.0f,
+                raw_platform_pointer_button::primary,
+                1))
+                .empty(),
+        "mixed capture mouse down emits no event");
+
+    std::vector<input_event> events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::move,
+        120,
+        9.0f,
+        0.0f,
+        raw_platform_pointer_button::primary,
+        1));
+    require(events.size() == 1, "mixed capture mouse starts drag");
+    const gesture_event& start = require_event<gesture_event>(events, 0);
+    require(start.kind == gesture_kind::drag_start, "mixed capture mouse emits drag start");
+    const action_route_policy_diagnostic& start_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "mixed capture drag start route is emitted");
+    require(start_policy.pointer_contact == pointer_contact_kind::mouse_like,
+        "mixed capture drag start records mouse contact");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::captured,
+        true,
+        1,
+        1,
+        "mixed capture mouse owns pointer capture");
+
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                130,
+                30.0f,
+                0.0f,
+                raw_platform_pointer_button::none,
+                44))
+                .empty(),
+        "mixed capture touch down is diagnostic only while mouse captured");
+    const action_route_policy_diagnostic& ignored_touch_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::pointer_capture_arbitration,
+        "mixed capture touch down emits arbitration route");
+    require(!ignored_touch_policy.emits_input_event,
+        "mixed capture ignored touch emits no normalized input event");
+    require(ignored_touch_policy.pointer_decision == pointer_arbitration_decision::ignored_by_capture,
+        "mixed capture touch records ignored-by-capture decision");
+    require(ignored_touch_policy.pointer_contact == pointer_contact_kind::touch_like,
+        "mixed capture touch route records touch contact");
+    require(ignored_touch_policy.pointer_id == 44, "mixed capture touch route preserves touch id");
+    require_capture_snapshot(
+        ignored_touch_policy.pointer_capture_before,
+        pointer_capture_lifecycle::captured,
+        true,
+        1,
+        1,
+        "mixed capture touch route records mouse capture before");
+    require_capture_snapshot(
+        ignored_touch_policy.pointer_capture_after,
+        pointer_capture_lifecycle::captured,
+        true,
+        1,
+        1,
+        "mixed capture touch route leaves mouse capture after");
+    require(engine.routing_diagnostics().summary.normalized_event_count == 0,
+        "mixed capture ignored touch has no normalized event summary");
+    require(engine.routing_diagnostics().summary.routes.pointer == 1,
+        "mixed capture ignored touch counts one pointer route");
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::move,
+        140,
+        13.0f,
+        2.0f,
+        raw_platform_pointer_button::primary,
+        1));
+    require(events.size() == 1, "mixed capture mouse drag update still emits");
+    const gesture_event& update = require_event<gesture_event>(events, 0);
+    require(update.kind == gesture_kind::drag_update, "mixed capture mouse update kind is routed");
+    require(update.pointer_id == 1, "mixed capture mouse update preserves pointer id");
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        150,
+        16.0f,
+        4.0f,
+        raw_platform_pointer_button::primary,
+        1));
+    require(events.size() == 1, "mixed capture mouse drag end still emits");
+    const gesture_event& end = require_event<gesture_event>(events, 0);
+    require(end.kind == gesture_kind::drag_end, "mixed capture mouse end kind is routed");
+    require(end.pointer_id == 1, "mixed capture mouse end preserves pointer id");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "mixed capture releases mouse capture cleanly");
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        160,
+        30.0f,
+        0.0f,
+        raw_platform_pointer_button::none,
+        44));
+    require(events.empty(), "mixed capture ignored touch up has no stale tap");
+}
+
 void test_drag_start_slop_routes_from_engine_thresholds()
 {
     using namespace quiz_vulkan;
@@ -631,6 +777,110 @@ void test_raw_platform_scroll_routes_through_input_engine()
         0.0f,
         raw_platform_scroll_delta_unit::pixels));
     require(events.empty(), "raw platform zero scroll emits no input event");
+}
+
+void test_wheel_modifiers_normalize_without_pointer_text_or_domain_routes()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    std::vector<input_event> events = engine.process_scroll_event(scroll(
+        300,
+        12.0f,
+        24.0f,
+        0.0f,
+        -5.0f,
+        scroll_delta_unit::lines,
+        input_modifier_state{
+            .alt = true,
+            .ctrl = false,
+            .shift = true,
+            .meta = false,
+        }));
+    require(events.size() == 1, "direct modified wheel emits one input event");
+    const scroll_event& direct = require_event<scroll_event>(events, 0);
+    require(direct.timestamp_ms == 300, "direct modified wheel preserves timestamp");
+    require(direct.x == 12.0f, "direct modified wheel preserves x");
+    require(direct.y == 24.0f, "direct modified wheel preserves y");
+    require(direct.line_delta_y == -5.0f, "direct modified wheel preserves line delta");
+    require_modifiers(direct.modifiers, true, false, true, false,
+        "direct modified wheel preserves modifier state");
+
+    const input_routing_diagnostics& direct_diagnostics = engine.routing_diagnostics();
+    require(direct_diagnostics.normalized_events.size() == 1,
+        "direct modified wheel emits one normalized summary");
+    require_modifiers(
+        direct_diagnostics.normalized_events[0].modifiers,
+        true,
+        false,
+        true,
+        false,
+        "direct modified wheel summary preserves modifiers");
+    require(direct_diagnostics.action_routes.size() == 1,
+        "direct modified wheel emits one route policy");
+    const action_route_policy_diagnostic& direct_policy = require_policy(
+        direct_diagnostics,
+        0,
+        action_route_policy_kind::wheel_summary,
+        "direct modified wheel route is wheel summary");
+    require(direct_policy.emits_input_event, "direct modified wheel route emits normalized input event");
+    require(direct_policy.normalized_event.kind == input_event_summary_kind::wheel,
+        "direct modified wheel route carries wheel summary");
+    require_modifiers(direct_policy.normalized_event.modifiers, true, false, true, false,
+        "direct modified wheel route carries modifier evidence");
+    require(direct_policy.pointer_contact == pointer_contact_kind::unknown,
+        "direct modified wheel route has no pointer contact semantics");
+    require(direct_policy.pointer_decision == pointer_arbitration_decision::none,
+        "direct modified wheel route has no pointer arbitration");
+    const input_diagnostic_summary& direct_summary = direct_diagnostics.summary;
+    require(direct_summary.normalized_event_count == 1,
+        "direct modified wheel summary counts one normalized event");
+    require(direct_summary.normalized_events.wheel == 1,
+        "direct modified wheel summary counts wheel event");
+    require(direct_summary.routes.wheel == 1,
+        "direct modified wheel summary counts one wheel route");
+    require(direct_summary.routes.pointer == 0,
+        "direct modified wheel summary counts no pointer route");
+    require(direct_summary.routes.text == 0,
+        "direct modified wheel summary counts no text route");
+    require(direct_summary.routes.ime == 0,
+        "direct modified wheel summary counts no ime route");
+    require(direct_summary.routes.focus == 0,
+        "direct modified wheel summary counts no focus route");
+    require(direct_summary.routes.total == 1,
+        "direct modified wheel summary counts only the wheel route");
+    require(direct_summary.pointer_capture_ended_cleanly,
+        "direct modified wheel keeps pointer capture clean");
+    require(direct_summary.focus_ended_cleanly,
+        "direct modified wheel keeps focus clean");
+    require(direct_summary.preedit_ended_cleanly,
+        "direct modified wheel keeps preedit clean");
+
+    events = engine.process_raw_event(platform_scroll(
+        320,
+        30.0f,
+        40.0f,
+        9.0f,
+        -18.0f,
+        raw_platform_scroll_delta_unit::pixels,
+        false,
+        true,
+        false,
+        true));
+    require(events.size() == 1, "raw modified wheel emits one input event");
+    const scroll_event& raw = require_event<scroll_event>(events, 0);
+    require(raw.pixel_delta_x == 9.0f, "raw modified wheel preserves x pixel delta");
+    require(raw.pixel_delta_y == -18.0f, "raw modified wheel preserves y pixel delta");
+    require_modifiers(raw.modifiers, false, true, false, true,
+        "raw modified wheel preserves modifier state");
+    require_modifiers(
+        engine.routing_diagnostics().action_routes[0].normalized_event.modifiers,
+        false,
+        true,
+        false,
+        true,
+        "raw modified wheel route carries modifier evidence");
 }
 
 void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
@@ -1591,10 +1841,12 @@ int main()
     test_pointer_id_reuse_routes_replacement_state();
     test_drag_gestures_route_from_raw_pointer();
     test_pointer_capture_routes_drag_and_ignores_other_pointers();
+    test_touch_pointer_does_not_corrupt_mouse_drag_capture();
     test_drag_start_slop_routes_from_engine_thresholds();
     test_multi_pointer_long_press_order_routes_stably();
     test_scroll_events_normalize_line_and_pixel_deltas();
     test_raw_platform_scroll_routes_through_input_engine();
+    test_wheel_modifiers_normalize_without_pointer_text_or_domain_routes();
     test_gesture_routing_diagnostics_summarize_gestures_and_wheel();
     test_gesture_policy_diagnostics_record_rejected_swipes();
     test_gesture_routing_diagnostics_cancel_and_focus_loss();

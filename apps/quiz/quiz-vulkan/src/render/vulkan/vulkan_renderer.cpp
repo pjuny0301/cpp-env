@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -87,6 +88,72 @@ void fill_rect(
     }
 }
 
+const vulkan_renderer_image_texture_payload* find_image_payload(
+    const vulkan_renderer_image_texture_payload_frame* frame,
+    std::size_t draw_command_index)
+{
+    if (frame == nullptr) {
+        return nullptr;
+    }
+
+    for (const vulkan_renderer_image_texture_payload& payload : frame->payloads) {
+        if (payload.draw_command_index == draw_command_index) {
+            return &payload;
+        }
+    }
+    return nullptr;
+}
+
+unsigned char image_payload_hash_byte(const std::string& value, unsigned char fallback)
+{
+    if (value.empty()) {
+        return fallback;
+    }
+
+    unsigned int hash = 2166136261U;
+    for (const char character : value) {
+        hash ^= static_cast<unsigned char>(character);
+        hash *= 16777619U;
+    }
+    return static_cast<unsigned char>((hash % 160U) + 64U);
+}
+
+render_color image_payload_color(const vulkan_renderer_image_texture_payload& payload)
+{
+    if (payload.blocked) {
+        return render_color{.red = 0.85f, .green = 0.15f, .blue = 0.15f, .alpha = 1.0f};
+    }
+    if (payload.placeholder_backed) {
+        return render_color{.red = 0.85f, .green = 0.25f, .blue = 0.85f, .alpha = 1.0f};
+    }
+
+    const std::string identity = payload.stable_texture_cache_key.empty()
+        ? std::to_string(payload.texture_id)
+        : payload.stable_texture_cache_key;
+    return render_color{
+        .red = static_cast<float>(image_payload_hash_byte(identity + ":r", 120)) / 255.0f,
+        .green = static_cast<float>(image_payload_hash_byte(identity + ":g", 160)) / 255.0f,
+        .blue = static_cast<float>(image_payload_hash_byte(identity + ":b", 220)) / 255.0f,
+        .alpha = 1.0f,
+    };
+}
+
+void apply_image_payload_summary(
+    vulkan_renderer_frame_summary& summary,
+    const vulkan_renderer_image_texture_payload_frame* image_texture_payloads)
+{
+    if (image_texture_payloads == nullptr) {
+        return;
+    }
+
+    summary.image_texture_payloads_consumed = image_texture_payloads->payload_count != 0;
+    summary.image_texture_payloads_ready = image_texture_payloads->draw_payloads_ready;
+    summary.image_texture_payload_count = image_texture_payloads->payload_count;
+    summary.image_texture_payload_ready_count = image_texture_payloads->draw_ready_payload_count;
+    summary.image_texture_payload_placeholder_count = image_texture_payloads->placeholder_payload_count;
+    summary.image_texture_payload_blocked_count = image_texture_payloads->blocked_payload_count;
+}
+
 std::size_t shade_rect(
     std::vector<unsigned char>& coverage,
     const render_rect& viewport,
@@ -128,6 +195,24 @@ vulkan_backend::vulkan_backend_frame_result submit_optional_vulkan_backend_frame
         return {};
     }
 
+    if (options.backend_device != nullptr) {
+        if (options.backend_pipeline_cache != nullptr
+            && options.backend_command_recorder != nullptr
+            && options.backend_command_packet_executor != nullptr) {
+            return vulkan_backend::submit_vulkan_backend_frame(
+                *options.backend_device,
+                *options.backend_pipeline_cache,
+                *options.backend_command_recorder,
+                *options.backend_command_packet_executor,
+                draw_list,
+                options.viewport);
+        }
+        return vulkan_backend::submit_vulkan_backend_frame(
+            *options.backend_device,
+            draw_list,
+            options.viewport);
+    }
+
     vulkan_backend::null_vulkan_backend_device device;
     return vulkan_backend::submit_vulkan_backend_frame(device, draw_list, options.viewport);
 }
@@ -141,6 +226,20 @@ vulkan_renderer::vulkan_renderer(vulkan_renderer_options options)
 
 void vulkan_renderer::submit(const render_draw_list& draw_list)
 {
+    submit(draw_list, nullptr);
+}
+
+void vulkan_renderer::submit(
+    const render_draw_list& draw_list,
+    const vulkan_renderer_image_texture_payload_frame& image_texture_payloads)
+{
+    submit(draw_list, &image_texture_payloads);
+}
+
+void vulkan_renderer::submit(
+    const render_draw_list& draw_list,
+    const vulkan_renderer_image_texture_payload_frame* image_texture_payloads)
+{
     last_draw_list_ = draw_list;
     last_frame_stats_ = count_commands(last_draw_list_);
     last_backend_frame_result_ = submit_optional_vulkan_backend_frame(last_draw_list_, options_);
@@ -148,8 +247,9 @@ void vulkan_renderer::submit(const render_draw_list& draw_list)
         last_draw_list_,
         last_frame_stats_,
         last_backend_frame_result_,
-        options_);
-    last_framebuffer_ = rasterize_cpu_fallback_framebuffer(last_draw_list_, options_);
+        options_,
+        image_texture_payloads);
+    last_framebuffer_ = rasterize_cpu_fallback_framebuffer(last_draw_list_, options_, image_texture_payloads);
 }
 
 void vulkan_renderer::submit(const std::vector<render_draw_command>& commands)
@@ -250,10 +350,13 @@ vulkan_renderer_frame_summary vulkan_renderer::summarize_cpu_fallback(
     const render_draw_list& draw_list,
     const vulkan_renderer_frame_stats& stats,
     const vulkan_backend::vulkan_backend_frame_result& backend_result,
-    const vulkan_renderer_options& options)
+    const vulkan_renderer_options& options,
+    const vulkan_renderer_image_texture_payload_frame* image_texture_payloads)
 {
     vulkan_renderer_frame_summary summary;
-    summary.backend = vulkan_renderer_backend::cpu_fallback;
+    summary.backend = backend_result.completed()
+        ? vulkan_renderer_backend::vulkan
+        : vulkan_renderer_backend::cpu_fallback;
     summary.viewport = options.viewport;
     summary.surface_width = options.fallback_surface_width;
     summary.surface_height = options.fallback_surface_height;
@@ -262,6 +365,8 @@ vulkan_renderer_frame_summary vulkan_renderer::summarize_cpu_fallback(
     summary.backend_planned_batch_count = backend_result.planned_batch_count;
     summary.backend_recorded_batch_count = backend_result.recorded_batch_count;
     summary.backend_reached_stage = backend_result.reached_stage;
+    summary.native_window_kind = options.native_window.kind;
+    summary.native_window_target_ready = options.native_window.valid();
     summary.backend_instance_ready = backend_result.lifecycle.instance_ready;
     summary.backend_device_ready = backend_result.lifecycle.device_ready;
     summary.backend_swapchain_ready = backend_result.lifecycle.swapchain_ready;
@@ -305,6 +410,7 @@ vulkan_renderer_frame_summary vulkan_renderer::summarize_cpu_fallback(
     summary.backend_attempted = backend_result.attempted;
     summary.backend_fallback_required = backend_result.fallback_required;
     summary.backend_fallback_reason = backend_result.fallback_reason;
+    apply_image_payload_summary(summary, image_texture_payloads);
 
     if (stats.draw_call_count == 0 || !has_visible_area(options.viewport)
         || options.fallback_surface_width == 0 || options.fallback_surface_height == 0) {
@@ -338,7 +444,8 @@ vulkan_renderer_frame_summary vulkan_renderer::summarize_cpu_fallback(
 
 vulkan_renderer_framebuffer vulkan_renderer::rasterize_cpu_fallback_framebuffer(
     const render_draw_list& draw_list,
-    const vulkan_renderer_options& options)
+    const vulkan_renderer_options& options,
+    const vulkan_renderer_image_texture_payload_frame* image_texture_payloads)
 {
     vulkan_renderer_framebuffer framebuffer;
     framebuffer.width = options.fallback_surface_width;
@@ -366,13 +473,21 @@ vulkan_renderer_framebuffer vulkan_renderer::rasterize_cpu_fallback_framebuffer(
             continue;
         }
 
+        const vulkan_renderer_image_texture_payload* image_payload =
+            batch.kind == vulkan_backend::vulkan_batch_kind::image
+                ? find_image_payload(image_texture_payloads, batch.command_index)
+                : nullptr;
+        const render_color fill_color = image_payload == nullptr
+            ? batch.paint.color
+            : image_payload_color(*image_payload);
+
         fill_rect(
             framebuffer.rgba,
             options.viewport,
             framebuffer.width,
             framebuffer.height,
             batch.clipped_bounds,
-            batch.paint.color);
+            fill_color);
     }
 
     return framebuffer;

@@ -2,6 +2,7 @@
 
 #include "render/vulkan/vulkan_backend_device.h"
 #include "render/vulkan/vulkan_backend_native_symbols.h"
+#include "render/vulkan/vulkan_backend_sdk.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -31,6 +32,231 @@ struct vulkan_surface_handle {
         return value != 0;
     }
 };
+
+inline std::string_view vulkan_surface_extension_name()
+{
+    return "VK_KHR_surface";
+}
+
+inline std::string_view vulkan_win32_surface_extension_name()
+{
+    return "VK_KHR_win32_surface";
+}
+
+struct vulkan_win32_native_window_handles {
+    std::uintptr_t hinstance = 0;
+    std::uintptr_t hwnd = 0;
+
+    bool hinstance_valid() const
+    {
+        return hinstance != 0;
+    }
+
+    bool hwnd_valid() const
+    {
+        return hwnd != 0;
+    }
+
+    bool valid() const
+    {
+        return hinstance_valid() && hwnd_valid();
+    }
+};
+
+struct vulkan_win32_surface_header_evidence {
+    bool checked = false;
+    bool vulkan_headers_available = false;
+    bool win32_surface_headers_available = false;
+    bool create_info_type_available = false;
+    bool create_function_pointer_type_available = false;
+    std::string surface_extension_name = std::string{vulkan_surface_extension_name()};
+    std::string win32_surface_extension_name = std::string{vulkan_win32_surface_extension_name()};
+    std::string diagnostic;
+
+    bool ready_for_bridge() const
+    {
+        return checked && vulkan_headers_available && win32_surface_headers_available
+            && create_info_type_available && create_function_pointer_type_available
+            && !surface_extension_name.empty() && !win32_surface_extension_name.empty();
+    }
+};
+
+inline vulkan_win32_surface_header_evidence
+probe_vulkan_win32_surface_header_evidence()
+{
+    vulkan_win32_surface_header_evidence evidence{
+        .checked = true,
+        .vulkan_headers_available = false,
+        .win32_surface_headers_available = false,
+        .create_info_type_available = false,
+        .create_function_pointer_type_available = false,
+        .surface_extension_name = std::string{vulkan_surface_extension_name()},
+        .win32_surface_extension_name = std::string{vulkan_win32_surface_extension_name()},
+        .diagnostic = {},
+    };
+
+#if QUIZ_VULKAN_HAS_VULKAN_HEADERS
+    evidence.vulkan_headers_available = true;
+#ifdef VK_KHR_SURFACE_EXTENSION_NAME
+    evidence.surface_extension_name = VK_KHR_SURFACE_EXTENSION_NAME;
+#endif
+#if defined(VK_USE_PLATFORM_WIN32_KHR) && defined(VK_KHR_WIN32_SURFACE_EXTENSION_NAME)
+    evidence.win32_surface_headers_available = true;
+    evidence.create_info_type_available = true;
+    evidence.create_function_pointer_type_available = true;
+    evidence.win32_surface_extension_name = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
+    evidence.diagnostic = "Vulkan Win32 surface headers are available";
+#else
+    evidence.diagnostic =
+        "Vulkan headers are available, but Win32 surface declarations are not enabled";
+#endif
+#else
+    evidence.diagnostic =
+        "Vulkan headers are unavailable for Win32 surface bridge";
+#endif
+
+    return evidence;
+}
+
+enum class vulkan_win32_surface_bridge_status {
+    not_requested,
+    created,
+    instance_unavailable,
+    hinstance_unavailable,
+    hwnd_unavailable,
+    headers_unavailable,
+    required_surface_extension_unavailable,
+    required_win32_surface_extension_unavailable,
+    create_symbol_unavailable,
+    creation_failed,
+    invalid_created_handle,
+};
+
+inline std::string_view win32_surface_bridge_status_name(
+    vulkan_win32_surface_bridge_status status)
+{
+    switch (status) {
+    case vulkan_win32_surface_bridge_status::not_requested:
+        return "not_requested";
+    case vulkan_win32_surface_bridge_status::created:
+        return "created";
+    case vulkan_win32_surface_bridge_status::instance_unavailable:
+        return "instance_unavailable";
+    case vulkan_win32_surface_bridge_status::hinstance_unavailable:
+        return "hinstance_unavailable";
+    case vulkan_win32_surface_bridge_status::hwnd_unavailable:
+        return "hwnd_unavailable";
+    case vulkan_win32_surface_bridge_status::headers_unavailable:
+        return "headers_unavailable";
+    case vulkan_win32_surface_bridge_status::required_surface_extension_unavailable:
+        return "required_surface_extension_unavailable";
+    case vulkan_win32_surface_bridge_status::required_win32_surface_extension_unavailable:
+        return "required_win32_surface_extension_unavailable";
+    case vulkan_win32_surface_bridge_status::create_symbol_unavailable:
+        return "create_symbol_unavailable";
+    case vulkan_win32_surface_bridge_status::creation_failed:
+        return "creation_failed";
+    case vulkan_win32_surface_bridge_status::invalid_created_handle:
+        return "invalid_created_handle";
+    }
+
+    return "unknown";
+}
+
+struct vulkan_win32_surface_bridge_request {
+    vulkan_instance_handle instance;
+    vulkan_win32_native_window_handles window;
+    vulkan_native_function_pointer create_win32_surface;
+    vulkan_win32_surface_header_evidence headers =
+        probe_vulkan_win32_surface_header_evidence();
+    std::vector<std::string> enabled_instance_extensions;
+    bool require_surface_extension = true;
+    bool require_win32_surface_extension = true;
+};
+
+struct vulkan_win32_surface_bridge_result {
+    bool checked = false;
+    vulkan_win32_surface_bridge_status status =
+        vulkan_win32_surface_bridge_status::not_requested;
+    vulkan_win32_surface_bridge_request request;
+    vulkan_instance_handle instance;
+    vulkan_win32_native_window_handles window;
+    vulkan_native_function_pointer create_win32_surface_symbol;
+    vulkan_surface_handle surface;
+    bool instance_valid = false;
+    bool hinstance_valid = false;
+    bool hwnd_valid = false;
+    bool headers_ready = false;
+    bool surface_extension_ready = false;
+    bool win32_surface_extension_ready = false;
+    bool create_symbol_ready = false;
+    bool vk_create_win32_surface_called = false;
+    std::int32_t native_result = 0;
+    std::string missing_required_extension;
+    std::string diagnostic;
+
+    bool ready_for_surface_queries() const
+    {
+        return checked && status == vulkan_win32_surface_bridge_status::created
+            && surface.valid() && instance_valid && hinstance_valid && hwnd_valid
+            && headers_ready && surface_extension_ready
+            && win32_surface_extension_ready && create_symbol_ready;
+    }
+
+    bool blocked() const
+    {
+        return checked && !ready_for_surface_queries();
+    }
+};
+
+class vulkan_win32_surface_bridge_interface {
+public:
+    virtual ~vulkan_win32_surface_bridge_interface() = default;
+
+    virtual vulkan_win32_surface_bridge_result create_win32_surface(
+        const vulkan_win32_surface_bridge_request& request) = 0;
+};
+
+struct fake_vulkan_win32_surface_bridge_options {
+    vulkan_surface_handle surface{.value = 5000};
+    bool fail_creation = false;
+    bool return_invalid_surface = false;
+    std::int32_t failure_result = -1;
+};
+
+struct fake_vulkan_win32_surface_bridge_state {
+    std::size_t create_call_count = 0;
+    vulkan_instance_handle requested_instance;
+    vulkan_win32_native_window_handles requested_window;
+    vulkan_native_function_pointer requested_create_symbol;
+    vulkan_surface_handle created_surface;
+};
+
+class fake_vulkan_win32_surface_bridge final
+    : public vulkan_win32_surface_bridge_interface {
+public:
+    fake_vulkan_win32_surface_bridge();
+    explicit fake_vulkan_win32_surface_bridge(
+        fake_vulkan_win32_surface_bridge_options options);
+
+    vulkan_win32_surface_bridge_result create_win32_surface(
+        const vulkan_win32_surface_bridge_request& request) override;
+    const fake_vulkan_win32_surface_bridge_state& state() const;
+
+private:
+    fake_vulkan_win32_surface_bridge_options options_;
+    fake_vulkan_win32_surface_bridge_state state_;
+};
+
+class vulkan_win32_surface_bridge final : public vulkan_win32_surface_bridge_interface {
+public:
+    vulkan_win32_surface_bridge_result create_win32_surface(
+        const vulkan_win32_surface_bridge_request& request) override;
+};
+
+vulkan_win32_surface_bridge_result create_vulkan_win32_surface(
+    vulkan_win32_surface_bridge_interface& bridge,
+    const vulkan_win32_surface_bridge_request& request);
 
 struct vulkan_swapchain_image_id {
     std::size_t value = 0;
@@ -2245,6 +2471,106 @@ inline bool same_extent(vulkan_surface_extent left, vulkan_surface_extent right)
     return left.width == right.width && left.height == right.height;
 }
 
+inline bool contains_string(
+    const std::vector<std::string>& values,
+    std::string_view value)
+{
+    return std::find_if(
+               values.begin(),
+               values.end(),
+               [value](const std::string& candidate) {
+                   return candidate == value;
+               })
+        != values.end();
+}
+
+inline vulkan_win32_surface_bridge_result make_win32_surface_bridge_result(
+    const vulkan_win32_surface_bridge_request& request)
+{
+    const bool surface_extension_ready = !request.require_surface_extension
+        || contains_string(
+            request.enabled_instance_extensions,
+            request.headers.surface_extension_name);
+    const bool win32_surface_extension_ready = !request.require_win32_surface_extension
+        || contains_string(
+            request.enabled_instance_extensions,
+            request.headers.win32_surface_extension_name);
+    return vulkan_win32_surface_bridge_result{
+        .checked = true,
+        .status = vulkan_win32_surface_bridge_status::not_requested,
+        .request = request,
+        .instance = request.instance,
+        .window = request.window,
+        .create_win32_surface_symbol = request.create_win32_surface,
+        .surface = {},
+        .instance_valid = request.instance.valid(),
+        .hinstance_valid = request.window.hinstance_valid(),
+        .hwnd_valid = request.window.hwnd_valid(),
+        .headers_ready = request.headers.ready_for_bridge(),
+        .surface_extension_ready = surface_extension_ready,
+        .win32_surface_extension_ready = win32_surface_extension_ready,
+        .create_symbol_ready = request.create_win32_surface.valid(),
+        .vk_create_win32_surface_called = false,
+        .native_result = 0,
+        .missing_required_extension = {},
+        .diagnostic = {},
+    };
+}
+
+inline bool block_unready_win32_surface_bridge_result(
+    vulkan_win32_surface_bridge_result& result)
+{
+    if (!result.instance_valid) {
+        result.status = vulkan_win32_surface_bridge_status::instance_unavailable;
+        result.diagnostic =
+            "Win32 Vulkan surface bridge has no valid Vulkan instance handle";
+        return true;
+    }
+    if (!result.hinstance_valid) {
+        result.status = vulkan_win32_surface_bridge_status::hinstance_unavailable;
+        result.diagnostic =
+            "Win32 Vulkan surface bridge has no valid HINSTANCE handle";
+        return true;
+    }
+    if (!result.hwnd_valid) {
+        result.status = vulkan_win32_surface_bridge_status::hwnd_unavailable;
+        result.diagnostic = "Win32 Vulkan surface bridge has no valid HWND handle";
+        return true;
+    }
+    if (!result.headers_ready) {
+        result.status = vulkan_win32_surface_bridge_status::headers_unavailable;
+        result.diagnostic = result.request.headers.diagnostic.empty()
+            ? "Win32 Vulkan surface bridge has no usable Vulkan Win32 surface header evidence"
+            : result.request.headers.diagnostic;
+        return true;
+    }
+    if (!result.surface_extension_ready) {
+        result.status =
+            vulkan_win32_surface_bridge_status::required_surface_extension_unavailable;
+        result.missing_required_extension = result.request.headers.surface_extension_name;
+        result.diagnostic =
+            "Win32 Vulkan surface bridge is missing required VK_KHR_surface extension";
+        return true;
+    }
+    if (!result.win32_surface_extension_ready) {
+        result.status =
+            vulkan_win32_surface_bridge_status::required_win32_surface_extension_unavailable;
+        result.missing_required_extension =
+            result.request.headers.win32_surface_extension_name;
+        result.diagnostic =
+            "Win32 Vulkan surface bridge is missing required VK_KHR_win32_surface extension";
+        return true;
+    }
+    if (!result.create_symbol_ready) {
+        result.status = vulkan_win32_surface_bridge_status::create_symbol_unavailable;
+        result.diagnostic =
+            "Win32 Vulkan surface bridge is missing vkCreateWin32SurfaceKHR";
+        return true;
+    }
+
+    return false;
+}
+
 inline bool contains_queue_capability(
     const std::vector<vulkan_device_queue_selection>& queues,
     vulkan_device_queue_capability capability)
@@ -2654,6 +2980,69 @@ make_image_view_targets_destroy_result(
 }
 
 } // namespace swapchain_detail
+
+inline fake_vulkan_win32_surface_bridge::fake_vulkan_win32_surface_bridge()
+    : fake_vulkan_win32_surface_bridge(fake_vulkan_win32_surface_bridge_options{})
+{
+}
+
+inline fake_vulkan_win32_surface_bridge::fake_vulkan_win32_surface_bridge(
+    fake_vulkan_win32_surface_bridge_options options)
+    : options_(std::move(options))
+{
+}
+
+inline vulkan_win32_surface_bridge_result
+fake_vulkan_win32_surface_bridge::create_win32_surface(
+    const vulkan_win32_surface_bridge_request& request)
+{
+    vulkan_win32_surface_bridge_result result =
+        swapchain_detail::make_win32_surface_bridge_result(request);
+
+    if (swapchain_detail::block_unready_win32_surface_bridge_result(result)) {
+        return result;
+    }
+
+    ++state_.create_call_count;
+    state_.requested_instance = request.instance;
+    state_.requested_window = request.window;
+    state_.requested_create_symbol = request.create_win32_surface;
+    result.vk_create_win32_surface_called = true;
+
+    if (options_.fail_creation) {
+        result.status = vulkan_win32_surface_bridge_status::creation_failed;
+        result.native_result = options_.failure_result;
+        result.diagnostic = "Fake Win32 Vulkan surface creation failed";
+        return result;
+    }
+
+    result.surface =
+        options_.return_invalid_surface ? vulkan_surface_handle{} : options_.surface;
+    state_.created_surface = result.surface;
+    if (!result.surface.valid()) {
+        result.status = vulkan_win32_surface_bridge_status::invalid_created_handle;
+        result.diagnostic =
+            "Fake Win32 Vulkan surface creation returned an invalid surface handle";
+        return result;
+    }
+
+    result.status = vulkan_win32_surface_bridge_status::created;
+    result.diagnostic = "Fake Win32 Vulkan surface created";
+    return result;
+}
+
+inline const fake_vulkan_win32_surface_bridge_state&
+fake_vulkan_win32_surface_bridge::state() const
+{
+    return state_;
+}
+
+inline vulkan_win32_surface_bridge_result create_vulkan_win32_surface(
+    vulkan_win32_surface_bridge_interface& bridge,
+    const vulkan_win32_surface_bridge_request& request)
+{
+    return bridge.create_win32_surface(request);
+}
 
 inline vulkan_native_swapchain_operation_dispatch_table
 collect_vulkan_native_swapchain_operation_dispatch_table(

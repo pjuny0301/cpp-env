@@ -53,6 +53,13 @@ enum class scroll_delta_unit {
     lines,
 };
 
+struct input_modifier_state {
+    bool alt = false;
+    bool ctrl = false;
+    bool shift = false;
+    bool meta = false;
+};
+
 struct raw_scroll_event {
     std::int64_t timestamp_ms = 0;
     float x = 0.0f;
@@ -60,6 +67,7 @@ struct raw_scroll_event {
     float delta_x = 0.0f;
     float delta_y = 0.0f;
     scroll_delta_unit unit = scroll_delta_unit::pixels;
+    input_modifier_state modifiers;
 };
 
 struct scroll_event {
@@ -70,6 +78,7 @@ struct scroll_event {
     float pixel_delta_y = 0.0f;
     float line_delta_x = 0.0f;
     float line_delta_y = 0.0f;
+    input_modifier_state modifiers;
 };
 
 enum class input_event_summary_kind {
@@ -99,6 +108,7 @@ struct normalized_input_event_summary {
     float pixel_delta_y = 0.0f;
     float line_delta_x = 0.0f;
     float line_delta_y = 0.0f;
+    input_modifier_state modifiers;
 };
 
 enum class text_event_kind {

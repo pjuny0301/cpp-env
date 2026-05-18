@@ -1,9 +1,13 @@
 #include "app/app_demo.h"
 
+#include "app/app_image_texture_payloads.h"
 #include "core/layout/layout_placer.h"
 #include "core/scene/modifier_interface.h"
 #include "app/app_quiz_screens.h"
 #include "core/ui/ui_renderer.h"
+#include "render/image/image_resolver.h"
+#include "render/image/image_texture_frame_snapshot.h"
+#include "render/image/image_texture_pipeline.h"
 #include "render/text/fake_text_engine.h"
 #include "render/text/scene_text_metrics_adapter.h"
 
@@ -96,6 +100,77 @@ private:
     std::string typed_text_answer_;
 };
 
+void prepare_image_textures_for_frame(
+    const ui::ui_draw_list& draw_list,
+    render::image_texture_pipeline_interface* image_texture_pipeline,
+    const render::image_resolver_interface* image_resolver,
+    app_render_report& report,
+    render::vulkan_renderer_image_texture_payload_frame& renderer_payloads)
+{
+    const render::normalizing_image_resolver fallback_resolver;
+    const render::image_resolver_interface& resolver =
+        image_resolver == nullptr ? fallback_resolver : *image_resolver;
+    const render::render_image_draw_list_frame_handoff_snapshot handoff =
+        render::make_render_image_draw_list_frame_handoff_snapshot(
+            draw_list,
+            resolver,
+            report.screen_id);
+
+    report.image_texture_command_count = handoff.image_command_count;
+    report.image_texture_request_count = handoff.planned_texture_request_count;
+    report.image_texture_handoff_ready = !handoff.has_image_commands || handoff.ok();
+    report.image_texture_renderer_handoff_ready = !handoff.has_image_commands;
+    report.image_texture_diagnostic = handoff.diagnostic;
+
+    if (!handoff.has_image_commands || !handoff.ok()) {
+        return;
+    }
+
+    if (image_texture_pipeline == nullptr) {
+        report.image_texture_failure_count = handoff.planned_texture_request_count;
+        report.image_texture_renderer_handoff_ready = false;
+        report.image_texture_diagnostic = "image texture pipeline is unavailable";
+        return;
+    }
+
+    const render::render_image_texture_batch_plan plan =
+        render::plan_render_image_texture_batch(handoff, resolver);
+    const render::render_image_texture_batch_execution_diagnostics execution =
+        render::execute_render_image_texture_batch_plan(plan, *image_texture_pipeline);
+    const render::render_image_texture_handle_map_diagnostics handle_map =
+        render::make_render_image_texture_handle_map_diagnostics(plan, execution);
+    const render::render_image_texture_frame_snapshot texture_frame =
+        render::make_render_image_texture_frame_snapshot(plan, execution, handle_map);
+
+    report.image_texture_pipeline_ran = true;
+    report.image_texture_ready_count = execution.ready_count;
+    report.image_texture_failure_count = execution.failure_count;
+    report.image_texture_mapped_count = handle_map.mapped_count;
+    report.image_texture_frame_entry_count = texture_frame.entries.size();
+    report.image_texture_renderer_handoff_ready = handle_map.ok();
+    report.image_texture_diagnostic = handle_map.ok() ? texture_frame.diagnostic : execution.diagnostic;
+    if (!handle_map.ok()) {
+        return;
+    }
+
+    const app_image_texture_payload_report payload_report =
+        prepare_app_image_texture_payloads(handoff, plan, texture_frame, *image_texture_pipeline, &renderer_payloads);
+    report.image_texture_resource_packet_count = payload_report.resource_packet_count;
+    report.image_texture_resource_ready_count = payload_report.resource_ready_count;
+    report.image_texture_quad_packet_count = payload_report.quad_packet_count;
+    report.image_texture_quad_ready_count = payload_report.quad_ready_count;
+    report.image_texture_payload_count = payload_report.payload_count;
+    report.image_texture_payload_ready_count = payload_report.payload_ready_count;
+    report.image_texture_payload_placeholder_count = payload_report.payload_placeholder_count;
+    report.image_texture_payload_blocked_count = payload_report.payload_blocked_count;
+    report.image_texture_upload_result_available = payload_report.upload_result_available;
+    report.image_texture_resource_packets_ready = payload_report.resource_packets_ready;
+    report.image_texture_quad_packets_ready = payload_report.quad_packets_ready;
+    report.image_texture_draw_payloads_ready = payload_report.draw_payloads_ready;
+    report.image_texture_renderer_handoff_ready = payload_report.draw_payloads_ready;
+    report.image_texture_diagnostic = payload_report.diagnostic;
+}
+
 } // namespace
 
 domain::deck make_demo_deck()
@@ -139,10 +214,14 @@ domain::deck make_demo_deck()
     return demo_deck;
 }
 
-app_render_frame render_app_frame(
+app_render_frame render_app_frame_with_engines(
     const domain::app_snapshot& snapshot,
     scene::scene_rect viewport,
-    app_render_view_state view_state)
+    app_render_view_state view_state,
+    render::text_engine_interface& text_engine,
+    render::vulkan_renderer& renderer,
+    render::image_texture_pipeline_interface* image_texture_pipeline,
+    const render::image_resolver_interface* image_resolver)
 {
     scene::scene_layout_data scene_data("quiz_app");
 
@@ -183,7 +262,6 @@ app_render_frame render_app_frame(
         environment.keyboard.focused_node_id = scene_data.focus_id();
     }
 
-    render::fake_text_engine text_engine;
     scene::render_text_metrics text_metrics(
         text_engine,
         make_demo_text_style_catalog(),
@@ -193,10 +271,22 @@ app_render_frame render_app_frame(
         environment,
         text_metrics);
     const ui::ui_draw_list draw_list = ui::ui_renderer{}.build_draw_list(frame.placed_scene);
+    render::vulkan_renderer_image_texture_payload_frame image_texture_payloads;
+    prepare_image_textures_for_frame(
+        draw_list,
+        image_texture_pipeline,
+        image_resolver,
+        frame.report,
+        image_texture_payloads);
 
-    render::vulkan_renderer_options renderer_options{.viewport = to_render_rect(environment.viewport)};
-    render::vulkan_renderer renderer(renderer_options);
-    renderer.submit(draw_list);
+    render::vulkan_renderer_options renderer_options = renderer.options();
+    renderer_options.viewport = to_render_rect(environment.viewport);
+    renderer.set_options(std::move(renderer_options));
+    if (image_texture_payloads.payload_count == 0) {
+        renderer.submit(draw_list);
+    } else {
+        renderer.submit(draw_list, image_texture_payloads);
+    }
 
     frame.report.node_count = frame.placed_scene.nodes.size();
     frame.report.input_region_count = frame.placed_scene.input_regions.size();
@@ -204,6 +294,18 @@ app_render_frame render_app_frame(
     frame.report.frame_summary = renderer.last_frame_summary();
     frame.framebuffer = renderer.last_framebuffer();
     return frame;
+}
+
+app_render_frame render_app_frame(
+    const domain::app_snapshot& snapshot,
+    scene::scene_rect viewport,
+    app_render_view_state view_state)
+{
+    render::fake_text_engine text_engine;
+    render::vulkan_renderer renderer(render::vulkan_renderer_options{
+        .viewport = to_render_rect(viewport),
+    });
+    return render_app_frame_with_engines(snapshot, viewport, view_state, text_engine, renderer);
 }
 
 app_render_report render_app_snapshot(const domain::app_snapshot& snapshot, scene::scene_rect viewport)
@@ -220,6 +322,8 @@ std::string format_render_report(std::string_view label, const app_render_report
            << " inputs=" << report.input_region_count
            << " commands=" << report.frame_stats.command_count
            << " draw_calls=" << report.frame_stats.draw_call_count
+           << " image_textures=" << report.image_texture_ready_count << "/" << report.image_texture_request_count
+           << " image_payloads=" << report.image_texture_payload_ready_count << "/" << report.image_texture_payload_count
            << " shaded_pixels=" << report.frame_summary.shaded_pixel_count
            << " nonblank=" << (report.frame_summary.nonblank() ? "true" : "false");
     return stream.str();

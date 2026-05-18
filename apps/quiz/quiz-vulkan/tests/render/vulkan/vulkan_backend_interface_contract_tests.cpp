@@ -91,6 +91,26 @@ static_assert(std::constructible_from<
     render::vulkan_backend::fake_vulkan_swapchain_factory_options>);
 
 template <typename T>
+concept VulkanWin32SurfaceBridgeInterface = requires(
+    T& bridge,
+    const render::vulkan_backend::vulkan_win32_surface_bridge_request& request) {
+    { bridge.create_win32_surface(request) }
+        -> std::same_as<render::vulkan_backend::vulkan_win32_surface_bridge_result>;
+};
+
+static_assert(VulkanWin32SurfaceBridgeInterface<
+              render::vulkan_backend::vulkan_win32_surface_bridge_interface>);
+static_assert(VulkanWin32SurfaceBridgeInterface<
+              render::vulkan_backend::fake_vulkan_win32_surface_bridge>);
+static_assert(VulkanWin32SurfaceBridgeInterface<
+              render::vulkan_backend::vulkan_win32_surface_bridge>);
+static_assert(std::default_initializable<render::vulkan_backend::fake_vulkan_win32_surface_bridge>);
+static_assert(std::constructible_from<
+    render::vulkan_backend::fake_vulkan_win32_surface_bridge,
+    render::vulkan_backend::fake_vulkan_win32_surface_bridge_options>);
+static_assert(std::default_initializable<render::vulkan_backend::vulkan_win32_surface_bridge>);
+
+template <typename T>
 concept VulkanNativeSwapchainOperationInterface = requires(
     T& operation,
     const render::vulkan_backend::vulkan_native_swapchain_create_execution_request& create_request,
@@ -1698,6 +1718,146 @@ static_assert(requires(render::vulkan_backend::vulkan_swapchain_handle handle) {
 static_assert(requires(render::vulkan_backend::vulkan_surface_handle handle) {
     { handle.value } -> std::same_as<std::uintptr_t&>;
     { handle.valid() } -> std::same_as<bool>;
+});
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_surface_extension_name()),
+    std::string_view>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_win32_surface_extension_name()),
+    std::string_view>);
+
+static_assert(requires(render::vulkan_backend::vulkan_win32_native_window_handles handles) {
+    { handles.hinstance } -> std::same_as<std::uintptr_t&>;
+    { handles.hwnd } -> std::same_as<std::uintptr_t&>;
+    { handles.hinstance_valid() } -> std::same_as<bool>;
+    { handles.hwnd_valid() } -> std::same_as<bool>;
+    { handles.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_win32_surface_header_evidence headers) {
+    { headers.checked } -> std::same_as<bool&>;
+    { headers.vulkan_headers_available } -> std::same_as<bool&>;
+    { headers.win32_surface_headers_available } -> std::same_as<bool&>;
+    { headers.create_info_type_available } -> std::same_as<bool&>;
+    { headers.create_function_pointer_type_available } -> std::same_as<bool&>;
+    { headers.surface_extension_name } -> std::same_as<std::string&>;
+    { headers.win32_surface_extension_name } -> std::same_as<std::string&>;
+    { headers.diagnostic } -> std::same_as<std::string&>;
+    { headers.ready_for_bridge() } -> std::same_as<bool>;
+});
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::probe_vulkan_win32_surface_header_evidence()),
+    render::vulkan_backend::vulkan_win32_surface_header_evidence>);
+
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_win32_surface_bridge_status::not_requested),
+    render::vulkan_backend::vulkan_win32_surface_bridge_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_win32_surface_bridge_status::created),
+    render::vulkan_backend::vulkan_win32_surface_bridge_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_win32_surface_bridge_status::instance_unavailable),
+    render::vulkan_backend::vulkan_win32_surface_bridge_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_win32_surface_bridge_status::hinstance_unavailable),
+    render::vulkan_backend::vulkan_win32_surface_bridge_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_win32_surface_bridge_status::hwnd_unavailable),
+    render::vulkan_backend::vulkan_win32_surface_bridge_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_win32_surface_bridge_status::headers_unavailable),
+    render::vulkan_backend::vulkan_win32_surface_bridge_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_win32_surface_bridge_status::required_surface_extension_unavailable),
+    render::vulkan_backend::vulkan_win32_surface_bridge_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_win32_surface_bridge_status::required_win32_surface_extension_unavailable),
+    render::vulkan_backend::vulkan_win32_surface_bridge_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_win32_surface_bridge_status::create_symbol_unavailable),
+    render::vulkan_backend::vulkan_win32_surface_bridge_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_win32_surface_bridge_status::creation_failed),
+    render::vulkan_backend::vulkan_win32_surface_bridge_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_win32_surface_bridge_status::invalid_created_handle),
+    render::vulkan_backend::vulkan_win32_surface_bridge_status>);
+
+static_assert(requires(render::vulkan_backend::vulkan_win32_surface_bridge_request request) {
+    { request.instance } -> std::same_as<render::vulkan_backend::vulkan_instance_handle&>;
+    { request.window }
+        -> std::same_as<render::vulkan_backend::vulkan_win32_native_window_handles&>;
+    { request.create_win32_surface }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { request.headers }
+        -> std::same_as<render::vulkan_backend::vulkan_win32_surface_header_evidence&>;
+    { request.enabled_instance_extensions } -> std::same_as<std::vector<std::string>&>;
+    { request.require_surface_extension } -> std::same_as<bool&>;
+    { request.require_win32_surface_extension } -> std::same_as<bool&>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_win32_surface_bridge_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_win32_surface_bridge_status&>;
+    { result.request }
+        -> std::same_as<render::vulkan_backend::vulkan_win32_surface_bridge_request&>;
+    { result.instance } -> std::same_as<render::vulkan_backend::vulkan_instance_handle&>;
+    { result.window }
+        -> std::same_as<render::vulkan_backend::vulkan_win32_native_window_handles&>;
+    { result.create_win32_surface_symbol }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { result.surface } -> std::same_as<render::vulkan_backend::vulkan_surface_handle&>;
+    { result.instance_valid } -> std::same_as<bool&>;
+    { result.hinstance_valid } -> std::same_as<bool&>;
+    { result.hwnd_valid } -> std::same_as<bool&>;
+    { result.headers_ready } -> std::same_as<bool&>;
+    { result.surface_extension_ready } -> std::same_as<bool&>;
+    { result.win32_surface_extension_ready } -> std::same_as<bool&>;
+    { result.create_symbol_ready } -> std::same_as<bool&>;
+    { result.vk_create_win32_surface_called } -> std::same_as<bool&>;
+    { result.native_result } -> std::same_as<std::int32_t&>;
+    { result.missing_required_extension } -> std::same_as<std::string&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.ready_for_surface_queries() } -> std::same_as<bool>;
+    { result.blocked() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_win32_surface_bridge_options options) {
+    { options.surface } -> std::same_as<render::vulkan_backend::vulkan_surface_handle&>;
+    { options.fail_creation } -> std::same_as<bool&>;
+    { options.return_invalid_surface } -> std::same_as<bool&>;
+    { options.failure_result } -> std::same_as<std::int32_t&>;
+});
+
+static_assert(requires(render::vulkan_backend::fake_vulkan_win32_surface_bridge_state state) {
+    { state.create_call_count } -> std::same_as<std::size_t&>;
+    { state.requested_instance }
+        -> std::same_as<render::vulkan_backend::vulkan_instance_handle&>;
+    { state.requested_window }
+        -> std::same_as<render::vulkan_backend::vulkan_win32_native_window_handles&>;
+    { state.requested_create_symbol }
+        -> std::same_as<render::vulkan_backend::vulkan_native_function_pointer&>;
+    { state.created_surface } -> std::same_as<render::vulkan_backend::vulkan_surface_handle&>;
+});
+
+static_assert(requires(
+    render::vulkan_backend::vulkan_win32_surface_bridge_interface& bridge,
+    render::vulkan_backend::fake_vulkan_win32_surface_bridge fake,
+    const render::vulkan_backend::vulkan_win32_surface_bridge_request& request) {
+    { render::vulkan_backend::win32_surface_bridge_status_name(
+        render::vulkan_backend::vulkan_win32_surface_bridge_status::created) }
+        -> std::same_as<std::string_view>;
+    { bridge.create_win32_surface(request) }
+        -> std::same_as<render::vulkan_backend::vulkan_win32_surface_bridge_result>;
+    { fake.create_win32_surface(request) }
+        -> std::same_as<render::vulkan_backend::vulkan_win32_surface_bridge_result>;
+    { fake.state() }
+        -> std::same_as<const render::vulkan_backend::fake_vulkan_win32_surface_bridge_state&>;
+    { render::vulkan_backend::create_vulkan_win32_surface(fake, request) }
+        -> std::same_as<render::vulkan_backend::vulkan_win32_surface_bridge_result>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_swapchain_image_handle handle) {
@@ -6754,6 +6914,105 @@ static_assert(requires(render::vulkan_backend::vulkan_native_descriptor_write_pa
     { result.completed() } -> std::same_as<bool>;
 });
 
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_descriptor_payload_command_recording_status::ready),
+    render::vulkan_backend::vulkan_native_descriptor_payload_command_recording_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_descriptor_payload_command_recording_status::
+                 descriptor_write_payload_unavailable),
+    render::vulkan_backend::vulkan_native_descriptor_payload_command_recording_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_descriptor_payload_command_recording_status::
+                 missing_descriptor_write_payload),
+    render::vulkan_backend::vulkan_native_descriptor_payload_command_recording_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_descriptor_payload_command_recording_status::
+                 duplicate_descriptor_write_payload),
+    render::vulkan_backend::vulkan_native_descriptor_payload_command_recording_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_descriptor_payload_command_recording_status::
+                 incomplete_descriptor_write_payload),
+    render::vulkan_backend::vulkan_native_descriptor_payload_command_recording_status>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_descriptor_payload_command_recording_status::
+                 descriptor_write_payload_mismatch),
+    render::vulkan_backend::vulkan_native_descriptor_payload_command_recording_status>);
+static_assert(requires(render::vulkan_backend::vulkan_native_descriptor_payload_command_recording_status status) {
+    { render::vulkan_backend::native_descriptor_payload_command_recording_status_name(status) }
+        -> std::same_as<std::string_view>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_descriptor_payload_command_recording_packet packet) {
+    { packet.operation_index } -> std::same_as<std::size_t&>;
+    { packet.packet_index } -> std::same_as<std::size_t&>;
+    { packet.command_index } -> std::same_as<std::size_t&>;
+    { packet.category }
+        -> std::same_as<render::vulkan_backend::vulkan_command_packet_category&>;
+    { packet.batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { packet.operation_kind }
+        -> std::same_as<render::vulkan_backend::vulkan_command_recorder_operation_kind&>;
+    { packet.descriptor_set_count } -> std::same_as<std::size_t&>;
+    { packet.descriptor_write_payload_count } -> std::same_as<std::size_t&>;
+    { packet.image_descriptor_write_payload_count } -> std::same_as<std::size_t&>;
+    { packet.ready_image_descriptor_write_payload_count } -> std::same_as<std::size_t&>;
+    { packet.operation_ready } -> std::same_as<bool&>;
+    { packet.descriptor_sets_ready } -> std::same_as<bool&>;
+    { packet.descriptor_write_payloads_ready } -> std::same_as<bool&>;
+    { packet.image_descriptor_payloads_ready } -> std::same_as<bool&>;
+    { packet.bind_ready } -> std::same_as<bool&>;
+    { packet.draw_ready } -> std::same_as<bool&>;
+    { packet.blocked } -> std::same_as<bool&>;
+    { packet.diagnostic } -> std::same_as<std::string&>;
+    { packet.descriptor_sets }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_command_packet_descriptor_set>&>;
+    { packet.descriptor_write_payloads }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_descriptor_write_payload>&>;
+    { packet.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_descriptor_payload_command_recording_result result) {
+    { result.checked } -> std::same_as<bool&>;
+    { result.status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_descriptor_payload_command_recording_status&>;
+    { result.fallback_reason }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { result.packet_bridge_checked } -> std::same_as<bool&>;
+    { result.packet_bridge_ready } -> std::same_as<bool&>;
+    { result.descriptor_set_allocation_checked } -> std::same_as<bool&>;
+    { result.descriptor_set_allocation_ready } -> std::same_as<bool&>;
+    { result.descriptor_write_payload_checked } -> std::same_as<bool&>;
+    { result.descriptor_write_payload_ready } -> std::same_as<bool&>;
+    { result.operation_plan_checked } -> std::same_as<bool&>;
+    { result.operation_plan_ready } -> std::same_as<bool&>;
+    { result.planned_packet_count } -> std::same_as<std::size_t&>;
+    { result.planned_operation_count } -> std::same_as<std::size_t&>;
+    { result.planned_descriptor_set_count } -> std::same_as<std::size_t&>;
+    { result.planned_descriptor_write_payload_count } -> std::same_as<std::size_t&>;
+    { result.packet_count } -> std::same_as<std::size_t&>;
+    { result.ready_packet_count } -> std::same_as<std::size_t&>;
+    { result.bind_ready_packet_count } -> std::same_as<std::size_t&>;
+    { result.draw_ready_packet_count } -> std::same_as<std::size_t&>;
+    { result.descriptor_set_count } -> std::same_as<std::size_t&>;
+    { result.descriptor_write_payload_count } -> std::same_as<std::size_t&>;
+    { result.image_descriptor_write_payload_count } -> std::same_as<std::size_t&>;
+    { result.ready_image_descriptor_write_payload_count } -> std::same_as<std::size_t&>;
+    { result.failed_operation_index } -> std::same_as<std::size_t&>;
+    { result.failed_packet_index } -> std::same_as<std::size_t&>;
+    { result.failed_command_index } -> std::same_as<std::size_t&>;
+    { result.failed_set } -> std::same_as<std::size_t&>;
+    { result.failed_binding } -> std::same_as<std::size_t&>;
+    { result.failed_resource_id } -> std::same_as<std::string&>;
+    { result.failed_category }
+        -> std::same_as<render::vulkan_backend::vulkan_command_packet_category&>;
+    { result.failed_batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { result.failed_operation_kind }
+        -> std::same_as<render::vulkan_backend::vulkan_command_recorder_operation_kind&>;
+    { result.diagnostic } -> std::same_as<std::string&>;
+    { result.packets }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_descriptor_payload_command_recording_packet>&>;
+    { result.completed() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_executor_evidence evidence) {
     { evidence.native_functions }
         -> std::same_as<render::vulkan_backend::vulkan_native_function_table_diagnostics&>;
@@ -6780,6 +7039,7 @@ static_assert(requires(
     render::vulkan_backend::vulkan_native_command_packet_executor_evidence evidence,
     const render::vulkan_backend::vulkan_native_descriptor_set_allocation_result& allocation,
     const render::vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result& descriptor_write_payloads,
+    const render::vulkan_backend::vulkan_command_recorder_operation_plan& operation_plan,
     const render::vulkan_backend::vulkan_backend_frame_result& frame,
     const render::vulkan_backend::vulkan_native_function_table_diagnostics& native_functions) {
     { render::vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
@@ -6811,6 +7071,12 @@ static_assert(requires(
         evidence,
         descriptor_write_payloads) } -> std::same_as<
         render::vulkan_backend::vulkan_native_command_packet_executor_evidence>;
+    { render::vulkan_backend::build_vulkan_native_descriptor_payload_command_recording_result(
+        bridge,
+        allocation,
+        descriptor_write_payloads,
+        operation_plan) } -> std::same_as<
+        render::vulkan_backend::vulkan_native_descriptor_payload_command_recording_result>;
 });
 
 static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_call_evidence call) {

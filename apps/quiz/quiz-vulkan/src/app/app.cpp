@@ -11,6 +11,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -75,6 +76,14 @@ std::vector<domain::deck> load_initial_decks(const app_config& config, platform_
     }
 
     return load_result.decks;
+}
+
+std::filesystem::path image_base_directory_for_config(const app_config& config)
+{
+    if (!config.deck_sources.asset_root.empty()) {
+        return config.deck_sources.asset_root;
+    }
+    return config.deck_sources.local_root;
 }
 
 std::int64_t now_ms()
@@ -193,7 +202,11 @@ int app::run()
     }
 
     app_state quiz_state(std::move(decks));
-    default_app_render_pipeline render_pipeline;
+    default_app_render_pipeline render_pipeline(default_app_render_pipeline_config{
+        .image_base_directory = image_base_directory_for_config(config_),
+        .native_window = shell_->native_window_handle(),
+        .renderer_options = {},
+    });
     input::input_engine input_engine;
     app_render_frame latest_frame = render_and_report(
         render_pipeline,

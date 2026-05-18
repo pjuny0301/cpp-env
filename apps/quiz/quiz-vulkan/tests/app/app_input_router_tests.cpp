@@ -173,6 +173,10 @@ void test_platform_wheel_and_key_events_normalize_to_raw_input()
             .delta_x = 1.0f,
             .delta_y = -2.0f,
             .scroll_unit = raw_platform_scroll_delta_unit::lines,
+            .alt = true,
+            .ctrl = true,
+            .shift = false,
+            .meta = true,
         },
         200);
     require(wheel_events.size() == 1, "wheel normalizes to one raw scroll event");
@@ -180,12 +184,20 @@ void test_platform_wheel_and_key_events_normalize_to_raw_input()
     require(wheel != nullptr, "wheel produces raw scroll payload");
     require(wheel->delta_y == -2.0f, "wheel preserves y delta");
     require(wheel->unit == raw_platform_scroll_delta_unit::lines, "wheel preserves delta unit");
+    require(wheel->alt, "wheel preserves alt modifier");
+    require(wheel->ctrl, "wheel preserves ctrl modifier");
+    require(!wheel->shift, "wheel preserves shift modifier");
+    require(wheel->meta, "wheel preserves meta modifier");
 
     input::input_engine engine;
     const std::vector<input::input_event> scroll_events = engine.process_raw_event(wheel_events.front());
     require(scroll_events.size() == 1, "wheel reaches input engine as one scroll event");
-    require(std::get_if<input::scroll_event>(&scroll_events.front()) != nullptr,
-        "wheel reaches input engine as scroll payload");
+    const auto* scroll = std::get_if<input::scroll_event>(&scroll_events.front());
+    require(scroll != nullptr, "wheel reaches input engine as scroll payload");
+    require(scroll->modifiers.alt, "wheel input engine preserves alt modifier");
+    require(scroll->modifiers.ctrl, "wheel input engine preserves ctrl modifier");
+    require(!scroll->modifiers.shift, "wheel input engine preserves shift modifier");
+    require(scroll->modifiers.meta, "wheel input engine preserves meta modifier");
 
     const std::vector<raw_platform_input_event> key_events = normalize_platform_input_event(
         platform_input_event{

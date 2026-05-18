@@ -16,6 +16,16 @@ void require(const bool condition, const char* message)
     assert((condition) && message);
 }
 
+bool rect_matches(
+    const quiz_vulkan::render::render_rect& lhs,
+    const quiz_vulkan::render::render_rect& rhs)
+{
+    return lhs.x == rhs.x
+        && lhs.y == rhs.y
+        && lhs.width == rhs.width
+        && lhs.height == rhs.height;
+}
+
 quiz_vulkan::render::render_text_style_catalog style_catalog()
 {
     using namespace quiz_vulkan::render;
@@ -157,10 +167,11 @@ void test_ready_draw_list_text_command_composes_to_frame_evidence()
         .type = render_draw_command_type::quad,
         .node_id = "quad-node",
     });
-    draw_list.commands.push_back(text_command(
+    const render_draw_command command = text_command(
         "text-node",
         "parent-node",
-        {render_text_run{.text = "Hello", .style_token = "body"}}));
+        {render_text_run{.text = "Hello", .style_token = "body"}});
+    draw_list.commands.push_back(command);
 
     const render_text_draw_list_frame_composition_snapshot snapshot =
         compose(std::move(draw_list), {{upload_ready_materialization()}}, true);
@@ -181,16 +192,46 @@ void test_ready_draw_list_text_command_composes_to_frame_evidence()
     require(snapshot.composed_command_indices.size() == 1U, "composition records composed command index");
     require(snapshot.composed_command_indices.front() == 1U, "composition preserves draw command index");
 
+    const render_text_draw_list_frame_handoff_entry& entry = snapshot.handoff.entries.front();
+    require(entry.draw_command_index == 1U, "handoff entry preserves draw command index");
+    require(entry.node_id == command.node_id, "handoff entry preserves node id");
+    require(entry.parent_node_id == command.parent_node_id, "handoff entry preserves parent node id");
+    require(rect_matches(entry.bounds, command.bounds), "handoff entry preserves command bounds");
+    require(rect_matches(entry.content_bounds, command.content_bounds), "handoff entry preserves content bounds");
+    require(entry.primary_requested_style_token == "body", "handoff entry preserves requested style token");
+    require(entry.primary_resolved_style_id == "body", "handoff entry preserves resolved style id");
+    require(!entry.used_fallback_style, "ready handoff entry does not invent fallback style use");
+    require(entry.status == render_text_draw_list_frame_handoff_entry_status::ready, "handoff entry is ready");
+    require(entry.ok(), "ready handoff entry is ok");
+
     const render_text_request_batch_item& item = snapshot.request_items.front();
+    require(item.item_index == 0U, "request item index is assigned after handoff filtering");
     require(item.node_id == "text-node", "request item preserves node id");
-    require(item.source_label == snapshot.handoff.entries.front().stable_entry_id, "request item uses handoff identity");
-    require(item.bounds.x == 3.0f && item.bounds.width == 90.0f, "request item uses content bounds");
+    require(item.source_label == entry.stable_entry_id, "request item uses handoff identity");
+    require(rect_matches(item.bounds, entry.content_bounds), "request item uses handoff content bounds");
     require(item.text_runs.size() == 1U && item.text_runs.front().text == "Hello", "request item preserves text runs");
     require(item.style_catalog.find("body") != nullptr, "request item preserves style catalog");
     require(item.options.alignment == render_text_alignment::center, "request item preserves text options");
+    require(item.options.max_lines == 2, "request item preserves max line option");
+    require(item.materializations.size() == 1U, "request item carries per-entry materialization evidence");
+
+    require(snapshot.batch_plan.policy.item_count == 1U, "batch plan sees composed request item");
+    require(snapshot.batch_plan.style_keys.size() == 1U, "batch plan records style evidence");
+    require(
+        snapshot.batch_plan.style_keys.front().requested_style_token == "body",
+        "batch plan preserves requested style token");
+    require(
+        snapshot.batch_plan.style_keys.front().resolved_style_id == "body",
+        "batch plan preserves resolved style id");
+    require(snapshot.batch_plan.layout_requests.front().source_label == entry.stable_entry_id,
+        "layout request keeps handoff identity");
+    require(rect_matches(snapshot.batch_plan.layout_requests.front().bounds, entry.content_bounds),
+        "layout request keeps content bounds");
 
     require(snapshot.frame.layout_requests.size() == 1U, "frame snapshot exposes layout request");
     require(snapshot.frame.layout_requests.front().node_id == "text-node", "frame layout request preserves node id");
+    require(snapshot.frame.layout_requests.front().source_label == entry.stable_entry_id,
+        "frame layout request preserves handoff identity");
     require(snapshot.frame.atlas_uploads.size() == 1U, "frame snapshot exposes upload handoff");
     require(snapshot.frame.status == render_text_frame_snapshot_status::ready, "frame is ready after consuming upload");
 }
@@ -217,9 +258,16 @@ void test_blocked_handoff_entry_stays_blocked_before_layout()
     require(snapshot.policy.blocked_entry_count == 1U, "composition counts one blocked entry");
     require(snapshot.blocked_command_indices.size() == 1U, "composition records blocked command index");
     require(snapshot.blocked_command_indices.front() == 0U, "blocked command index is preserved");
+    require(snapshot.handoff.entries.front().status == render_text_draw_list_frame_handoff_entry_status::blocked_empty_text,
+        "blocked handoff entry keeps explicit blocker status");
+    require(snapshot.handoff.entries.front().blocked, "blocked handoff entry remains blocked");
+    require(!snapshot.handoff.entries.front().blocker_reason.empty(), "blocked handoff entry keeps diagnostics");
+    require(snapshot.handoff.entries.back().status == render_text_draw_list_frame_handoff_entry_status::ready,
+        "ready handoff entry remains ready");
     require(snapshot.policy.composed_entry_count == 1U, "ready entry still composes");
     require(snapshot.request_items.size() == 1U, "blocked entry does not become request item");
     require(snapshot.request_items.front().node_id == "ready-text", "only ready command enters request batch");
+    require(snapshot.batch_plan.policy.item_count == 1U, "batch plan excludes blocked handoff entry");
     require(snapshot.frame.layout_requests.size() == 1U, "blocked entry does not enter layout requests");
     require(snapshot.frame.layout_requests.front().node_id == "ready-text", "layout request belongs to ready command");
 }

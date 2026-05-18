@@ -129,6 +129,44 @@ make_ready_loader()
     };
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_win32_surface_header_evidence
+make_ready_win32_surface_headers()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_win32_surface_header_evidence{
+        .checked = true,
+        .vulkan_headers_available = true,
+        .win32_surface_headers_available = true,
+        .create_info_type_available = true,
+        .create_function_pointer_type_available = true,
+        .surface_extension_name = std::string{vulkan_backend::vulkan_surface_extension_name()},
+        .win32_surface_extension_name =
+            std::string{vulkan_backend::vulkan_win32_surface_extension_name()},
+        .diagnostic = "test Win32 surface headers ready",
+    };
+}
+
+quiz_vulkan::render::vulkan_backend::vulkan_win32_surface_bridge_request
+make_ready_win32_surface_bridge_request()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_win32_surface_bridge_request{
+        .instance = vulkan_backend::vulkan_instance_handle{.value = 44},
+        .window = vulkan_backend::vulkan_win32_native_window_handles{
+            .hinstance = 0x1234,
+            .hwnd = 0x5678,
+        },
+        .create_win32_surface = vulkan_backend::vulkan_native_function_pointer{.value = 3456},
+        .headers = make_ready_win32_surface_headers(),
+        .enabled_instance_extensions = {
+            std::string{vulkan_backend::vulkan_surface_extension_name()},
+            std::string{vulkan_backend::vulkan_win32_surface_extension_name()},
+        },
+    };
+}
+
 quiz_vulkan::render::vulkan_backend::vulkan_native_function_table_diagnostics
 make_swapchain_function_table(
     const std::vector<std::string>& missing_symbols = {},
@@ -717,6 +755,148 @@ void test_swapchain_create_plan_reports_recreate_compatibility()
     require(!incompatible.recreate_compatible, "incompatible recreate plan reports incompatibility");
     require(!incompatible.recreate_extent_compatible, "incompatible recreate plan reports extent change");
     require(!incompatible.recreate_format_compatible, "incompatible recreate plan reports format change");
+}
+
+void test_win32_surface_bridge_records_fake_surface_evidence()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_win32_surface_bridge bridge(
+        vulkan_backend::fake_vulkan_win32_surface_bridge_options{
+            .surface = vulkan_backend::vulkan_surface_handle{.value = 88},
+        });
+    const vulkan_backend::vulkan_win32_surface_bridge_request request =
+        make_ready_win32_surface_bridge_request();
+
+    const vulkan_backend::vulkan_win32_surface_bridge_result result =
+        vulkan_backend::create_vulkan_win32_surface(bridge, request);
+
+    require(result.checked, "Win32 surface bridge result is checked");
+    require(
+        result.status == vulkan_backend::vulkan_win32_surface_bridge_status::created,
+        "Win32 surface bridge reports created");
+    require(
+        result.ready_for_surface_queries(),
+        "created Win32 surface bridge reaches surface-query gate");
+    require(result.surface.value == 88, "Win32 surface bridge returns configured surface handle");
+    require(result.instance.value == 44, "Win32 surface bridge records instance handle");
+    require(result.window.hinstance == 0x1234, "Win32 surface bridge records HINSTANCE");
+    require(result.window.hwnd == 0x5678, "Win32 surface bridge records HWND");
+    require(result.headers_ready, "Win32 surface bridge records ready header evidence");
+    require(
+        result.surface_extension_ready,
+        "Win32 surface bridge records required VK_KHR_surface extension");
+    require(
+        result.win32_surface_extension_ready,
+        "Win32 surface bridge records required VK_KHR_win32_surface extension");
+    require(
+        result.create_symbol_ready,
+        "Win32 surface bridge records vkCreateWin32SurfaceKHR symbol");
+    require(
+        bridge.state().create_call_count == 1,
+        "Win32 surface bridge fake operation was called once");
+    require(
+        bridge.state().requested_create_symbol.value == request.create_win32_surface.value,
+        "Win32 surface bridge fake records create symbol pointer");
+    require(
+        bridge.state().created_surface.value == result.surface.value,
+        "Win32 surface bridge fake records created surface");
+}
+
+void require_win32_surface_bridge_status(
+    const quiz_vulkan::render::vulkan_backend::vulkan_win32_surface_bridge_request& request,
+    quiz_vulkan::render::vulkan_backend::vulkan_win32_surface_bridge_status expected_status,
+    const char* message)
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::fake_vulkan_win32_surface_bridge bridge;
+    const vulkan_backend::vulkan_win32_surface_bridge_result result =
+        vulkan_backend::create_vulkan_win32_surface(bridge, request);
+
+    require(result.status == expected_status, message);
+    require(result.blocked(), "blocked Win32 surface bridge reports blocked");
+    require(!result.surface.valid(), "blocked Win32 surface bridge has no surface");
+    require(
+        bridge.state().create_call_count == 0,
+        "blocked Win32 surface bridge does not call fake create");
+}
+
+void test_win32_surface_bridge_reports_precise_blockers()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    vulkan_backend::vulkan_win32_surface_bridge_request request =
+        make_ready_win32_surface_bridge_request();
+    request.instance = {};
+    require_win32_surface_bridge_status(
+        request,
+        vulkan_backend::vulkan_win32_surface_bridge_status::instance_unavailable,
+        "Win32 surface bridge reports missing instance");
+
+    request = make_ready_win32_surface_bridge_request();
+    request.window.hinstance = 0;
+    require_win32_surface_bridge_status(
+        request,
+        vulkan_backend::vulkan_win32_surface_bridge_status::hinstance_unavailable,
+        "Win32 surface bridge reports missing HINSTANCE");
+
+    request = make_ready_win32_surface_bridge_request();
+    request.window.hwnd = 0;
+    require_win32_surface_bridge_status(
+        request,
+        vulkan_backend::vulkan_win32_surface_bridge_status::hwnd_unavailable,
+        "Win32 surface bridge reports missing HWND");
+
+    request = make_ready_win32_surface_bridge_request();
+    request.headers.win32_surface_headers_available = false;
+    require_win32_surface_bridge_status(
+        request,
+        vulkan_backend::vulkan_win32_surface_bridge_status::headers_unavailable,
+        "Win32 surface bridge reports unavailable headers");
+
+    request = make_ready_win32_surface_bridge_request();
+    request.enabled_instance_extensions = {
+        std::string{vulkan_backend::vulkan_win32_surface_extension_name()},
+    };
+    vulkan_backend::fake_vulkan_win32_surface_bridge missing_surface_extension_bridge;
+    const vulkan_backend::vulkan_win32_surface_bridge_result missing_surface_extension =
+        vulkan_backend::create_vulkan_win32_surface(
+            missing_surface_extension_bridge,
+            request);
+    require(
+        missing_surface_extension.status
+            == vulkan_backend::vulkan_win32_surface_bridge_status::required_surface_extension_unavailable,
+        "Win32 surface bridge reports missing VK_KHR_surface");
+    require(
+        missing_surface_extension.missing_required_extension
+            == vulkan_backend::vulkan_surface_extension_name(),
+        "Win32 surface bridge records missing VK_KHR_surface name");
+
+    request = make_ready_win32_surface_bridge_request();
+    request.enabled_instance_extensions = {
+        std::string{vulkan_backend::vulkan_surface_extension_name()},
+    };
+    vulkan_backend::fake_vulkan_win32_surface_bridge missing_win32_extension_bridge;
+    const vulkan_backend::vulkan_win32_surface_bridge_result missing_win32_extension =
+        vulkan_backend::create_vulkan_win32_surface(
+            missing_win32_extension_bridge,
+            request);
+    require(
+        missing_win32_extension.status
+            == vulkan_backend::vulkan_win32_surface_bridge_status::required_win32_surface_extension_unavailable,
+        "Win32 surface bridge reports missing VK_KHR_win32_surface");
+    require(
+        missing_win32_extension.missing_required_extension
+            == vulkan_backend::vulkan_win32_surface_extension_name(),
+        "Win32 surface bridge records missing VK_KHR_win32_surface name");
+
+    request = make_ready_win32_surface_bridge_request();
+    request.create_win32_surface = {};
+    require_win32_surface_bridge_status(
+        request,
+        vulkan_backend::vulkan_win32_surface_bridge_status::create_symbol_unavailable,
+        "Win32 surface bridge reports missing vkCreateWin32SurfaceKHR");
 }
 
 void test_native_surface_query_dispatch_resolves_surface_symbols()
@@ -2389,6 +2569,8 @@ int main()
     test_swapchain_create_plan_reports_missing_format_and_present_mode();
     test_swapchain_create_plan_reports_unsupported_zero_extent();
     test_swapchain_create_plan_reports_recreate_compatibility();
+    test_win32_surface_bridge_records_fake_surface_evidence();
+    test_win32_surface_bridge_reports_precise_blockers();
     test_native_surface_query_dispatch_resolves_surface_symbols();
     test_native_surface_query_dispatch_reports_missing_symbols();
     test_native_surface_capability_query_records_ready_evidence();

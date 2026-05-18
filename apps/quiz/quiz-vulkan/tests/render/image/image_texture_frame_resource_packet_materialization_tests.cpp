@@ -154,6 +154,20 @@ void retarget_packet_sampler(
     packet.stable_texture_cache_key = packet.render_image_uri + "|" + packet.sampler_key;
 }
 
+const quiz_vulkan::render::render_image_texture_frame_resource_packet_consumption_entry_diff*
+find_consumption_diff_entry(
+    const quiz_vulkan::render::render_image_texture_frame_resource_packet_consumption_diff& diff,
+    std::size_t request_index)
+{
+    for (const quiz_vulkan::render::render_image_texture_frame_resource_packet_consumption_entry_diff& entry :
+         diff.entries) {
+        if (entry.request_index == request_index) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
 void test_materialization_outputs_deterministic_handoff_records()
 {
     using namespace quiz_vulkan::render;
@@ -542,6 +556,38 @@ void test_consumption_diff_reports_identity_changes_and_readiness_transitions()
     require(
         diff.diagnostic == "image frame resource packet consumption diff has regressions",
         "consumption diff diagnostic is stable");
+
+    const render_image_texture_frame_resource_packet_consumption_entry_diff* added =
+        find_consumption_diff_entry(diff, 3);
+    require(added != nullptr, "consumption diff exposes added packet entry");
+    require(
+        added->status == render_image_texture_frame_resource_packet_consumption_diff_entry_status::added,
+        "consumption diff classifies added materialized packet");
+    require(!added->before_present, "added consumption diff has no before packet");
+    require(added->after_present, "added consumption diff has after packet");
+    require(added->after_ready, "added consumption diff records ready after packet");
+    require(added->after_stable_packet_identity_present, "added consumption diff records after identity");
+    require(
+        added->after_stable_packet_identity.find("asset://textures/added.ppm") != std::string::npos,
+        "added consumption diff preserves after packet identity");
+    require(added->after_texture_id == 103, "added consumption diff preserves after texture id");
+    require(added->after_upload_request_id == 203, "added consumption diff preserves after upload request");
+
+    const render_image_texture_frame_resource_packet_consumption_entry_diff* removed =
+        find_consumption_diff_entry(diff, 4);
+    require(removed != nullptr, "consumption diff exposes removed packet entry");
+    require(
+        removed->status == render_image_texture_frame_resource_packet_consumption_diff_entry_status::removed,
+        "consumption diff classifies removed materialized packet");
+    require(removed->before_present, "removed consumption diff has before packet");
+    require(!removed->after_present, "removed consumption diff has no after packet");
+    require(removed->before_ready, "removed consumption diff records ready before packet");
+    require(removed->before_stable_packet_identity_present, "removed consumption diff records before identity");
+    require(
+        removed->before_stable_packet_identity.find("asset://textures/removed.ppm") != std::string::npos,
+        "removed consumption diff preserves before packet identity");
+    require(removed->before_texture_id == 104, "removed consumption diff preserves before texture id");
+    require(removed->before_upload_request_id == 204, "removed consumption diff preserves before upload request");
 }
 
 } // namespace

@@ -23,9 +23,10 @@ Historical integration notes are kept in git history, not repeated here.
   guard tests are integrated. Active worker work is descriptor payload bind
   recording before real queue submission is widened.
 - Text: atlas packet consumption, HarfBuzz shaping handoff diagnostics, and real
-  font atlas draw evidence are integrated. Text worker is idle.
-- Image: staging payload blocker coverage and staging payload diff summaries are
-  integrated. Active worker work is decoded-byte resource materialization.
+  font atlas draw evidence are integrated. Active worker work is real font draw
+  packet consumption.
+- Image: staging payload blocker coverage, staging payload diff summaries, and
+  decoded-byte resource materialization are integrated. Image worker is idle.
 - Asset: materialized byte payload request/review evidence and shader byte
   pipeline summary are integrated.
 - Input/IME: wheel modifier diagnostics are integrated; input is idle unless
@@ -35,12 +36,12 @@ Historical integration notes are kept in git history, not repeated here.
 
 - `codex-vulkan-native-command-packet-executor-20260516`: busy on
   `codex/vulkan-descriptor-payload-bind-recording-20260518`.
-- `codex-text-freetype-prototype-20260514`: idle after real font atlas draw
-  evidence integration.
+- `codex-text-freetype-prototype-20260514`: busy on
+  `codex/text-real-font-draw-packet-consumption-20260518`.
 - `codex-asset-unified-cache-key-20260514`: idle after shader byte source
   pipeline summary and focused-header split.
-- `codex-image-texture-next-20260514`: busy on
-  `codex/image-decoded-byte-resource-materialization-20260518`.
+- `codex-image-texture-next-20260514`: idle after decoded-byte resource
+  materialization integration.
 - `codex-input-ime`: idle after wheel/drag/touch-like diagnostics work.
 - Idle sessions are intentionally kept alive. Give them fresh baseline branches
   before new work; do not re-merge historical ahead commits.
@@ -73,10 +74,11 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `d369e09` after
+- Main branch `codex/quiz-vulkan-remake-baseline` is at `86640cd` after
   HarfBuzz shaping handoff diagnostics, image staging payload diff summaries,
   Vulkan descriptor allocation merge guard integration, next engine worker
-  prompts, and real font atlas draw evidence.
+  prompts, real font atlas draw evidence, and decoded-byte image resource
+  materialization.
 - Last full Windows MinGW CTest batch should be treated as stale. Run focused
   tests during normal integration; run full CTest after the next meaningful
   engine batch.
@@ -156,6 +158,14 @@ Historical integration notes are kept in git history, not repeated here.
   `quiz_vulkan_text_frame_resource_packet_materialization_tests`; focused CTest
   passed 6/6 across the changed text engine, FreeType raster payload, shaped
   atlas update, glyph quad packet, and text frame resource packet targets.
+- After `86640cd`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests`,
+  `quiz_vulkan_standard_image_texture_pipeline_tests`,
+  `quiz_vulkan_image_texture_frame_resource_packet_materialization_tests`,
+  `quiz_vulkan_fake_image_texture_uploader_tests`, and
+  `quiz_vulkan_image_texture_pipeline_tests`; focused CTest passed 8/8 for the
+  image texture filtered suite, including the standard decoder pipeline and
+  resource packet materialization.
 
 ## Useful Commands
 

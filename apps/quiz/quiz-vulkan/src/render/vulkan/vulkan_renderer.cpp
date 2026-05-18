@@ -365,6 +365,8 @@ vulkan_renderer_frame_summary vulkan_renderer::summarize_cpu_fallback(
     summary.backend_planned_batch_count = backend_result.planned_batch_count;
     summary.backend_recorded_batch_count = backend_result.recorded_batch_count;
     summary.backend_reached_stage = backend_result.reached_stage;
+    summary.native_window_kind = options.native_window.kind;
+    summary.native_window_target_ready = options.native_window.valid();
     summary.backend_instance_ready = backend_result.lifecycle.instance_ready;
     summary.backend_device_ready = backend_result.lifecycle.device_ready;
     summary.backend_swapchain_ready = backend_result.lifecycle.swapchain_ready;

@@ -4,6 +4,7 @@
 #include "render/vulkan/vulkan_backend_adapter.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -64,11 +65,28 @@ enum class vulkan_renderer_backend {
     vulkan,
 };
 
+enum class vulkan_renderer_native_window_kind {
+    none,
+    win32_hwnd,
+};
+
+struct vulkan_renderer_native_window_target {
+    vulkan_renderer_native_window_kind kind = vulkan_renderer_native_window_kind::none;
+    std::uintptr_t window = 0;
+    std::uintptr_t display = 0;
+
+    [[nodiscard]] bool valid() const noexcept
+    {
+        return kind != vulkan_renderer_native_window_kind::none && window != 0;
+    }
+};
+
 struct vulkan_renderer_options {
     render_rect viewport{0.0f, 0.0f, 1280.0f, 720.0f};
     std::size_t fallback_surface_width = 160;
     std::size_t fallback_surface_height = 90;
     bool prefer_vulkan = true;
+    vulkan_renderer_native_window_target native_window;
     vulkan_backend::vulkan_backend_device_interface* backend_device = nullptr;
     vulkan_backend::vulkan_pipeline_cache_interface* backend_pipeline_cache = nullptr;
     vulkan_backend::vulkan_command_recorder_interface* backend_command_recorder = nullptr;
@@ -93,6 +111,9 @@ struct vulkan_renderer_frame_summary {
     std::size_t image_texture_payload_blocked_count = 0;
     vulkan_backend::vulkan_backend_frame_stage backend_reached_stage =
         vulkan_backend::vulkan_backend_frame_stage::not_started;
+    vulkan_renderer_native_window_kind native_window_kind =
+        vulkan_renderer_native_window_kind::none;
+    bool native_window_target_ready = false;
     bool image_texture_payloads_consumed = false;
     bool image_texture_payloads_ready = false;
     bool backend_instance_ready = false;

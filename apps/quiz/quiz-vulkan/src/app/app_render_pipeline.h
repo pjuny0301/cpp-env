@@ -42,7 +42,7 @@ public:
     default_app_render_pipeline() = default;
 
     explicit default_app_render_pipeline(default_app_render_pipeline_config config)
-        : renderer_(std::move(config.renderer_options))
+        : renderer_(make_renderer_options(std::move(config.renderer_options), config.native_window))
         , native_window_(config.native_window)
     {
         image_source_bytes_loader_.set_base_directory(std::move(config.image_base_directory));
@@ -90,6 +90,31 @@ public:
     }
 
 private:
+    [[nodiscard]] static render::vulkan_renderer_native_window_target to_renderer_native_window_target(
+        platform_native_window_handle native_window)
+    {
+        switch (native_window.kind) {
+        case platform_native_window_kind::win32_hwnd:
+            return render::vulkan_renderer_native_window_target{
+                .kind = render::vulkan_renderer_native_window_kind::win32_hwnd,
+                .window = native_window.value,
+                .display = native_window.display,
+            };
+        case platform_native_window_kind::none:
+            return {};
+        }
+
+        return {};
+    }
+
+    [[nodiscard]] static render::vulkan_renderer_options make_renderer_options(
+        render::vulkan_renderer_options options,
+        platform_native_window_handle native_window)
+    {
+        options.native_window = to_renderer_native_window_target(native_window);
+        return options;
+    }
+
     render::fake_text_engine text_engine_;
     render::vulkan_renderer renderer_{render::vulkan_renderer_options{}};
     platform_native_window_handle native_window_;

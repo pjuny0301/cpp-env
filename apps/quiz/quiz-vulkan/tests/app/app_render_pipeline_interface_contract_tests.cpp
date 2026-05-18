@@ -31,6 +31,7 @@ static_assert(requires(default_app_render_pipeline_config config) {
 });
 
 static_assert(requires(default_app_render_pipeline pipeline) {
+    { pipeline.renderer() } -> std::same_as<const render::vulkan_renderer&>;
     { pipeline.image_texture_pipeline() } -> std::same_as<const render::fake_image_texture_pipeline&>;
     { pipeline.image_source_bytes_loader() }
         -> std::same_as<const render::filesystem_image_source_bytes_loader&>;

@@ -881,6 +881,33 @@ void test_renderer_backend_diagnostics_report_vulkan_not_requested()
         "renderer backend result records Vulkan not requested fallback reason");
 }
 
+void test_renderer_reports_native_window_target_readiness()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_renderer renderer(vulkan_renderer_options{
+        .viewport = render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        .fallback_surface_width = 10,
+        .fallback_surface_height = 10,
+        .prefer_vulkan = false,
+        .native_window = vulkan_renderer_native_window_target{
+            .kind = vulkan_renderer_native_window_kind::win32_hwnd,
+            .window = 0x1000,
+            .display = 0x2000,
+        },
+    });
+    renderer.submit(std::vector<render_draw_command>{make_quad_command(
+        "quad",
+        render_rect{0.0f, 0.0f, 100.0f, 100.0f},
+        render_color{0.5f, 0.5f, 0.5f, 1.0f})});
+
+    const vulkan_renderer_frame_summary& summary = renderer.last_frame_summary();
+    require(summary.native_window_target_ready, "renderer records a valid native window target");
+    require(
+        summary.native_window_kind == vulkan_renderer_native_window_kind::win32_hwnd,
+        "renderer records the native window target kind without platform headers");
+}
+
 void test_renderer_can_use_injected_backend_device()
 {
     using namespace quiz_vulkan::render;
@@ -2676,6 +2703,7 @@ int main()
     test_draw_list_submission_counts_generic_work();
     test_image_texture_payloads_drive_cpu_fallback_image_fill();
     test_renderer_backend_diagnostics_report_vulkan_not_requested();
+    test_renderer_reports_native_window_target_readiness();
     test_renderer_can_use_injected_backend_device();
     test_cpu_fallback_clips_and_discards();
     test_degenerate_surface_discards_draw_calls();

@@ -80,6 +80,22 @@ int main()
     assert(pipeline.renderer().last_frame_stats().command_count == pipeline_frame.report.frame_stats.command_count);
     assert(pipeline.renderer().last_draw_list().size() == pipeline_frame.report.frame_stats.command_count);
 
+    default_app_render_pipeline native_window_pipeline(default_app_render_pipeline_config{
+        .image_base_directory = {},
+        .native_window = platform_native_window_handle{
+            .kind = platform_native_window_kind::win32_hwnd,
+            .value = 0x1000,
+            .display = 0x2000,
+        },
+        .renderer_options = {},
+    });
+    assert(native_window_pipeline.native_window().valid());
+    assert(native_window_pipeline.renderer().options().native_window.valid());
+    assert(native_window_pipeline.renderer().options().native_window.kind
+        == render::vulkan_renderer_native_window_kind::win32_hwnd);
+    assert(native_window_pipeline.renderer().options().native_window.window == 0x1000);
+    assert(native_window_pipeline.renderer().options().native_window.display == 0x2000);
+
     default_app_render_pipeline cpu_pipeline(default_app_render_pipeline_config{
         .image_base_directory = {},
         .native_window = {},

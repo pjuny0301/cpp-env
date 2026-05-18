@@ -34,8 +34,8 @@ Historical integration notes are kept in git history, not repeated here.
 
 - `codex-vulkan-real-backend-probe-20260514`: busy on
   `codex/vulkan-present-image-execution-20260518`.
-- `codex-text-freetype-prototype-20260514`: busy on
-  `codex/text-atlas-packet-consumption-20260518`.
+- `codex-text-freetype-prototype-20260514`: idle after text atlas packet
+  consumption evidence and focused-header split.
 - `codex-asset-unified-cache-key-20260514`: idle after shader byte source
   pipeline summary and focused-header split.
 - `codex-image-texture-next-20260514`: idle after renderer resource-packet
@@ -72,8 +72,8 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `91408ae` after
-  shader byte source pipeline summary integration.
+- Main branch `codex/quiz-vulkan-remake-baseline` is at `cd5f0c5` after
+  text atlas packet consumption evidence integration.
 - Last full Windows MinGW CTest batch should be treated as stale. Run focused
   tests during normal integration; run full CTest after the next meaningful
   engine batch.
@@ -114,6 +114,14 @@ Historical integration notes are kept in git history, not repeated here.
   `quiz_vulkan_asset_runtime_catalog_tests`, and
   `quiz_vulkan_asset_runtime_resolver_policy_tests`; focused CTest passed 4/4
   for asset bytes, manifest, runtime catalog, and runtime resolver policy.
+- After `cd5f0c5`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests`,
+  `quiz_vulkan_fake_text_engine_freetype_raster_payload_tests`,
+  `quiz_vulkan_font_shaped_atlas_update_tests`,
+  `quiz_vulkan_text_renderer_glyph_quad_packet_tests`, and
+  `quiz_vulkan_text_frame_resource_packet_materialization_tests`; focused CTest
+  passed 4/4 for the text raster payload, shaped atlas update, renderer glyph
+  quad packet, and text frame resource packet materialization targets.
 
 ## Useful Commands
 

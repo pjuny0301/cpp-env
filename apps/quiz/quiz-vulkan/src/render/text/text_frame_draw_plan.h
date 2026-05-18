@@ -472,6 +472,7 @@ struct render_text_frame_draw_plan_diff_policy {
     std::ptrdiff_t materialization_count_delta = 0;
     std::ptrdiff_t packet_count_delta = 0;
     std::ptrdiff_t draw_ready_count_delta = 0;
+    std::ptrdiff_t glyph_quad_count_delta = 0;
     std::ptrdiff_t skipped_count_delta = 0;
     std::ptrdiff_t fallback_incomplete_count_delta = 0;
     std::ptrdiff_t deterministic_fallback_count_delta = 0;
@@ -486,9 +487,78 @@ struct render_text_frame_draw_plan_diff_policy {
     std::size_t added_packet_count = 0;
     std::size_t removed_packet_count = 0;
     std::size_t changed_packet_count = 0;
+    std::size_t unchanged_packet_count = 0;
     std::size_t readiness_changed_packet_count = 0;
+    std::size_t readiness_regression_count = 0;
+    std::size_t readiness_recovery_count = 0;
     std::size_t fallback_changed_packet_count = 0;
     std::size_t page_revision_changed_packet_count = 0;
+    std::size_t line_run_changed_packet_count = 0;
+    std::size_t cluster_changed_packet_count = 0;
+    std::size_t cache_key_changed_packet_count = 0;
+    std::size_t atlas_page_changed_packet_count = 0;
+    std::size_t upload_request_changed_packet_count = 0;
+    std::size_t upload_generation_changed_packet_count = 0;
+    std::size_t glyph_quad_count_changed_packet_count = 0;
+    std::size_t status_changed_packet_count = 0;
+    std::size_t blocker_changed_packet_count = 0;
+    std::size_t missing_atlas_upload_blocker_count = 0;
+    std::size_t missing_materialization_blocker_count = 0;
+    std::size_t non_upload_ready_payload_blocker_count = 0;
+    std::size_t missing_glyph_quad_fact_blocker_count = 0;
+    std::size_t fallback_or_skipped_packet_count = 0;
+    bool stable_no_change = false;
+};
+
+struct render_text_frame_draw_packet_consumption_diff {
+    std::string packet_key;
+    std::string previous_packet_id;
+    std::string current_packet_id;
+    std::string previous_upload_request_id;
+    std::string current_upload_request_id;
+    std::size_t previous_line_index = 0;
+    std::size_t current_line_index = 0;
+    std::size_t previous_run_index = 0;
+    std::size_t current_run_index = 0;
+    std::size_t previous_cluster_byte_offset = 0;
+    std::size_t current_cluster_byte_offset = 0;
+    std::size_t previous_cluster_byte_count = 0;
+    std::size_t current_cluster_byte_count = 0;
+    glyph_atlas_key previous_cache_key;
+    glyph_atlas_key current_cache_key;
+    render_text_atlas_page_id previous_page_id = 0;
+    render_text_atlas_page_id current_page_id = 0;
+    render_text_revision previous_upload_generation = 0;
+    render_text_revision current_upload_generation = 0;
+    std::size_t previous_glyph_quad_count = 0;
+    std::size_t current_glyph_quad_count = 0;
+    render_text_frame_draw_packet_status previous_status =
+        render_text_frame_draw_packet_status::frame_not_ready;
+    render_text_frame_draw_packet_status current_status =
+        render_text_frame_draw_packet_status::frame_not_ready;
+    bool added = false;
+    bool removed = false;
+    bool changed = false;
+    bool unchanged = false;
+    bool line_run_changed = false;
+    bool cluster_changed = false;
+    bool cache_key_changed = false;
+    bool atlas_page_changed = false;
+    bool upload_request_changed = false;
+    bool upload_generation_changed = false;
+    bool glyph_quad_count_changed = false;
+    bool readiness_changed = false;
+    bool readiness_regressed = false;
+    bool readiness_recovered = false;
+    bool status_changed = false;
+    bool blocker_changed = false;
+    bool missing_atlas_upload = false;
+    bool missing_materialization = false;
+    bool non_upload_ready_payload = false;
+    bool missing_glyph_quad_facts = false;
+    bool fallback_or_skipped = false;
+    std::string previous_blocker_summary;
+    std::string current_blocker_summary;
 };
 
 struct render_text_frame_draw_plan_diff {
@@ -501,12 +571,17 @@ struct render_text_frame_draw_plan_diff {
     bool previous_ready_for_renderer = false;
     bool current_ready_for_renderer = false;
     render_text_frame_draw_plan_diff_policy policy;
+    std::vector<render_text_frame_draw_packet_consumption_diff> packet_diffs;
     std::vector<std::string> added_packet_ids;
     std::vector<std::string> removed_packet_ids;
     std::vector<std::string> changed_packet_ids;
+    std::vector<std::string> unchanged_packet_ids;
     std::vector<std::string> readiness_changed_packet_ids;
+    std::vector<std::string> readiness_regressed_packet_ids;
+    std::vector<std::string> readiness_recovered_packet_ids;
     std::vector<std::string> fallback_changed_packet_ids;
     std::vector<std::string> page_revision_changed_packet_ids;
+    std::vector<std::string> blocker_changed_packet_ids;
     std::vector<std::string> stable_glyph_changed_packet_ids;
     std::vector<std::string> stable_style_changed_packet_ids;
     std::vector<std::string> stable_run_changed_packet_ids;
@@ -541,6 +616,11 @@ struct render_text_frame_draw_plan_diff {
             || !stable_glyph_changed_packet_ids.empty()
             || !stable_style_changed_packet_ids.empty()
             || !stable_run_changed_packet_ids.empty();
+    }
+
+    bool stable_no_change() const
+    {
+        return policy.stable_no_change;
     }
 
     bool ok() const
@@ -676,6 +756,214 @@ inline bool render_text_frame_draw_packets_equal(
                 .has_changes();
 }
 
+inline std::size_t render_text_frame_draw_packet_glyph_quad_count_for(
+    const render_text_frame_draw_packet_snapshot& packet)
+{
+    return packet.drawable()
+            && packet.has_layout_bounds
+            && packet.has_atlas_bounds
+            && packet.uv_bounds.valid
+        ? 1U
+        : 0U;
+}
+
+inline std::size_t render_text_frame_draw_plan_glyph_quad_count(
+    const render_text_frame_draw_plan_snapshot& plan)
+{
+    std::size_t count = 0;
+    for (const render_text_frame_draw_packet_snapshot& packet : plan.packets) {
+        count += render_text_frame_draw_packet_glyph_quad_count_for(packet);
+    }
+    return count;
+}
+
+inline bool render_text_frame_draw_packet_missing_atlas_upload(
+    const render_text_frame_draw_packet_snapshot& packet)
+{
+    return packet.atlas_upload_request_id.empty() || !packet.upload_consumed;
+}
+
+inline bool render_text_frame_draw_packet_missing_materialization(
+    const render_text_frame_draw_packet_snapshot& packet)
+{
+    return packet.status == render_text_frame_draw_packet_status::skipped_materialization
+        || packet.status == render_text_frame_draw_packet_status::missing_cache_key;
+}
+
+inline bool render_text_frame_draw_packet_non_upload_ready_payload(
+    const render_text_frame_draw_packet_snapshot& packet)
+{
+    return packet.status == render_text_frame_draw_packet_status::skipped_materialization;
+}
+
+inline bool render_text_frame_draw_packet_missing_glyph_quad_facts(
+    const render_text_frame_draw_packet_snapshot& packet)
+{
+    return packet.status == render_text_frame_draw_packet_status::missing_layout_bounds
+        || packet.status == render_text_frame_draw_packet_status::missing_atlas_bounds
+        || packet.status == render_text_frame_draw_packet_status::missing_page_extent
+        || !packet.has_layout_bounds
+        || !packet.has_atlas_bounds
+        || !packet.uv_bounds.valid;
+}
+
+inline bool render_text_frame_draw_packet_fallback_or_skipped(
+    const render_text_frame_draw_packet_snapshot& packet)
+{
+    return packet.fallback_incomplete
+        || packet.used_deterministic_fallback
+        || packet.status == render_text_frame_draw_packet_status::fallback_incomplete
+        || packet.status == render_text_frame_draw_packet_status::skipped_materialization;
+}
+
+inline std::string render_text_frame_draw_packet_blocker_summary_for(
+    const render_text_frame_draw_packet_snapshot& packet)
+{
+    if (packet.drawable()) {
+        return {};
+    }
+    if (!packet.diagnostic.empty()) {
+        return packet.diagnostic;
+    }
+    switch (packet.status) {
+    case render_text_frame_draw_packet_status::draw_ready:
+        return {};
+    case render_text_frame_draw_packet_status::frame_not_ready:
+        return "draw packet is waiting for consumed atlas upload evidence";
+    case render_text_frame_draw_packet_status::fallback_incomplete:
+        return "draw packet is blocked by incomplete font fallback coverage";
+    case render_text_frame_draw_packet_status::skipped_materialization:
+        return "draw packet has no upload-ready glyph materialization";
+    case render_text_frame_draw_packet_status::missing_cache_key:
+        return "draw packet is missing a stable glyph atlas cache key";
+    case render_text_frame_draw_packet_status::missing_layout_bounds:
+        return "draw packet is missing glyph layout bounds";
+    case render_text_frame_draw_packet_status::missing_atlas_bounds:
+        return "draw packet is missing glyph atlas bounds";
+    case render_text_frame_draw_packet_status::missing_page_extent:
+        return "draw packet cannot derive glyph quad UVs without atlas page extent";
+    }
+    return "unknown draw packet blocker";
+}
+
+inline render_text_frame_draw_packet_consumption_diff
+make_render_text_frame_draw_packet_consumption_diff(
+    const render_text_frame_draw_packet_snapshot* previous,
+    const render_text_frame_draw_packet_snapshot* current)
+{
+    render_text_frame_draw_packet_consumption_diff diff{
+        .packet_key = current == nullptr
+            ? (previous == nullptr ? std::string{} : render_text_frame_draw_packet_diff_key_for(*previous))
+            : render_text_frame_draw_packet_diff_key_for(*current),
+        .previous_packet_id = previous == nullptr ? std::string{} : previous->packet_id,
+        .current_packet_id = current == nullptr ? std::string{} : current->packet_id,
+        .previous_upload_request_id =
+            previous == nullptr ? std::string{} : previous->atlas_upload_request_id,
+        .current_upload_request_id =
+            current == nullptr ? std::string{} : current->atlas_upload_request_id,
+        .previous_line_index = previous == nullptr ? 0U : previous->atlas_consumption.line_index,
+        .current_line_index = current == nullptr ? 0U : current->atlas_consumption.line_index,
+        .previous_run_index = previous == nullptr ? 0U : previous->run_index,
+        .current_run_index = current == nullptr ? 0U : current->run_index,
+        .previous_cluster_byte_offset = previous == nullptr ? 0U : previous->cluster_byte_offset,
+        .current_cluster_byte_offset = current == nullptr ? 0U : current->cluster_byte_offset,
+        .previous_cluster_byte_count = previous == nullptr ? 0U : previous->cluster_byte_count,
+        .current_cluster_byte_count = current == nullptr ? 0U : current->cluster_byte_count,
+        .previous_cache_key = previous == nullptr ? glyph_atlas_key{} : previous->cache_key,
+        .current_cache_key = current == nullptr ? glyph_atlas_key{} : current->cache_key,
+        .previous_page_id = previous == nullptr ? 0U : previous->page_id,
+        .current_page_id = current == nullptr ? 0U : current->page_id,
+        .previous_upload_generation =
+            previous == nullptr ? 0U : previous->atlas_consumption.upload_generation,
+        .current_upload_generation =
+            current == nullptr ? 0U : current->atlas_consumption.upload_generation,
+        .previous_glyph_quad_count = previous == nullptr
+            ? 0U
+            : render_text_frame_draw_packet_glyph_quad_count_for(*previous),
+        .current_glyph_quad_count = current == nullptr
+            ? 0U
+            : render_text_frame_draw_packet_glyph_quad_count_for(*current),
+        .previous_status = previous == nullptr
+            ? render_text_frame_draw_packet_status::frame_not_ready
+            : previous->status,
+        .current_status = current == nullptr
+            ? render_text_frame_draw_packet_status::frame_not_ready
+            : current->status,
+        .added = previous == nullptr && current != nullptr,
+        .removed = previous != nullptr && current == nullptr,
+        .previous_blocker_summary = previous == nullptr
+            ? std::string{}
+            : render_text_frame_draw_packet_blocker_summary_for(*previous),
+        .current_blocker_summary = current == nullptr
+            ? std::string{}
+            : render_text_frame_draw_packet_blocker_summary_for(*current),
+    };
+    diff.line_run_changed =
+        !diff.added
+        && !diff.removed
+        && (diff.previous_line_index != diff.current_line_index
+            || diff.previous_run_index != diff.current_run_index);
+    diff.cluster_changed =
+        !diff.added
+        && !diff.removed
+        && (diff.previous_cluster_byte_offset != diff.current_cluster_byte_offset
+            || diff.previous_cluster_byte_count != diff.current_cluster_byte_count);
+    diff.cache_key_changed =
+        !diff.added
+        && !diff.removed
+        && diff.previous_cache_key != diff.current_cache_key;
+    diff.atlas_page_changed =
+        !diff.added
+        && !diff.removed
+        && diff.previous_page_id != diff.current_page_id;
+    diff.upload_request_changed =
+        !diff.added
+        && !diff.removed
+        && diff.previous_upload_request_id != diff.current_upload_request_id;
+    diff.upload_generation_changed =
+        !diff.added
+        && !diff.removed
+        && diff.previous_upload_generation != diff.current_upload_generation;
+    diff.glyph_quad_count_changed =
+        !diff.added
+        && !diff.removed
+        && diff.previous_glyph_quad_count != diff.current_glyph_quad_count;
+    const bool previous_ready = previous != nullptr && previous->drawable();
+    const bool current_ready = current != nullptr && current->drawable();
+    diff.readiness_changed = previous_ready != current_ready;
+    diff.readiness_regressed = previous_ready && !current_ready;
+    diff.readiness_recovered = !previous_ready && current_ready && previous != nullptr;
+    diff.status_changed =
+        !diff.added && !diff.removed && diff.previous_status != diff.current_status;
+    diff.blocker_changed = diff.previous_blocker_summary != diff.current_blocker_summary;
+    if (current != nullptr) {
+        diff.missing_atlas_upload = render_text_frame_draw_packet_missing_atlas_upload(*current);
+        diff.missing_materialization =
+            render_text_frame_draw_packet_missing_materialization(*current);
+        diff.non_upload_ready_payload =
+            render_text_frame_draw_packet_non_upload_ready_payload(*current);
+        diff.missing_glyph_quad_facts =
+            render_text_frame_draw_packet_missing_glyph_quad_facts(*current);
+        diff.fallback_or_skipped =
+            render_text_frame_draw_packet_fallback_or_skipped(*current);
+    }
+    diff.changed =
+        !diff.added
+        && !diff.removed
+        && (diff.line_run_changed
+            || diff.cluster_changed
+            || diff.cache_key_changed
+            || diff.atlas_page_changed
+            || diff.upload_request_changed
+            || diff.upload_generation_changed
+            || diff.glyph_quad_count_changed
+            || diff.readiness_changed
+            || diff.status_changed
+            || diff.blocker_changed);
+    diff.unchanged = !diff.added && !diff.removed && !diff.changed;
+    return diff;
+}
+
 inline void render_text_frame_draw_append_unique_nonempty(
     std::vector<std::string>& ids,
     const std::string& id)
@@ -759,9 +1047,11 @@ inline render_text_frame_draw_plan_diff diff_render_text_frame_draw_plans(
     diff.readiness_changed_packet_ids.reserve(current.packets.size());
     diff.fallback_changed_packet_ids.reserve(current.packets.size());
     diff.page_revision_changed_packet_ids.reserve(current.packets.size());
+    diff.blocker_changed_packet_ids.reserve(current.packets.size());
     diff.stable_glyph_changed_packet_ids.reserve(current.packets.size());
     diff.stable_style_changed_packet_ids.reserve(current.packets.size());
     diff.stable_run_changed_packet_ids.reserve(current.packets.size());
+    diff.packet_diffs.reserve(previous.packets.size() + current.packets.size());
     for (const render_text_frame_draw_packet_snapshot& current_packet : current.packets) {
         const render_text_frame_draw_packet_snapshot* previous_packet =
             render_text_frame_draw_plan_find_packet(
@@ -792,6 +1082,32 @@ inline render_text_frame_draw_plan_diff diff_render_text_frame_draw_plans(
                     diff.page_revision_changed_packet_ids,
                     current_packet.packet_id);
             }
+            render_text_frame_draw_packet_consumption_diff packet_diff =
+                make_render_text_frame_draw_packet_consumption_diff(previous_packet, &current_packet);
+            if (packet_diff.unchanged) {
+                render_text_atlas_upload_request_append_unique_id(
+                    diff.unchanged_packet_ids,
+                    current_packet.packet_id);
+            }
+            if (packet_diff.readiness_regressed) {
+                render_text_atlas_upload_request_append_unique_id(
+                    diff.readiness_regressed_packet_ids,
+                    current_packet.packet_id);
+            }
+            if (packet_diff.readiness_recovered) {
+                render_text_atlas_upload_request_append_unique_id(
+                    diff.readiness_recovered_packet_ids,
+                    current_packet.packet_id);
+            }
+            if (packet_diff.blocker_changed) {
+                render_text_atlas_upload_request_append_unique_id(
+                    diff.blocker_changed_packet_ids,
+                    current_packet.packet_id);
+            }
+            diff.packet_diffs.push_back(std::move(packet_diff));
+        } else {
+            diff.packet_diffs.push_back(
+                make_render_text_frame_draw_packet_consumption_diff(nullptr, &current_packet));
         }
 
         const render_text_frame_draw_packet_snapshot* previous_slot_packet =
@@ -818,6 +1134,14 @@ inline render_text_frame_draw_plan_diff diff_render_text_frame_draw_plans(
             render_text_atlas_upload_request_append_unique_id(
                 diff.stable_run_changed_packet_ids,
                 current_packet.packet_id);
+        }
+    }
+    for (const render_text_frame_draw_packet_snapshot& previous_packet : previous.packets) {
+        if (render_text_frame_draw_plan_find_packet(
+                current.packets,
+                render_text_frame_draw_packet_diff_key_for(previous_packet)) == nullptr) {
+            diff.packet_diffs.push_back(
+                make_render_text_frame_draw_packet_consumption_diff(&previous_packet, nullptr));
         }
     }
 
@@ -847,6 +1171,9 @@ inline render_text_frame_draw_plan_diff diff_render_text_frame_draw_plans(
         .draw_ready_count_delta = render_text_frame_snapshot_count_delta(
             previous.policy.draw_ready_count,
             current.policy.draw_ready_count),
+        .glyph_quad_count_delta = render_text_frame_snapshot_count_delta(
+            render_text_frame_draw_plan_glyph_quad_count(previous),
+            render_text_frame_draw_plan_glyph_quad_count(current)),
         .skipped_count_delta = render_text_frame_snapshot_count_delta(
             previous.policy.skipped_count,
             current.policy.skipped_count),
@@ -877,15 +1204,93 @@ inline render_text_frame_draw_plan_diff diff_render_text_frame_draw_plans(
         .added_packet_count = diff.added_packet_ids.size(),
         .removed_packet_count = diff.removed_packet_ids.size(),
         .changed_packet_count = diff.changed_packet_ids.size(),
+        .unchanged_packet_count = diff.unchanged_packet_ids.size(),
         .readiness_changed_packet_count = diff.readiness_changed_packet_ids.size(),
+        .readiness_regression_count = diff.readiness_regressed_packet_ids.size(),
+        .readiness_recovery_count = diff.readiness_recovered_packet_ids.size(),
         .fallback_changed_packet_count = diff.fallback_changed_packet_ids.size(),
         .page_revision_changed_packet_count = diff.page_revision_changed_packet_ids.size(),
     };
+    for (const render_text_frame_draw_packet_consumption_diff& packet_diff : diff.packet_diffs) {
+        if (packet_diff.line_run_changed) {
+            ++diff.policy.line_run_changed_packet_count;
+        }
+        if (packet_diff.cluster_changed) {
+            ++diff.policy.cluster_changed_packet_count;
+        }
+        if (packet_diff.cache_key_changed) {
+            ++diff.policy.cache_key_changed_packet_count;
+        }
+        if (packet_diff.atlas_page_changed) {
+            ++diff.policy.atlas_page_changed_packet_count;
+        }
+        if (packet_diff.upload_request_changed) {
+            ++diff.policy.upload_request_changed_packet_count;
+        }
+        if (packet_diff.upload_generation_changed) {
+            ++diff.policy.upload_generation_changed_packet_count;
+        }
+        if (packet_diff.glyph_quad_count_changed) {
+            ++diff.policy.glyph_quad_count_changed_packet_count;
+        }
+        if (packet_diff.status_changed) {
+            ++diff.policy.status_changed_packet_count;
+        }
+        if (packet_diff.blocker_changed) {
+            ++diff.policy.blocker_changed_packet_count;
+        }
+        if (packet_diff.missing_atlas_upload) {
+            ++diff.policy.missing_atlas_upload_blocker_count;
+        }
+        if (packet_diff.missing_materialization) {
+            ++diff.policy.missing_materialization_blocker_count;
+        }
+        if (packet_diff.non_upload_ready_payload) {
+            ++diff.policy.non_upload_ready_payload_blocker_count;
+        }
+        if (packet_diff.missing_glyph_quad_facts) {
+            ++diff.policy.missing_glyph_quad_fact_blocker_count;
+        }
+        if (packet_diff.fallback_or_skipped) {
+            ++diff.policy.fallback_or_skipped_packet_count;
+        }
+    }
+    diff.policy.stable_no_change =
+        !diff.policy.frame_status_changed
+        && !diff.policy.frame_readiness_changed
+        && diff.policy.materialization_count_delta == 0
+        && diff.policy.packet_count_delta == 0
+        && diff.policy.draw_ready_count_delta == 0
+        && diff.policy.glyph_quad_count_delta == 0
+        && diff.policy.skipped_count_delta == 0
+        && diff.policy.fallback_incomplete_count_delta == 0
+        && diff.policy.deterministic_fallback_count_delta == 0
+        && diff.policy.real_backend_count_delta == 0
+        && diff.policy.upload_consumed_count_delta == 0
+        && diff.policy.stable_glyph_key_count_delta == 0
+        && diff.policy.stable_style_key_count_delta == 0
+        && diff.policy.stable_run_key_count_delta == 0
+        && diff.policy.added_packet_count == 0
+        && diff.policy.removed_packet_count == 0
+        && diff.policy.changed_packet_count == 0
+        && diff.policy.readiness_changed_packet_count == 0
+        && diff.policy.fallback_changed_packet_count == 0
+        && diff.policy.page_revision_changed_packet_count == 0
+        && diff.policy.line_run_changed_packet_count == 0
+        && diff.policy.cluster_changed_packet_count == 0
+        && diff.policy.cache_key_changed_packet_count == 0
+        && diff.policy.atlas_page_changed_packet_count == 0
+        && diff.policy.upload_request_changed_packet_count == 0
+        && diff.policy.upload_generation_changed_packet_count == 0
+        && diff.policy.glyph_quad_count_changed_packet_count == 0
+        && diff.policy.status_changed_packet_count == 0
+        && diff.policy.blocker_changed_packet_count == 0;
 
     diff.diagnostic = diff.has_packet_changes()
             || diff.has_readiness_or_fallback_changes()
             || diff.has_page_revision_changes()
             || diff.has_stable_key_deltas()
+            || !diff.policy.stable_no_change
         ? "text frame draw plan diff found renderer-facing glyph packet diagnostic changes"
         : "text frame draw plan diff is renderer-agnostic and unchanged";
     return diff;

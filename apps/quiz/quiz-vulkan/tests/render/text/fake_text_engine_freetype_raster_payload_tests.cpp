@@ -226,6 +226,7 @@ void test_file_backed_freetype_selection_rasterizes_real_payload()
     require(
         diagnostics.text_frame_draw_plan.policy.real_backend_count == 1U,
         "pending draw plan preserves real backend materialization evidence");
+    const render_text_frame_draw_plan_snapshot pending_draw_plan = diagnostics.text_frame_draw_plan;
 
     const std::string upload_request_id = line_upload.upload_request_id;
     const glyph_atlas_key cache_key = line_upload.cache_key;
@@ -272,6 +273,28 @@ void test_file_backed_freetype_selection_rasterizes_real_payload()
         draw_packet.atlas_consumption.upload_generation == page_revision,
         "draw packet atlas consumption records upload generation");
     require(!draw_packet.atlas_consumption.missing_glyph, "draw packet atlas consumption has glyph coverage");
+
+    const render_text_frame_draw_plan_diff draw_diff =
+        diff_render_text_frame_draw_plans(pending_draw_plan, ready_diagnostics.text_frame_draw_plan);
+    require(draw_diff.has_readiness_or_fallback_changes(), "real font draw diff records readiness transition");
+    require(draw_diff.policy.readiness_recovery_count == 1U, "real font draw diff counts blocked-to-ready recovery");
+    require(draw_diff.policy.glyph_quad_count_delta == 1, "real font draw diff records one new glyph quad");
+    require(
+        draw_diff.policy.glyph_quad_count_changed_packet_count == 1U,
+        "real font draw diff counts glyph quad materialization");
+    require(draw_diff.readiness_recovered_packet_ids.size() == 1U, "real font draw diff exposes recovered packet id");
+    require(draw_diff.packet_diffs.size() == 1U, "real font draw diff exposes compact packet details");
+    const render_text_frame_draw_packet_consumption_diff& packet_diff = draw_diff.packet_diffs.front();
+    require(packet_diff.readiness_recovered, "real font packet diff marks readiness recovery");
+    require(packet_diff.previous_glyph_quad_count == 0U, "pending real font packet has no glyph quad");
+    require(packet_diff.current_glyph_quad_count == 1U, "ready real font packet has one glyph quad");
+    require(packet_diff.current_cache_key == cache_key, "real font packet diff preserves atlas key");
+    require(packet_diff.current_upload_request_id == upload_request_id, "real font packet diff preserves upload id");
+    require(
+        packet_diff.current_upload_generation == page_revision,
+        "real font packet diff preserves atlas upload generation");
+    require(packet_diff.current_line_index == draw_packet.atlas_consumption.line_index, "real font packet diff preserves line index");
+    require(packet_diff.current_run_index == draw_packet.run_index, "real font packet diff preserves run index");
 }
 
 void test_missing_file_backed_freetype_payload_falls_back_and_skips()

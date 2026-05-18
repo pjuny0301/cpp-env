@@ -2295,9 +2295,17 @@ void test_text_frame_draw_plan_diff_reports_unchanged_packet_set()
     require(!diff.has_page_revision_changes(), "unchanged draw plan has no page revision changes");
     require(!diff.has_stable_key_deltas(), "unchanged draw plan has no stable key deltas");
     require(diff.policy.packet_count_delta == 0, "unchanged draw plan has zero packet delta");
+    require(diff.policy.glyph_quad_count_delta == 0, "unchanged draw plan has zero glyph quad delta");
+    require(diff.policy.unchanged_packet_count == 1U, "unchanged draw plan counts unchanged packet");
+    require(diff.policy.stable_no_change, "unchanged draw plan marks stable no-change");
+    require(diff.stable_no_change(), "unchanged draw plan exposes stable no-change helper");
     require(diff.policy.stable_glyph_key_count_delta == 0, "unchanged draw plan has zero glyph key delta");
     require(diff.policy.stable_style_key_count_delta == 0, "unchanged draw plan has zero style key delta");
     require(diff.policy.stable_run_key_count_delta == 0, "unchanged draw plan has zero run key delta");
+    require(diff.packet_diffs.size() == 1U, "unchanged draw plan exposes compact packet diff");
+    require(diff.packet_diffs.front().unchanged, "compact packet diff marks unchanged packet");
+    require(diff.packet_diffs.front().current_glyph_quad_count == 1U, "compact packet diff records one glyph quad");
+    require(diff.unchanged_packet_ids.size() == 1U, "unchanged packet id is exposed");
 }
 
 void test_text_frame_draw_plan_diff_reports_page_revision_changes_as_changed_packets()
@@ -2326,6 +2334,16 @@ void test_text_frame_draw_plan_diff_reports_page_revision_changes_as_changed_pac
     require(diff.changed_packet_ids.size() == 1U, "page revision change counts changed packet");
     require(diff.page_revision_changed_packet_ids == diff.changed_packet_ids, "page revision packet id is changed id");
     require(diff.policy.page_revision_changed_packet_count == 1U, "policy counts page revision change");
+    require(
+        diff.policy.upload_generation_changed_packet_count == 1U,
+        "policy counts upload generation change");
+    require(
+        diff.packet_diffs.front().upload_generation_changed,
+        "packet diff marks upload generation change");
+    require(
+        diff.packet_diffs.front().previous_upload_generation
+            != diff.packet_diffs.front().current_upload_generation,
+        "packet diff preserves upload generation transition");
     require(diff.policy.stable_glyph_key_count_delta == 0, "page revision keeps stable glyph count");
     require(diff.policy.stable_style_key_count_delta == 0, "page revision keeps stable style count");
     require(diff.policy.stable_run_key_count_delta == 0, "page revision keeps stable run count");
@@ -2359,11 +2377,63 @@ void test_text_frame_draw_plan_diff_reports_readiness_and_fallback_changes()
     require(diff.policy.frame_readiness_changed, "policy records frame readiness change");
     require(diff.policy.frame_readiness_regressed, "policy records frame readiness regression");
     require(diff.policy.draw_ready_count_delta == -1, "policy records draw-ready loss");
+    require(diff.policy.glyph_quad_count_delta == -1, "policy records glyph quad loss");
     require(diff.policy.fallback_incomplete_count_delta == 1, "policy records fallback packet delta");
     require(diff.readiness_changed_packet_ids.size() == 1U, "diff records readiness packet id");
+    require(diff.readiness_regressed_packet_ids.size() == 1U, "diff records readiness regression packet id");
     require(diff.fallback_changed_packet_ids.size() == 1U, "diff records fallback packet id");
     require(diff.policy.readiness_changed_packet_count == 1U, "policy counts readiness packet changes");
+    require(diff.policy.readiness_regression_count == 1U, "policy counts readiness regression");
+    require(diff.policy.glyph_quad_count_changed_packet_count == 1U, "policy counts glyph quad count change");
     require(diff.policy.fallback_changed_packet_count == 1U, "policy counts fallback packet changes");
+    require(diff.policy.fallback_or_skipped_packet_count == 1U, "policy counts fallback blocker evidence");
+    require(diff.packet_diffs.front().readiness_regressed, "packet diff marks ready-to-blocked regression");
+    require(diff.packet_diffs.front().current_glyph_quad_count == 0U, "blocked packet has no glyph quad");
+}
+
+void test_text_frame_draw_plan_diff_reports_consumption_blocker_categories()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_glyph_atlas_materialization_snapshot a = upload_ready_materialization();
+    a.run_index = 0U;
+    render_text_glyph_atlas_materialization_snapshot b =
+        upload_ready_materialization(glyph_atlas_key{
+            .face_id = 7,
+            .glyph_id = U'B',
+            .pixel_size = 20,
+        });
+    b.run_index = 1U;
+
+    const render_text_frame_draw_plan_snapshot previous =
+        draw_plan_for_materializations({a, b});
+    render_text_frame_draw_plan_snapshot current = previous;
+    current.packets[0].status = render_text_frame_draw_packet_status::skipped_materialization;
+    current.packets[0].atlas_upload_request_id.clear();
+    current.packets[0].upload_consumed = false;
+    current.packets[0].diagnostic.clear();
+    current.packets[1].status = render_text_frame_draw_packet_status::missing_layout_bounds;
+    current.packets[1].has_layout_bounds = false;
+    current.packets[1].uv_bounds.valid = false;
+    current.packets[1].diagnostic.clear();
+
+    const render_text_frame_draw_plan_diff diff =
+        diff_render_text_frame_draw_plans(previous, current);
+
+    require(diff.has_packet_changes(), "blocker category changes are packet changes");
+    require(diff.policy.status_changed_packet_count == 2U, "status changes are counted");
+    require(diff.policy.blocker_changed_packet_count == 2U, "blocker summaries changed");
+    require(diff.blocker_changed_packet_ids.size() == 2U, "blocker-changed packet ids are exposed");
+    require(diff.policy.missing_atlas_upload_blocker_count == 1U, "missing atlas upload blocker is counted");
+    require(diff.policy.missing_materialization_blocker_count == 1U, "missing materialization blocker is counted");
+    require(diff.policy.non_upload_ready_payload_blocker_count == 1U, "non-upload-ready payload blocker is counted");
+    require(diff.policy.missing_glyph_quad_fact_blocker_count == 1U, "missing glyph quad facts are counted");
+    require(diff.policy.fallback_or_skipped_packet_count == 2U, "fallback/skipped packet evidence is counted");
+    require(diff.policy.glyph_quad_count_changed_packet_count == 2U, "glyph quad count losses are counted");
+    require(diff.policy.glyph_quad_count_delta == -2, "two blocked packets remove two glyph quads");
+    require(diff.packet_diffs[0].missing_materialization, "first packet records missing materialization");
+    require(diff.packet_diffs[0].missing_atlas_upload, "first packet records missing atlas upload evidence");
+    require(diff.packet_diffs[1].missing_glyph_quad_facts, "second packet records missing quad facts");
 }
 
 void test_text_frame_draw_plan_diff_reports_added_removed_and_stable_glyph_deltas()
@@ -2489,6 +2559,7 @@ int main()
     test_text_frame_draw_plan_diff_reports_unchanged_packet_set();
     test_text_frame_draw_plan_diff_reports_page_revision_changes_as_changed_packets();
     test_text_frame_draw_plan_diff_reports_readiness_and_fallback_changes();
+    test_text_frame_draw_plan_diff_reports_consumption_blocker_categories();
     test_text_frame_draw_plan_diff_reports_added_removed_and_stable_glyph_deltas();
     test_text_frame_draw_plan_diff_reports_stable_glyph_style_and_run_changes();
     return 0;

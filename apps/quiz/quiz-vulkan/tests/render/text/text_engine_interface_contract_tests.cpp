@@ -3077,6 +3077,7 @@ static_assert(requires(
     render::render_text_frame_draw_plan_request draw_request,
     render::render_text_frame_draw_plan_snapshot draw_plan,
     render::render_text_frame_draw_plan_diff_policy draw_diff_policy,
+    render::render_text_frame_draw_packet_consumption_diff draw_packet_consumption_diff,
     render::render_text_frame_draw_plan_diff draw_diff,
     render::render_text_glyph_atlas_upload_result_packet_snapshot upload_result_packet,
     render::render_text_glyph_atlas_upload_result_snapshot upload_result,
@@ -3728,6 +3729,7 @@ static_assert(requires(
     { draw_diff_policy.materialization_count_delta } -> std::same_as<std::ptrdiff_t&>;
     { draw_diff_policy.packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
     { draw_diff_policy.draw_ready_count_delta } -> std::same_as<std::ptrdiff_t&>;
+    { draw_diff_policy.glyph_quad_count_delta } -> std::same_as<std::ptrdiff_t&>;
     { draw_diff_policy.skipped_count_delta } -> std::same_as<std::ptrdiff_t&>;
     { draw_diff_policy.fallback_incomplete_count_delta } -> std::same_as<std::ptrdiff_t&>;
     { draw_diff_policy.deterministic_fallback_count_delta } -> std::same_as<std::ptrdiff_t&>;
@@ -3742,9 +3744,75 @@ static_assert(requires(
     { draw_diff_policy.added_packet_count } -> std::same_as<std::size_t&>;
     { draw_diff_policy.removed_packet_count } -> std::same_as<std::size_t&>;
     { draw_diff_policy.changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.unchanged_packet_count } -> std::same_as<std::size_t&>;
     { draw_diff_policy.readiness_changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.readiness_regression_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.readiness_recovery_count } -> std::same_as<std::size_t&>;
     { draw_diff_policy.fallback_changed_packet_count } -> std::same_as<std::size_t&>;
     { draw_diff_policy.page_revision_changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.line_run_changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.cluster_changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.cache_key_changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.atlas_page_changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.upload_request_changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.upload_generation_changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.glyph_quad_count_changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.status_changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.blocker_changed_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.missing_atlas_upload_blocker_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.missing_materialization_blocker_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.non_upload_ready_payload_blocker_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.missing_glyph_quad_fact_blocker_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.fallback_or_skipped_packet_count } -> std::same_as<std::size_t&>;
+    { draw_diff_policy.stable_no_change } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.packet_key } -> std::same_as<std::string&>;
+    { draw_packet_consumption_diff.previous_packet_id } -> std::same_as<std::string&>;
+    { draw_packet_consumption_diff.current_packet_id } -> std::same_as<std::string&>;
+    { draw_packet_consumption_diff.previous_upload_request_id } -> std::same_as<std::string&>;
+    { draw_packet_consumption_diff.current_upload_request_id } -> std::same_as<std::string&>;
+    { draw_packet_consumption_diff.previous_line_index } -> std::same_as<std::size_t&>;
+    { draw_packet_consumption_diff.current_line_index } -> std::same_as<std::size_t&>;
+    { draw_packet_consumption_diff.previous_run_index } -> std::same_as<std::size_t&>;
+    { draw_packet_consumption_diff.current_run_index } -> std::same_as<std::size_t&>;
+    { draw_packet_consumption_diff.previous_cluster_byte_offset } -> std::same_as<std::size_t&>;
+    { draw_packet_consumption_diff.current_cluster_byte_offset } -> std::same_as<std::size_t&>;
+    { draw_packet_consumption_diff.previous_cluster_byte_count } -> std::same_as<std::size_t&>;
+    { draw_packet_consumption_diff.current_cluster_byte_count } -> std::same_as<std::size_t&>;
+    { draw_packet_consumption_diff.previous_cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { draw_packet_consumption_diff.current_cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { draw_packet_consumption_diff.previous_page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { draw_packet_consumption_diff.current_page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { draw_packet_consumption_diff.previous_upload_generation } -> std::same_as<render::render_text_revision&>;
+    { draw_packet_consumption_diff.current_upload_generation } -> std::same_as<render::render_text_revision&>;
+    { draw_packet_consumption_diff.previous_glyph_quad_count } -> std::same_as<std::size_t&>;
+    { draw_packet_consumption_diff.current_glyph_quad_count } -> std::same_as<std::size_t&>;
+    { draw_packet_consumption_diff.previous_status }
+        -> std::same_as<render::render_text_frame_draw_packet_status&>;
+    { draw_packet_consumption_diff.current_status }
+        -> std::same_as<render::render_text_frame_draw_packet_status&>;
+    { draw_packet_consumption_diff.added } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.removed } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.changed } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.unchanged } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.line_run_changed } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.cluster_changed } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.cache_key_changed } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.atlas_page_changed } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.upload_request_changed } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.upload_generation_changed } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.glyph_quad_count_changed } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.readiness_changed } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.readiness_regressed } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.readiness_recovered } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.status_changed } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.blocker_changed } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.missing_atlas_upload } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.missing_materialization } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.non_upload_ready_payload } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.missing_glyph_quad_facts } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.fallback_or_skipped } -> std::same_as<bool&>;
+    { draw_packet_consumption_diff.previous_blocker_summary } -> std::same_as<std::string&>;
+    { draw_packet_consumption_diff.current_blocker_summary } -> std::same_as<std::string&>;
     { draw_diff.previous_frame_id } -> std::same_as<std::string&>;
     { draw_diff.current_frame_id } -> std::same_as<std::string&>;
     { draw_diff.previous_frame_status } -> std::same_as<render::render_text_frame_snapshot_status&>;
@@ -3752,12 +3820,18 @@ static_assert(requires(
     { draw_diff.previous_ready_for_renderer } -> std::same_as<bool&>;
     { draw_diff.current_ready_for_renderer } -> std::same_as<bool&>;
     { draw_diff.policy } -> std::same_as<render::render_text_frame_draw_plan_diff_policy&>;
+    { draw_diff.packet_diffs }
+        -> std::same_as<std::vector<render::render_text_frame_draw_packet_consumption_diff>&>;
     { draw_diff.added_packet_ids } -> std::same_as<std::vector<std::string>&>;
     { draw_diff.removed_packet_ids } -> std::same_as<std::vector<std::string>&>;
     { draw_diff.changed_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { draw_diff.unchanged_packet_ids } -> std::same_as<std::vector<std::string>&>;
     { draw_diff.readiness_changed_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { draw_diff.readiness_regressed_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { draw_diff.readiness_recovered_packet_ids } -> std::same_as<std::vector<std::string>&>;
     { draw_diff.fallback_changed_packet_ids } -> std::same_as<std::vector<std::string>&>;
     { draw_diff.page_revision_changed_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { draw_diff.blocker_changed_packet_ids } -> std::same_as<std::vector<std::string>&>;
     { draw_diff.stable_glyph_changed_packet_ids } -> std::same_as<std::vector<std::string>&>;
     { draw_diff.stable_style_changed_packet_ids } -> std::same_as<std::vector<std::string>&>;
     { draw_diff.stable_run_changed_packet_ids } -> std::same_as<std::vector<std::string>&>;
@@ -3766,6 +3840,7 @@ static_assert(requires(
     { draw_diff.has_readiness_or_fallback_changes() } -> std::same_as<bool>;
     { draw_diff.has_page_revision_changes() } -> std::same_as<bool>;
     { draw_diff.has_stable_key_deltas() } -> std::same_as<bool>;
+    { draw_diff.stable_no_change() } -> std::same_as<bool>;
     { draw_diff.ok() } -> std::same_as<bool>;
     { render::render_text_frame_draw_packet_diff_key_for(draw_packet) } -> std::same_as<std::string>;
     { render::render_text_frame_draw_packet_slot_key_for(draw_packet) } -> std::same_as<std::string>;
@@ -3778,6 +3853,18 @@ static_assert(requires(
         -> std::same_as<const render::render_text_frame_draw_packet_snapshot*>;
     { render::render_text_frame_draw_uv_rects_equal(draw_uv, draw_uv) } -> std::same_as<bool>;
     { render::render_text_frame_draw_packets_equal(draw_packet, draw_packet) } -> std::same_as<bool>;
+    { render::render_text_frame_draw_packet_glyph_quad_count_for(draw_packet) }
+        -> std::same_as<std::size_t>;
+    { render::render_text_frame_draw_plan_glyph_quad_count(draw_plan) }
+        -> std::same_as<std::size_t>;
+    { render::render_text_frame_draw_packet_missing_atlas_upload(draw_packet) } -> std::same_as<bool>;
+    { render::render_text_frame_draw_packet_missing_materialization(draw_packet) } -> std::same_as<bool>;
+    { render::render_text_frame_draw_packet_non_upload_ready_payload(draw_packet) } -> std::same_as<bool>;
+    { render::render_text_frame_draw_packet_missing_glyph_quad_facts(draw_packet) } -> std::same_as<bool>;
+    { render::render_text_frame_draw_packet_fallback_or_skipped(draw_packet) } -> std::same_as<bool>;
+    { render::render_text_frame_draw_packet_blocker_summary_for(draw_packet) } -> std::same_as<std::string>;
+    { render::make_render_text_frame_draw_packet_consumption_diff(&draw_packet, &draw_packet) }
+        -> std::same_as<render::render_text_frame_draw_packet_consumption_diff>;
     { render::render_text_frame_draw_append_unique_nonempty(stable_request_ids, style_key_text) }
         -> std::same_as<void>;
     { render::render_text_frame_draw_plan_stable_glyph_keys(draw_plan) }

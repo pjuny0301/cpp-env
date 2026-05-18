@@ -36,8 +36,8 @@ Historical integration notes are kept in git history, not repeated here.
   `codex/vulkan-present-image-execution-20260518`.
 - `codex-text-freetype-prototype-20260514`: busy on
   `codex/text-atlas-packet-consumption-20260518`.
-- `codex-asset-unified-cache-key-20260514`: busy on
-  `codex/asset-shader-byte-pipeline-summary-20260518`.
+- `codex-asset-unified-cache-key-20260514`: idle after shader byte source
+  pipeline summary and focused-header split.
 - `codex-image-texture-next-20260514`: idle after renderer resource-packet
   consumption diff work.
 - `codex-input-ime`: idle after wheel/drag/touch-like diagnostics work.
@@ -72,8 +72,8 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `c56535c` after
-  Vulkan present image execution evidence.
+- Main branch `codex/quiz-vulkan-remake-baseline` is at `91408ae` after
+  shader byte source pipeline summary integration.
 - Last full Windows MinGW CTest batch should be treated as stale. Run focused
   tests during normal integration; run full CTest after the next meaningful
   engine batch.
@@ -108,6 +108,12 @@ Historical integration notes are kept in git history, not repeated here.
   `quiz_vulkan_vulkan_swapchain_create_plan_tests`, and
   `quiz_vulkan_renderer_tests`; focused CTest passed 5/5 for renderer,
   native-frame, present-completion, queue-submit, and swapchain-create targets.
+- After `91408ae`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests`,
+  `quiz_vulkan_asset_bytes_provider_tests`, `quiz_vulkan_asset_manifest_tests`,
+  `quiz_vulkan_asset_runtime_catalog_tests`, and
+  `quiz_vulkan_asset_runtime_resolver_policy_tests`; focused CTest passed 4/4
+  for asset bytes, manifest, runtime catalog, and runtime resolver policy.
 
 ## Useful Commands
 

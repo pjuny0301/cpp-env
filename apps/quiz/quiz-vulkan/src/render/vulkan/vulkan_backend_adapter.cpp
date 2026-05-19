@@ -7136,6 +7136,148 @@ std::size_t descriptor_payload_identity_count(
     return count;
 }
 
+bool packet_vertices_have_area(const std::array<vulkan_quad_vertex, 4>& vertices);
+
+std::size_t native_draw_vertex_count(const vulkan_command_packet& packet)
+{
+    return packet.vertices.size();
+}
+
+std::size_t native_draw_index_count(const vulkan_command_packet&)
+{
+    return 0;
+}
+
+std::size_t native_draw_first_vertex(const vulkan_command_packet&)
+{
+    return 0;
+}
+
+std::size_t native_draw_first_index(const vulkan_command_packet&)
+{
+    return 0;
+}
+
+std::size_t native_draw_instance_count(const vulkan_command_packet& packet)
+{
+    return packet_vertices_have_area(packet.vertices) ? 1 : 0;
+}
+
+std::size_t native_draw_first_instance(const vulkan_command_packet&)
+{
+    return 0;
+}
+
+std::string native_draw_packet_identity(const vulkan_command_packet& packet)
+{
+    return "packet:" + std::to_string(packet.packet_index)
+        + ":command:" + std::to_string(packet.command_index)
+        + ":category:" + std::string{command_packet_category_name(packet.category)}
+        + ":batch:" + std::string{command_recording_batch_kind_name(packet.batch_kind)}
+        + ":vertices:" + std::to_string(native_draw_vertex_count(packet))
+        + ":instances:" + std::to_string(native_draw_instance_count(packet));
+}
+
+std::string native_draw_payload_identity(
+    const vulkan_command_packet& packet,
+    const vulkan_native_command_packet_descriptor_payload_bind* descriptor_payload_bind)
+{
+    std::string identity = native_draw_packet_identity(packet) + ":payloads:";
+    if (descriptor_payload_bind == nullptr
+        || descriptor_payload_bind->descriptor_payloads.empty()) {
+        return identity + "none";
+    }
+
+    bool first = true;
+    for (const vulkan_native_command_packet_descriptor_payload_identity& payload :
+         descriptor_payload_bind->descriptor_payloads) {
+        if (!first) {
+            identity += "|";
+        }
+        identity += payload.stable_identity;
+        first = false;
+    }
+    return identity;
+}
+
+std::size_t native_draw_payload_identity_count(
+    const vulkan_native_command_packet_descriptor_payload_bind* descriptor_payload_bind)
+{
+    return descriptor_payload_bind == nullptr
+        ? 0
+        : descriptor_payload_bind->descriptor_payloads.size();
+}
+
+bool native_call_completed_for_packet(
+    const vulkan_native_command_packet_execution_result& native_result,
+    const vulkan_command_packet& packet,
+    vulkan_native_command_packet_call_kind kind)
+{
+    for (const vulkan_native_command_packet_call_evidence& call : native_result.calls) {
+        if (call.kind == kind
+            && call.packet_index == packet.packet_index
+            && call.command_index == packet.command_index
+            && call.successful()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool native_draw_payload_identity_matches_packet(
+    const vulkan_command_packet& packet,
+    const vulkan_native_command_packet_descriptor_payload_bind& descriptor_payload_bind)
+{
+    for (const vulkan_resource_binding_snapshot& binding : packet.bindings) {
+        if (!packet_binding_requires_descriptor_payload_bind(binding)) {
+            continue;
+        }
+
+        const vulkan_native_command_packet_descriptor_payload_identity* payload =
+            descriptor_payload_identity_for_binding(descriptor_payload_bind, binding);
+        if (payload == nullptr || !payload->completed()
+            || payload->stable_identity != descriptor_payload_stable_identity(packet, binding)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::string native_draw_call_diagnostic_for_packet(
+    const vulkan_native_command_packet_execution_result& native_result,
+    const vulkan_command_packet& packet,
+    const vulkan_native_command_packet_descriptor_payload_bind* descriptor_payload_bind)
+{
+    if (native_draw_vertex_count(packet) == 0 || native_draw_instance_count(packet) == 0) {
+        return "Native Vulkan command packet executor received invalid draw counts";
+    }
+
+    if (!native_call_completed_for_packet(
+            native_result,
+            packet,
+            vulkan_native_command_packet_call_kind::bind_pipeline)) {
+        return "Native Vulkan command packet executor is missing required pipeline bind call before draw";
+    }
+
+    const bool descriptor_bind_required =
+        packet_requires_descriptor_set_bind(packet)
+        || packet_requires_descriptor_payload_bind(packet);
+    if (descriptor_bind_required
+        && !native_call_completed_for_packet(
+            native_result,
+            packet,
+            vulkan_native_command_packet_call_kind::bind_descriptor_sets)) {
+        return "Native Vulkan command packet executor is missing required descriptor bind call before draw";
+    }
+
+    if (descriptor_payload_bind != nullptr
+        && !native_draw_payload_identity_matches_packet(packet, *descriptor_payload_bind)) {
+        return "Native Vulkan command packet executor found mismatched draw payload identity";
+    }
+
+    return {};
+}
+
 bool packet_vertices_have_area(const std::array<vulkan_quad_vertex, 4>& vertices)
 {
     float min_x = vertices.front().x;
@@ -7159,9 +7301,6 @@ std::string invalid_packet_diagnostic_for(const vulkan_command_packet& packet)
     }
     if (!packet.completed()) {
         return "Native Vulkan command packet executor received invalid packet binding data";
-    }
-    if (!packet_vertices_have_area(packet.vertices)) {
-        return "Native Vulkan command packet executor received invalid vertex data";
     }
 
     return {};
@@ -7203,6 +7342,24 @@ void append_native_command_packet_call(
     std::size_t descriptor_set_count = 0,
     const vulkan_native_command_packet_descriptor_payload_bind* descriptor_payload_bind = nullptr)
 {
+    const bool is_draw = kind == vulkan_native_command_packet_call_kind::draw;
+    const bool draw_descriptor_bind_required =
+        is_draw
+        && (packet_requires_descriptor_set_bind(packet)
+            || packet_requires_descriptor_payload_bind(packet));
+    const bool draw_pipeline_bind_ready =
+        is_draw
+        && native_call_completed_for_packet(
+            native_result,
+            packet,
+            vulkan_native_command_packet_call_kind::bind_pipeline);
+    const bool draw_descriptor_bind_ready =
+        is_draw
+        && (!draw_descriptor_bind_required
+            || native_call_completed_for_packet(
+                native_result,
+                packet,
+                vulkan_native_command_packet_call_kind::bind_descriptor_sets));
     vulkan_native_command_packet_call_evidence call{
         .kind = kind,
         .symbol_name = std::string{native_symbol_name_for(kind)},
@@ -7218,8 +7375,17 @@ void append_native_command_packet_call(
         .command_index = packet.command_index,
         .descriptor_set_count = descriptor_set_count,
         .vertex_count = kind == vulkan_native_command_packet_call_kind::draw
-            ? packet.vertices.size()
+            ? native_draw_vertex_count(packet)
             : 0,
+        .index_count = is_draw ? native_draw_index_count(packet) : 0,
+        .first_vertex = is_draw ? native_draw_first_vertex(packet) : 0,
+        .first_index = is_draw ? native_draw_first_index(packet) : 0,
+        .instance_count = is_draw ? native_draw_instance_count(packet) : 0,
+        .first_instance = is_draw ? native_draw_first_instance(packet) : 0,
+        .draw_packet_identity = is_draw ? native_draw_packet_identity(packet) : std::string{},
+        .draw_payload_identity = is_draw
+            ? native_draw_payload_identity(packet, descriptor_payload_bind)
+            : std::string{},
         .viewport = kind == vulkan_native_command_packet_call_kind::set_viewport
             ? evidence.viewport
             : render_rect{},
@@ -7236,13 +7402,25 @@ void append_native_command_packet_call(
             kind == vulkan_native_command_packet_call_kind::bind_descriptor_sets
                 && descriptor_payload_bind != nullptr
             ? descriptor_payload_bind->descriptor_payloads
+            : kind == vulkan_native_command_packet_call_kind::draw
+                && descriptor_payload_bind != nullptr
+            ? descriptor_payload_bind->descriptor_payloads
             : std::vector<vulkan_native_command_packet_descriptor_payload_identity>{},
+        .draw_ready = is_draw,
+        .pipeline_bind_ready = draw_pipeline_bind_ready,
+        .descriptor_bind_required = draw_descriptor_bind_required,
+        .descriptor_bind_ready = draw_descriptor_bind_ready,
         .attempted = true,
         .completed = true,
         .failed = false,
     };
     ++native_result.attempted_native_call_count;
     ++native_result.completed_native_call_count;
+    if (is_draw) {
+        ++native_result.draw_call_count;
+        native_result.draw_payload_identity_count +=
+            native_draw_payload_identity_count(descriptor_payload_bind);
+    }
     native_result.calls.push_back(std::move(call));
 }
 
@@ -7286,8 +7464,11 @@ vulkan_native_command_packet_executor::execute_packets(
         .viewport_ready = evidence_.viewport_available && has_visible_area(evidence_.viewport),
         .descriptor_sets_ready = false,
         .descriptor_payload_binds_ready = false,
+        .draw_calls_ready = false,
         .descriptor_payload_bind_count = descriptor_payload_bind_count(evidence_),
         .descriptor_payload_identity_count = descriptor_payload_identity_count(evidence_),
+        .draw_call_count = 0,
+        .draw_payload_identity_count = 0,
         .planned_packet_count = bridge.packet_count,
         .diagnostic = {},
         .calls = {},
@@ -7394,6 +7575,7 @@ vulkan_native_command_packet_executor::execute_packets(
     result_.events.push_back(begin);
     native_result_.descriptor_sets_ready = true;
     native_result_.descriptor_payload_binds_ready = true;
+    native_result_.draw_calls_ready = true;
 
     for (const vulkan_command_packet& packet : bridge.packets) {
         vulkan_command_packet_execution_snapshot packet_event =
@@ -7403,6 +7585,7 @@ vulkan_native_command_packet_executor::execute_packets(
 
         const std::string invalid_packet_diagnostic = invalid_packet_diagnostic_for(packet);
         if (!invalid_packet_diagnostic.empty()) {
+            native_result_.draw_calls_ready = false;
             mark_native_packet_failure(
                 result_,
                 native_result_,
@@ -7417,6 +7600,7 @@ vulkan_native_command_packet_executor::execute_packets(
             descriptor_set_count_for_packet(evidence_, packet);
         if (!descriptor_sets_ready_for_packet(evidence_, packet)) {
             native_result_.descriptor_sets_ready = false;
+            native_result_.draw_calls_ready = false;
             mark_native_packet_failure(
                 result_,
                 native_result_,
@@ -7434,6 +7618,7 @@ vulkan_native_command_packet_executor::execute_packets(
                 descriptor_payload_bind_diagnostic_for_packet(evidence_, packet);
             if (!descriptor_payload_diagnostic.empty()) {
                 native_result_.descriptor_payload_binds_ready = false;
+                native_result_.draw_calls_ready = false;
                 mark_native_packet_failure(
                     result_,
                     native_result_,
@@ -7470,11 +7655,29 @@ vulkan_native_command_packet_executor::execute_packets(
             evidence_,
             packet,
             vulkan_native_command_packet_call_kind::set_scissor);
+        const std::string draw_call_diagnostic =
+            native_draw_call_diagnostic_for_packet(
+                native_result_,
+                packet,
+                descriptor_payload_bind);
+        if (!draw_call_diagnostic.empty()) {
+            native_result_.draw_calls_ready = false;
+            mark_native_packet_failure(
+                result_,
+                native_result_,
+                packet_event,
+                packet,
+                vulkan_native_command_packet_execution_status::invalid_packet_data,
+                draw_call_diagnostic);
+            return result_;
+        }
         append_native_command_packet_call(
             native_result_,
             evidence_,
             packet,
-            vulkan_native_command_packet_call_kind::draw);
+            vulkan_native_command_packet_call_kind::draw,
+            0,
+            descriptor_payload_bind);
 
         packet_event.completed = true;
         ++result_.executed_packet_count;

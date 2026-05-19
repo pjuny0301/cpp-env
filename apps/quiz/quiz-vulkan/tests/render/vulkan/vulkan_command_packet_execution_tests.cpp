@@ -1145,6 +1145,15 @@ void test_vulkan_native_command_packet_executor_translates_packets_to_native_cal
     require(native_result.calls[4].symbol_name == "vkCmdDraw", "draw call records symbol name");
     require(native_result.calls[4].vertex_count == 4, "draw call records quad vertex count");
     require(native_result.calls[4].packet_index == 0, "draw call records packet index");
+    require(native_result.draw_calls_ready, "native packet translation records draw readiness");
+    require(native_result.draw_call_count == 4, "native packet translation records draw call count");
+    require(native_result.calls[9].pipeline_bind_ready, "text packet draw sees pipeline bind");
+    require(native_result.calls[9].descriptor_bind_required, "text packet draw requires descriptor bind");
+    require(native_result.calls[9].descriptor_bind_ready, "text packet draw sees descriptor bind");
+    require(
+        native_result.calls[9].draw_packet_identity
+            == "packet:1:command:11:category:text:batch:text:vertices:4:instances:1",
+        "text packet draw records stable packet identity");
     for (const vulkan_backend::vulkan_native_command_packet_call_evidence& call :
          native_result.calls) {
         require(call.successful(), "each native command packet call reports success");
@@ -2035,6 +2044,34 @@ void test_vulkan_native_command_packet_executor_binds_descriptor_payloads_for_im
     require(
         native_result.calls[4].kind == vulkan_backend::vulkan_native_command_packet_call_kind::draw,
         "image packet draw call is recorded after descriptor bind");
+    require(native_result.draw_calls_ready, "image packet draw call readiness is recorded");
+    require(native_result.draw_call_count == 1, "image packet records one draw call");
+    require(
+        native_result.draw_payload_identity_count == 3,
+        "image packet records payload identity count for draw");
+    require(native_result.calls[4].draw_ready, "image draw call records draw readiness");
+    require(native_result.calls[4].pipeline_bind_ready, "image draw call records pipeline bind readiness");
+    require(native_result.calls[4].descriptor_bind_required, "image draw call requires descriptor bind");
+    require(native_result.calls[4].descriptor_bind_ready, "image draw call records descriptor bind readiness");
+    require(native_result.calls[4].vertex_count == 4, "image draw call records vertex count");
+    require(native_result.calls[4].index_count == 0, "image draw call records non-indexed count");
+    require(native_result.calls[4].first_vertex == 0, "image draw call records first vertex");
+    require(native_result.calls[4].first_index == 0, "image draw call records first index");
+    require(native_result.calls[4].instance_count == 1, "image draw call records instance count");
+    require(native_result.calls[4].first_instance == 0, "image draw call records first instance");
+    require(
+        native_result.calls[4].draw_packet_identity
+            == "packet:0:command:20:category:image:batch:image:vertices:4:instances:1",
+        "image draw call records stable packet identity");
+    require(
+        native_result.calls[4].draw_payload_identity.find(
+            "packet:0:set:0:binding:1:kind:image_texture:resource:fixture://renderer/card.png")
+            != std::string::npos,
+        "image draw call records texture payload identity");
+    require(
+        native_result.calls[4].descriptor_payloads[2].stable_identity
+            == "packet:0:set:0:binding:2:kind:image_sampler:resource:image_sampler:1:1:0:0:0",
+        "image draw call carries sampler payload identity");
 }
 
 void test_vulkan_native_command_packet_executor_blocks_missing_descriptor_payload_bind()
@@ -2220,6 +2257,38 @@ void test_vulkan_native_command_packet_executor_blocks_mismatched_descriptor_pay
         "mismatched descriptor payload bind diagnostic names mismatched evidence");
 }
 
+void test_vulkan_native_command_packet_executor_blocks_mismatched_draw_payload_identity()
+{
+    using namespace quiz_vulkan::render;
+
+    ready_image_native_packet_fixture fixture = make_ready_image_native_packet_fixture();
+    fixture.evidence.descriptor_payload_binds.front()
+        .descriptor_payloads[1]
+        .stable_identity = "mismatched-draw-payload";
+
+    vulkan_backend::vulkan_native_command_packet_executor executor(std::move(fixture.evidence));
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(fixture.bridge);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(!result.completed(), "mismatched draw payload identity blocks image execution");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::
+                descriptor_payloads_unavailable,
+        "mismatched draw payload identity reports descriptor payload unavailable");
+    require(
+        native_result.diagnostic.find("mismatched") != std::string::npos,
+        "mismatched draw payload identity diagnostic names mismatch");
+    require(
+        count_native_calls_of_kind(
+            native_result,
+            vulkan_backend::vulkan_native_command_packet_call_kind::draw)
+            == 0,
+        "mismatched draw payload identity records no native draw call");
+}
+
 void test_vulkan_native_command_packet_executor_blocks_missing_descriptor_bind_symbol()
 {
     using namespace quiz_vulkan::render;
@@ -2333,6 +2402,13 @@ void test_vulkan_native_command_packet_executor_skips_descriptor_bind_without_de
         native_result.calls.back().kind
             == vulkan_backend::vulkan_native_command_packet_call_kind::draw,
         "packet without descriptor sets still emits draw call");
+    require(native_result.draw_call_count == 1, "packet without descriptor sets records draw count");
+    require(
+        !native_result.calls.back().descriptor_bind_required,
+        "packet without descriptor sets records no descriptor bind requirement");
+    require(
+        native_result.calls.back().draw_payload_identity.find("payloads:none") != std::string::npos,
+        "packet without descriptor sets records empty draw payload identity");
 }
 
 void test_vulkan_native_command_packet_evidence_preserves_descriptor_handle_gap()
@@ -2594,6 +2670,7 @@ void test_vulkan_native_command_packet_executor_blocks_missing_draw_symbol()
         native_result.missing_native_symbol_name == "vkCmdDraw",
         "missing draw records missing symbol name");
     require(!native_result.native_command_symbols_ready, "missing draw records symbols not ready");
+    require(!native_result.draw_calls_ready, "missing draw keeps draw readiness false");
     require(native_result.calls.empty(), "missing draw records no native calls");
     require(
         native_result.diagnostic.find("vkCmdDraw") != std::string::npos,
@@ -2623,6 +2700,7 @@ void test_vulkan_native_command_packet_executor_blocks_invalid_command_buffer()
             == vulkan_backend::vulkan_native_command_packet_execution_status::command_buffer_unavailable,
         "invalid command buffer records unavailable command buffer status");
     require(!native_result.command_buffer_ready, "invalid command buffer records command buffer not ready");
+    require(!native_result.draw_calls_ready, "invalid command buffer keeps draw readiness false");
     require(native_result.calls.empty(), "invalid command buffer records no native calls");
     require(
         native_result.diagnostic.find("command buffer") != std::string::npos,
@@ -2663,6 +2741,73 @@ void test_vulkan_native_command_packet_executor_blocks_invalid_packet_scissor()
     require(
         native_result.diagnostic.find("scissor") != std::string::npos,
         "invalid scissor diagnostic names scissor data");
+}
+
+void test_vulkan_native_command_packet_executor_blocks_invalid_draw_counts()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::vulkan_command_packet_bridge_result bridge = make_ready_bridge();
+    bridge.packets[0].vertices = {
+        vulkan_backend::vulkan_quad_vertex{.x = 1.0f, .y = 1.0f},
+        vulkan_backend::vulkan_quad_vertex{.x = 1.0f, .y = 1.0f},
+        vulkan_backend::vulkan_quad_vertex{.x = 1.0f, .y = 1.0f},
+        vulkan_backend::vulkan_quad_vertex{.x = 1.0f, .y = 1.0f},
+    };
+    vulkan_backend::vulkan_native_command_packet_executor executor(
+        make_native_packet_evidence());
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(bridge);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(!result.completed(), "invalid draw counts do not complete interface execution");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::invalid_packet_data,
+        "invalid draw counts report invalid packet data");
+    require(!native_result.draw_calls_ready, "invalid draw counts keep draw readiness false");
+    require(
+        native_result.draw_call_count == 0,
+        "invalid draw counts record no completed draw calls");
+    require(
+        count_native_calls_of_kind(
+            native_result,
+            vulkan_backend::vulkan_native_command_packet_call_kind::draw)
+            == 0,
+        "invalid draw counts emit no native draw call");
+    require(
+        native_result.calls.size() == 4,
+        "invalid draw counts preserve bind and state evidence before draw");
+    require(
+        native_result.diagnostic.find("draw counts") != std::string::npos,
+        "invalid draw counts diagnostic names draw counts");
+}
+
+void test_vulkan_native_command_packet_executor_records_no_draw_for_blocked_bridge()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::vulkan_command_packet_bridge_result bridge = make_ready_bridge();
+    bridge.status = vulkan_backend::vulkan_command_packet_bridge_status::pipeline_unavailable;
+    bridge.fallback_reason = vulkan_backend::vulkan_backend_fallback_reason::pipeline_unavailable;
+    bridge.pipeline_ready = false;
+
+    vulkan_backend::vulkan_native_command_packet_executor executor(
+        make_native_packet_evidence());
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(bridge);
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(!result.completed(), "blocked bridge does not complete native execution");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::
+                packet_bridge_unavailable,
+        "blocked bridge reports unavailable packet bridge");
+    require(native_result.calls.empty(), "blocked bridge records no native command calls");
+    require(native_result.draw_call_count == 0, "blocked bridge records no draw calls");
 }
 
 void test_vulkan_scoped_command_packet_execution_records_scope_and_packets()
@@ -2863,6 +3008,7 @@ int main()
     test_vulkan_native_command_packet_executor_blocks_duplicate_descriptor_payload_bind();
     test_vulkan_native_command_packet_executor_blocks_incomplete_descriptor_payload_bind();
     test_vulkan_native_command_packet_executor_blocks_mismatched_descriptor_payload_bind();
+    test_vulkan_native_command_packet_executor_blocks_mismatched_draw_payload_identity();
     test_vulkan_native_command_packet_executor_blocks_missing_descriptor_bind_symbol();
     test_vulkan_native_command_packet_executor_blocks_invalid_descriptor_bind_handle();
     test_vulkan_native_command_packet_executor_blocks_invalid_descriptor_bind_pipeline_layout();
@@ -2876,6 +3022,8 @@ int main()
     test_vulkan_native_command_packet_executor_blocks_missing_draw_symbol();
     test_vulkan_native_command_packet_executor_blocks_invalid_command_buffer();
     test_vulkan_native_command_packet_executor_blocks_invalid_packet_scissor();
+    test_vulkan_native_command_packet_executor_blocks_invalid_draw_counts();
+    test_vulkan_native_command_packet_executor_records_no_draw_for_blocked_bridge();
     test_vulkan_scoped_command_packet_execution_records_scope_and_packets();
     test_vulkan_scoped_command_packet_execution_accepts_empty_scope();
     test_vulkan_scoped_command_packet_execution_reports_scope_and_bridge_blockers();

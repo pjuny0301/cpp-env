@@ -1842,10 +1842,21 @@ struct vulkan_native_command_packet_call_evidence {
     std::size_t command_index = 0;
     std::size_t descriptor_set_count = 0;
     std::size_t vertex_count = 0;
+    std::size_t index_count = 0;
+    std::size_t first_vertex = 0;
+    std::size_t first_index = 0;
+    std::size_t instance_count = 0;
+    std::size_t first_instance = 0;
+    std::string draw_packet_identity;
+    std::string draw_payload_identity;
     render_rect viewport;
     vulkan_scissor_rect scissor;
     std::vector<vulkan_native_command_packet_descriptor_set> descriptor_sets;
     std::vector<vulkan_native_command_packet_descriptor_payload_identity> descriptor_payloads;
+    bool draw_ready = false;
+    bool pipeline_bind_ready = false;
+    bool descriptor_bind_required = false;
+    bool descriptor_bind_ready = false;
     bool attempted = false;
     bool completed = false;
     bool failed = false;
@@ -1853,7 +1864,12 @@ struct vulkan_native_command_packet_call_evidence {
     bool successful() const
     {
         return command_buffer.valid() && attempted && completed && !failed
-            && !symbol_name.empty();
+            && !symbol_name.empty()
+            && (kind != vulkan_native_command_packet_call_kind::draw
+                || (draw_ready && pipeline_bind_ready
+                    && (!descriptor_bind_required || descriptor_bind_ready)
+                    && vertex_count > 0 && instance_count > 0
+                    && !draw_packet_identity.empty()));
     }
 };
 
@@ -1876,8 +1892,11 @@ struct vulkan_native_command_packet_execution_result {
     bool viewport_ready = false;
     bool descriptor_sets_ready = false;
     bool descriptor_payload_binds_ready = false;
+    bool draw_calls_ready = false;
     std::size_t descriptor_payload_bind_count = 0;
     std::size_t descriptor_payload_identity_count = 0;
+    std::size_t draw_call_count = 0;
+    std::size_t draw_payload_identity_count = 0;
     bool has_failed_packet = false;
     vulkan_command_packet_category first_failed_category = vulkan_command_packet_category::rect;
     vulkan_batch_kind first_failed_batch_kind = vulkan_batch_kind::quad;
@@ -1899,6 +1918,7 @@ struct vulkan_native_command_packet_execution_result {
             && native_function_table_checked && native_command_symbols_ready
             && command_buffer_ready && pipeline_ready && pipeline_layout_ready
             && viewport_ready && descriptor_sets_ready && descriptor_payload_binds_ready
+            && draw_calls_ready
             && !has_failed_packet
             && attempted_packet_count == planned_packet_count
             && translated_packet_count == planned_packet_count

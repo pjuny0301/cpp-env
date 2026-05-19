@@ -223,6 +223,68 @@ void test_text_key_flow()
         "repeat enter diagnostic records ignored repeat policy");
 }
 
+void test_keyboard_backspace_deletes_composed_hangul_fixture()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+    const std::string initial = std::string("A") + utf8(u8"각");
+    const std::size_t hangul_bytes = std::string(utf8(u8"각")).size();
+    require(engine.process_raw_event(text(200, initial)).size() == 1,
+        "hangul fixture initial text commits");
+
+    std::vector<input_event> events = engine.process_raw_event(key(210, "Backspace"));
+    require(events.size() == 1, "hangul fixture backspace emits one event");
+    const text_event& backspace = require_event<text_event>(events, 0);
+    require(backspace.kind == text_event_kind::backspace,
+        "hangul fixture emits backspace event");
+    require(backspace.target_id == "answer",
+        "hangul fixture preserves target id");
+    require(engine.text_model().text() == "A",
+        "hangul fixture deletes the composed hangul syllable as one utf8 unit");
+    require(engine.text_model().caret_byte_offset() == 1,
+        "hangul fixture caret lands after ascii prefix");
+
+    const input_routing_diagnostics& diagnostics = engine.routing_diagnostics();
+    require(diagnostics.action_routes.size() == 1,
+        "hangul fixture emits one backspace route");
+    const action_route_policy_diagnostic& policy = require_policy(
+        diagnostics,
+        0,
+        action_route_policy_kind::text_backspace_boundary,
+        "hangul fixture emits backspace boundary policy");
+    require(policy.emits_input_event, "hangul fixture route emits normalized text event");
+    require(policy.event_index == 0, "hangul fixture route points at backspace event");
+    require(policy.text_byte_count == hangul_bytes,
+        "hangul fixture route records deleted hangul byte count");
+    require(policy.text_byte_count_before == initial.size(),
+        "hangul fixture route records original byte count");
+    require(policy.text_byte_count_after == 1,
+        "hangul fixture route records ascii prefix byte count after");
+    require_range(policy.caret_before,
+        initial.size(),
+        initial.size(),
+        "hangul fixture route records caret after full composed syllable before");
+    require_range(policy.caret_after, 1, 1,
+        "hangul fixture route records utf8-safe caret after deletion");
+    require(policy.keyboard.intent == keyboard_shortcut_intent::delete_backward,
+        "hangul fixture route records delete-backward intent");
+    require(policy.keyboard.repeat_policy == keyboard_repeat_policy::not_repeat,
+        "hangul fixture route records non-repeat backspace");
+    require(diagnostics.summary.routes.text == 1,
+        "hangul fixture summary counts text route only");
+    require(diagnostics.summary.routes.ime == 0,
+        "hangul fixture summary emits no ime route");
+    require(diagnostics.summary.routes.pointer == 0,
+        "hangul fixture summary emits no pointer route");
+    require(diagnostics.summary.routes.wheel == 0,
+        "hangul fixture summary emits no wheel route");
+    require(!engine.text_model().has_submit_text(),
+        "hangul fixture backspace does not submit app/domain action");
+}
+
 void test_key_code_fallback_edges()
 {
     using namespace quiz_vulkan;
@@ -901,6 +963,7 @@ void test_text_input_presentation_diff_reports_review_deltas()
 int main()
 {
     test_text_key_flow();
+    test_keyboard_backspace_deletes_composed_hangul_fixture();
     test_key_code_fallback_edges();
     test_text_keyboard_navigation_and_selection();
     test_keyboard_focus_traversal_diagnostics();

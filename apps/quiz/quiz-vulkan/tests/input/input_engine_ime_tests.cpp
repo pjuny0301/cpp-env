@@ -266,6 +266,102 @@ void test_ime_route_diagnostics_expose_composition_lifecycle_snapshots()
         "lifecycle next target receives committed text without stale composition");
 }
 
+void test_ime_preedit_commit_cancel_fixture_routes_without_text_submit()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine commit_engine;
+    commit_engine.focus_text_target("answer");
+    require(commit_engine.process_raw_event(ime(raw_platform_ime_phase::composition_start, 200)).empty(),
+        "ime fixture composition start is diagnostic-only");
+    std::vector<input_event> events =
+        commit_engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 210, utf8(u8"ㅎ")));
+    require(events.size() == 1, "ime fixture preedit emits one ime event");
+    const ime_event& preedit = require_event<ime_event>(events, 0);
+    require(preedit.kind == ime_event_kind::preedit, "ime fixture preedit event kind");
+    require(preedit.composition.active, "ime fixture preedit carries active composition");
+    require(preedit.composition.preedit_text == utf8(u8"ㅎ"),
+        "ime fixture preedit carries hangul jamo");
+
+    events = commit_engine.process_raw_event(ime(raw_platform_ime_phase::commit, 220, utf8(u8"한")));
+    require(events.size() == 1, "ime fixture commit emits one ime event");
+    const ime_event& commit = require_event<ime_event>(events, 0);
+    require(commit.kind == ime_event_kind::commit, "ime fixture commit event kind");
+    require(commit.utf8_text == utf8(u8"한"), "ime fixture commit carries final hangul");
+    require(commit.composition.active, "ime fixture commit carries pre-commit composition");
+    require(commit_engine.text_model().text() == utf8(u8"한"),
+        "ime fixture commit updates committed text");
+    require(commit_engine.text_model().preedit_text().empty(),
+        "ime fixture commit clears preedit");
+    require(!commit_engine.text_model().ime_composition().active,
+        "ime fixture commit clears composition");
+    const input_routing_diagnostics& commit_diagnostics = commit_engine.routing_diagnostics();
+    const action_route_policy_diagnostic& commit_policy = require_policy(
+        commit_diagnostics,
+        0,
+        action_route_policy_kind::ime_commit,
+        "ime fixture commit emits ime commit route");
+    require(commit_policy.emits_input_event, "ime fixture commit route emits normalized ime event");
+    require(commit_policy.text_byte_count == std::string(utf8(u8"한")).size(),
+        "ime fixture commit route records commit byte count");
+    require(commit_policy.composition_before.active,
+        "ime fixture commit route records active composition before");
+    require_inactive_composition(commit_policy.composition_after,
+        "ime fixture commit route records inactive composition after");
+    require(commit_diagnostics.summary.routes.ime == 1,
+        "ime fixture commit summary counts ime route");
+    require(commit_diagnostics.summary.routes.text == 0,
+        "ime fixture commit summary emits no text route");
+    require(commit_diagnostics.summary.routes.pointer == 0,
+        "ime fixture commit summary emits no pointer route");
+    require(commit_diagnostics.summary.routes.wheel == 0,
+        "ime fixture commit summary emits no wheel route");
+    require(commit_diagnostics.summary.preedit_ended_cleanly,
+        "ime fixture commit summary clears preedit");
+    require(!commit_engine.text_model().has_submit_text(),
+        "ime fixture commit does not submit app/domain action");
+
+    input_engine cancel_engine;
+    cancel_engine.focus_text_target("answer");
+    require(cancel_engine.process_raw_event(text(300, "base")).size() == 1,
+        "ime fixture cancel setup commits base text");
+    require(cancel_engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 310, "draft")).size() == 1,
+        "ime fixture cancel setup starts preedit");
+    events = cancel_engine.process_raw_event(ime(raw_platform_ime_phase::cancel, 320));
+    require(events.size() == 1, "ime fixture cancel emits one ime event");
+    const ime_event& cancel = require_event<ime_event>(events, 0);
+    require(cancel.kind == ime_event_kind::cancel, "ime fixture cancel event kind");
+    require(cancel.composition.active, "ime fixture cancel carries canceled composition");
+    require(cancel.composition.preedit_text == "draft",
+        "ime fixture cancel carries canceled preedit text");
+    require(cancel_engine.text_model().text() == "base",
+        "ime fixture cancel preserves committed text");
+    require(cancel_engine.text_model().preedit_text().empty(),
+        "ime fixture cancel clears model preedit");
+    const input_routing_diagnostics& cancel_diagnostics = cancel_engine.routing_diagnostics();
+    const action_route_policy_diagnostic& cancel_policy = require_policy(
+        cancel_diagnostics,
+        0,
+        action_route_policy_kind::ime_cancel,
+        "ime fixture cancel emits ime cancel route");
+    require(cancel_policy.emits_input_event, "ime fixture cancel route emits normalized ime event");
+    require(cancel_policy.text_byte_count_before == cancel_policy.text_byte_count_after,
+        "ime fixture cancel route preserves committed byte count");
+    require(cancel_policy.composition_before.active,
+        "ime fixture cancel route records active composition before");
+    require_inactive_composition(cancel_policy.composition_after,
+        "ime fixture cancel route records inactive composition after");
+    require(cancel_diagnostics.summary.routes.ime == 1,
+        "ime fixture cancel summary counts ime route");
+    require(cancel_diagnostics.summary.routes.text == 0,
+        "ime fixture cancel summary emits no text submit route");
+    require(cancel_diagnostics.summary.preedit_ended_cleanly,
+        "ime fixture cancel summary clears preedit");
+    require(!cancel_engine.text_model().has_submit_text(),
+        "ime fixture cancel does not submit app/domain action");
+}
+
 void test_keyboard_navigation_diagnostics_preserve_ime_composition()
 {
     using namespace quiz_vulkan;
@@ -1263,6 +1359,7 @@ void test_ime_hangul_replacement_composition_ranges()
 int main()
 {
     test_ime_route_diagnostics_expose_composition_lifecycle_snapshots();
+    test_ime_preedit_commit_cancel_fixture_routes_without_text_submit();
     test_keyboard_navigation_diagnostics_preserve_ime_composition();
     test_text_edit_boundary_diagnostics_replace_utf8_selection();
     test_ime_composition_suppresses_text_and_key_events();

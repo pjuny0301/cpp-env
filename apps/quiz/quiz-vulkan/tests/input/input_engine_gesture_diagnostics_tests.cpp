@@ -884,6 +884,122 @@ void test_pointer_capture_release_and_restart_are_deterministic_for_mouse_and_to
         52);
 }
 
+void test_gesture_arbitration_ignores_cross_pointer_stream_during_capture()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                300,
+                0.0f,
+                0.0f,
+                raw_platform_pointer_button::none,
+                70))
+                .empty(),
+        "arbitration fixture touch down starts tracking");
+    std::vector<input_event> events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::move,
+        320,
+        12.0f,
+        0.0f,
+        raw_platform_pointer_button::none,
+        70));
+    require(events.size() == 1, "arbitration fixture touch move starts drag");
+    const gesture_event& drag_start = require_event<gesture_event>(events, 0);
+    require(drag_start.kind == gesture_kind::drag_start,
+        "arbitration fixture captured touch emits drag start");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::captured,
+        true,
+        70,
+        1,
+        "arbitration fixture captures touch pointer");
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::down,
+        330,
+        4.0f,
+        4.0f,
+        raw_platform_pointer_button::primary,
+        1));
+    require(events.empty(), "arbitration fixture mouse down during touch capture emits no gesture");
+    const input_routing_diagnostics& ignored_diagnostics = engine.routing_diagnostics();
+    require(ignored_diagnostics.action_routes.size() == 1,
+        "arbitration fixture ignored mouse emits one route");
+    const action_route_policy_diagnostic& ignored_policy = require_policy(
+        ignored_diagnostics,
+        0,
+        action_route_policy_kind::pointer_capture_arbitration,
+        "arbitration fixture emits pointer arbitration route");
+    require(!ignored_policy.emits_input_event,
+        "arbitration fixture ignored pointer route is diagnostic-only");
+    require(ignored_policy.pointer_decision == pointer_arbitration_decision::ignored_by_capture,
+        "arbitration fixture records ignored-by-capture decision");
+    require(ignored_policy.pointer_contact == pointer_contact_kind::mouse_like,
+        "arbitration fixture records ignored mouse contact");
+    require(ignored_policy.pointer_id == 1,
+        "arbitration fixture records ignored mouse pointer id");
+    require(ignored_policy.gesture_policy.decision == gesture_policy_decision::ignored_by_capture,
+        "arbitration fixture carries ignored gesture policy");
+    require_capture_snapshot(
+        ignored_policy.pointer_capture_before,
+        pointer_capture_lifecycle::captured,
+        true,
+        70,
+        1,
+        "arbitration fixture ignored route records touch capture before");
+    require_capture_snapshot(
+        ignored_policy.pointer_capture_after,
+        pointer_capture_lifecycle::captured,
+        true,
+        70,
+        1,
+        "arbitration fixture ignored route keeps touch capture after");
+    require(ignored_diagnostics.summary.normalized_event_count == 0,
+        "arbitration fixture ignored pointer emits no normalized event");
+    require(ignored_diagnostics.summary.routes.pointer == 1,
+        "arbitration fixture summary counts pointer route only");
+    require(ignored_diagnostics.summary.routes.text == 0,
+        "arbitration fixture summary emits no text route");
+    require(ignored_diagnostics.summary.routes.ime == 0,
+        "arbitration fixture summary emits no ime route");
+    require(ignored_diagnostics.summary.routes.wheel == 0,
+        "arbitration fixture summary emits no wheel route");
+    require(!ignored_diagnostics.summary.pointer_capture_ended_cleanly,
+        "arbitration fixture summary reports capture still active");
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        350,
+        16.0f,
+        0.0f,
+        raw_platform_pointer_button::none,
+        70));
+    require(events.size() == 1, "arbitration fixture captured touch release emits drag end");
+    const gesture_event& drag_end = require_event<gesture_event>(events, 0);
+    require(drag_end.kind == gesture_kind::drag_end,
+        "arbitration fixture captured touch release ends drag");
+    const action_route_policy_diagnostic& release_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "arbitration fixture release emits gesture route");
+    require(release_policy.pointer_decision == pointer_arbitration_decision::released,
+        "arbitration fixture release records released decision");
+    require_capture_snapshot(
+        release_policy.pointer_capture_after,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "arbitration fixture release clears capture");
+    require(engine.routing_diagnostics().summary.pointer_capture_ended_cleanly,
+        "arbitration fixture release summary clears capture");
+}
+
 void test_long_press_timing_and_policy_order_are_deterministic()
 {
     using namespace quiz_vulkan;
@@ -1852,6 +1968,7 @@ int main()
     test_touch_drag_cancel_diagnostics_keep_pointer_id_consistent();
     test_wheel_after_touch_cancel_has_idle_capture_context();
     test_pointer_capture_release_and_restart_are_deterministic_for_mouse_and_touch();
+    test_gesture_arbitration_ignores_cross_pointer_stream_during_capture();
     test_long_press_timing_and_policy_order_are_deterministic();
     test_wheel_delta_normalization_updates_summaries_and_action_routes();
     test_focus_loss_resets_pointer_capture_without_stale_routes();

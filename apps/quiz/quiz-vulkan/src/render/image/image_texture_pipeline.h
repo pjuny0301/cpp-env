@@ -912,6 +912,423 @@ make_render_image_texture_pipeline_upload_cache_snapshot(
     };
 }
 
+enum class render_image_texture_pipeline_upload_cache_payload_status {
+    ready,
+    placeholder,
+    blocked,
+};
+
+inline std::string render_image_texture_pipeline_upload_cache_payload_status_name(
+    render_image_texture_pipeline_upload_cache_payload_status status)
+{
+    switch (status) {
+    case render_image_texture_pipeline_upload_cache_payload_status::ready:
+        return "ready";
+    case render_image_texture_pipeline_upload_cache_payload_status::placeholder:
+        return "placeholder";
+    case render_image_texture_pipeline_upload_cache_payload_status::blocked:
+        return "blocked";
+    }
+
+    return "unknown";
+}
+
+struct render_image_texture_pipeline_upload_cache_payload_entry {
+    std::size_t entry_index = 0;
+    render_image_texture_pipeline_upload_cache_payload_status status =
+        render_image_texture_pipeline_upload_cache_payload_status::blocked;
+    std::string status_name = render_image_texture_pipeline_upload_cache_payload_status_name(
+        render_image_texture_pipeline_upload_cache_payload_status::blocked);
+    render_image_texture_key texture_key;
+    render_image_cache_key cache_key;
+    std::string stable_cache_key;
+    render_image_texture_key requested_texture_key;
+    render_image_cache_key requested_cache_key;
+    std::string requested_stable_cache_key;
+    render_image_sampler_policy sampler;
+    std::string sampler_key;
+    render_image_texture_handle texture;
+    render_image_texture_id texture_id = 0;
+    render_image_revision texture_revision = 0;
+    std::size_t texture_width = 0;
+    std::size_t texture_height = 0;
+    fake_image_texture_upload_generation_id upload_generation_id = 0;
+    std::size_t decoded_width = 0;
+    std::size_t decoded_height = 0;
+    render_image_pixel_format pixel_format = render_image_pixel_format::rgba8_srgb;
+    std::size_t pixel_count = 0;
+    std::size_t pixel_byte_count = 0;
+    std::size_t decoded_byte_count = 0;
+    std::size_t staging_byte_count = 0;
+    std::size_t uploaded_byte_count = 0;
+    std::uint64_t decoded_payload_hash = 0;
+    std::size_t blocked_acquire_count = 0;
+    bool cache_entry_present = false;
+    bool upload_request_present = false;
+    bool upload_result_present = false;
+    bool cache_resident = false;
+    bool cache_hit_observed = false;
+    bool upload_ready = false;
+    bool upload_result_ready = false;
+    bool payload_layout_ready = false;
+    bool decoded_payload_valid = false;
+    bool placeholder_backed = false;
+    bool fallback_placeholder = false;
+    bool ready = false;
+    bool blocked = true;
+    fake_image_texture_placeholder_reason placeholder_reason =
+        fake_image_texture_placeholder_reason::none;
+    std::string placeholder_reason_name = fake_image_texture_placeholder_reason_name(
+        fake_image_texture_placeholder_reason::none);
+    std::string blocker_summary;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return ready && !blocked;
+    }
+};
+
+struct render_image_texture_pipeline_upload_cache_payload_summary {
+    bool diagnostics_available = false;
+    std::size_t acquire_count = 0;
+    std::size_t ready_count = 0;
+    std::size_t failure_count = 0;
+    std::size_t cache_hit_count = 0;
+    std::size_t source_load_failure_count = 0;
+    std::size_t decode_failure_count = 0;
+    std::size_t upload_failure_count = 0;
+    std::size_t entry_count = 0;
+    std::size_t cache_entry_count = 0;
+    std::size_t upload_request_count = 0;
+    std::size_t upload_result_count = 0;
+    std::size_t ready_payload_count = 0;
+    std::size_t placeholder_payload_count = 0;
+    std::size_t blocked_payload_count = 0;
+    std::size_t cache_resident_payload_count = 0;
+    std::size_t cache_hit_payload_count = 0;
+    std::size_t decoded_byte_count = 0;
+    std::size_t staging_byte_count = 0;
+    std::size_t uploaded_byte_count = 0;
+    bool has_placeholders = false;
+    bool has_blockers = false;
+    std::vector<render_image_texture_pipeline_upload_cache_payload_entry> entries;
+    std::string blocker_summary;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return diagnostics_available && !has_blockers;
+    }
+};
+
+namespace detail {
+
+inline const fake_image_texture_upload_request_snapshot*
+render_image_texture_pipeline_upload_request_for_generation(
+    const fake_image_texture_upload_snapshot& snapshot,
+    fake_image_texture_upload_generation_id generation_id)
+{
+    if (generation_id == 0) {
+        return nullptr;
+    }
+    for (const fake_image_texture_upload_request_snapshot& request : snapshot.request_snapshots) {
+        if (request.generation_id == generation_id) {
+            return &request;
+        }
+    }
+    return nullptr;
+}
+
+inline const fake_image_texture_upload_result_snapshot*
+render_image_texture_pipeline_upload_result_for_generation(
+    const fake_image_texture_upload_snapshot& snapshot,
+    fake_image_texture_upload_generation_id generation_id)
+{
+    if (generation_id == 0) {
+        return nullptr;
+    }
+    for (const fake_image_texture_upload_result_snapshot& result : snapshot.result_snapshots) {
+        if (result.generation_id == generation_id) {
+            return &result;
+        }
+    }
+    return nullptr;
+}
+
+inline void append_render_image_texture_pipeline_payload_blocker(
+    std::string& summary,
+    std::string_view blocker)
+{
+    if (blocker.empty()) {
+        return;
+    }
+    if (!summary.empty()) {
+        summary += "; ";
+    }
+    summary += blocker;
+}
+
+inline render_image_texture_pipeline_upload_cache_payload_entry
+make_render_image_texture_pipeline_upload_cache_payload_entry(
+    const fake_image_texture_cache_entry_snapshot& cache_entry,
+    const fake_image_texture_upload_request_snapshot* upload_request,
+    const fake_image_texture_upload_result_snapshot* upload_result,
+    std::size_t entry_index)
+{
+    const render_image_texture_key requested_texture_key =
+        cache_entry.placeholder_texture && is_valid_render_image_texture_key(cache_entry.requested_key)
+        ? cache_entry.requested_key
+        : cache_entry.key;
+    const render_image_texture_key_diagnostic key_diagnostic =
+        cache_entry.key_diagnostic.stable_cache_key.empty()
+        ? make_render_image_texture_key_diagnostic(cache_entry.key)
+        : cache_entry.key_diagnostic;
+    const render_image_texture_key_diagnostic requested_key_diagnostic =
+        make_render_image_texture_key_diagnostic(requested_texture_key);
+    const bool placeholder_backed =
+        cache_entry.placeholder_texture || is_fake_image_texture_placeholder_key(cache_entry.key);
+    const bool upload_result_ready = upload_result != nullptr
+        && upload_result->status == render_image_texture_upload_status::uploaded
+        && upload_result->texture.valid();
+    const bool upload_ready = cache_entry.upload_readiness.upload_ready || upload_result_ready;
+    const bool cache_resident = cache_entry.texture.valid();
+    const bool payload_layout_ready = cache_entry.upload_readiness.upload_payload_layout.upload_layout_ready
+        || (upload_result != nullptr && upload_result->payload_layout.upload_layout_ready);
+    const bool decoded_payload_valid = cache_entry.upload_readiness.decoded_payload.payload_valid
+        || (upload_request != nullptr && upload_request->decoded_payload.payload_valid);
+    const bool blocked = !cache_resident || !upload_ready || !payload_layout_ready;
+
+    std::string blocker_summary;
+    if (!cache_resident) {
+        append_render_image_texture_pipeline_payload_blocker(
+            blocker_summary,
+            "cache entry is not resident");
+    }
+    if (!upload_ready) {
+        append_render_image_texture_pipeline_payload_blocker(
+            blocker_summary,
+            "upload result is not ready");
+    }
+    if (!payload_layout_ready) {
+        append_render_image_texture_pipeline_payload_blocker(
+            blocker_summary,
+            "upload payload layout is not ready");
+    }
+
+    const std::size_t decoded_width =
+        cache_entry.upload_readiness.upload_payload_layout.extent_width != 0
+        ? cache_entry.upload_readiness.upload_payload_layout.extent_width
+        : cache_entry.texture.width;
+    const std::size_t decoded_height =
+        cache_entry.upload_readiness.upload_payload_layout.extent_height != 0
+        ? cache_entry.upload_readiness.upload_payload_layout.extent_height
+        : cache_entry.texture.height;
+    const std::size_t staging_byte_count = upload_result != nullptr
+        ? upload_result->staging_byte_count
+        : cache_entry.upload_readiness.staging_byte_count;
+    const std::uint64_t decoded_payload_hash =
+        cache_entry.upload_readiness.decoded_payload.stable_byte_hash != 0
+        ? cache_entry.upload_readiness.decoded_payload.stable_byte_hash
+        : (upload_request != nullptr ? upload_request->decoded_payload.stable_byte_hash : 0);
+    const render_image_texture_pipeline_upload_cache_payload_status status = blocked
+        ? render_image_texture_pipeline_upload_cache_payload_status::blocked
+        : (placeholder_backed
+            ? render_image_texture_pipeline_upload_cache_payload_status::placeholder
+            : render_image_texture_pipeline_upload_cache_payload_status::ready);
+
+    return render_image_texture_pipeline_upload_cache_payload_entry{
+        .entry_index = entry_index,
+        .status = status,
+        .status_name = render_image_texture_pipeline_upload_cache_payload_status_name(status),
+        .texture_key = cache_entry.key,
+        .cache_key = cache_entry.key.source_key,
+        .stable_cache_key = key_diagnostic.stable_cache_key,
+        .requested_texture_key = requested_texture_key,
+        .requested_cache_key = requested_texture_key.source_key,
+        .requested_stable_cache_key = requested_key_diagnostic.stable_cache_key,
+        .sampler = cache_entry.key.sampler,
+        .sampler_key = render_image_sampler_policy_stable_fragment(cache_entry.key.sampler),
+        .texture = cache_entry.texture,
+        .texture_id = cache_entry.texture.id,
+        .texture_revision = cache_entry.texture.revision,
+        .texture_width = cache_entry.texture.width,
+        .texture_height = cache_entry.texture.height,
+        .upload_generation_id = cache_entry.upload_generation_id,
+        .decoded_width = decoded_width,
+        .decoded_height = decoded_height,
+        .pixel_format = cache_entry.upload_readiness.upload_payload_layout.pixel_format,
+        .pixel_count = cache_entry.pixel_count,
+        .pixel_byte_count = cache_entry.pixel_byte_count,
+        .decoded_byte_count = cache_entry.decoded_byte_count,
+        .staging_byte_count = staging_byte_count,
+        .uploaded_byte_count = upload_result != nullptr
+            ? upload_result->decoded_byte_count
+            : cache_entry.decoded_byte_count,
+        .decoded_payload_hash = decoded_payload_hash,
+        .blocked_acquire_count = 0,
+        .cache_entry_present = true,
+        .upload_request_present = upload_request != nullptr,
+        .upload_result_present = upload_result != nullptr,
+        .cache_resident = cache_resident,
+        .cache_hit_observed = cache_entry.access_count > 1,
+        .upload_ready = upload_ready,
+        .upload_result_ready = upload_result_ready,
+        .payload_layout_ready = payload_layout_ready,
+        .decoded_payload_valid = decoded_payload_valid,
+        .placeholder_backed = placeholder_backed,
+        .fallback_placeholder = cache_entry.upload_readiness.placeholder_fallback,
+        .ready = !blocked,
+        .blocked = blocked,
+        .placeholder_reason = cache_entry.placeholder_reason,
+        .placeholder_reason_name = fake_image_texture_placeholder_reason_name(
+            cache_entry.placeholder_reason),
+        .blocker_summary = std::move(blocker_summary),
+        .diagnostic = blocked
+            ? "image upload/cache payload is blocked"
+            : (placeholder_backed
+                ? "image upload/cache payload is placeholder-backed"
+                : "image upload/cache payload is ready"),
+    };
+}
+
+inline render_image_texture_pipeline_upload_cache_payload_entry
+make_render_image_texture_pipeline_blocked_payload_entry(
+    std::size_t entry_index,
+    std::string blocker_summary,
+    std::size_t blocked_acquire_count)
+{
+    return render_image_texture_pipeline_upload_cache_payload_entry{
+        .entry_index = entry_index,
+        .status = render_image_texture_pipeline_upload_cache_payload_status::blocked,
+        .status_name = render_image_texture_pipeline_upload_cache_payload_status_name(
+            render_image_texture_pipeline_upload_cache_payload_status::blocked),
+        .blocked_acquire_count = blocked_acquire_count,
+        .ready = false,
+        .blocked = true,
+        .blocker_summary = std::move(blocker_summary),
+        .diagnostic = "image upload/cache payload blocked before residency",
+    };
+}
+
+inline void append_render_image_texture_pipeline_upload_cache_payload_blocker(
+    render_image_texture_pipeline_upload_cache_payload_summary& summary,
+    std::string blocker,
+    std::size_t blocked_acquire_count)
+{
+    if (blocked_acquire_count == 0) {
+        return;
+    }
+    append_render_image_texture_pipeline_payload_blocker(summary.blocker_summary, blocker);
+    summary.entries.push_back(make_render_image_texture_pipeline_blocked_payload_entry(
+        summary.entries.size(),
+        std::move(blocker),
+        blocked_acquire_count));
+}
+
+} // namespace detail
+
+inline render_image_texture_pipeline_upload_cache_payload_summary
+make_render_image_texture_pipeline_upload_cache_payload_summary(
+    const render_image_texture_pipeline_upload_cache_snapshot& snapshot)
+{
+    render_image_texture_pipeline_upload_cache_payload_summary summary{
+        .diagnostics_available = snapshot.ok(),
+        .acquire_count = snapshot.acquire_count,
+        .ready_count = snapshot.ready_count,
+        .failure_count = snapshot.failure_count,
+        .cache_hit_count = snapshot.cache_hit_count,
+        .source_load_failure_count = snapshot.source_load_failure_count,
+        .decode_failure_count = snapshot.decode_failure_count,
+        .upload_failure_count = snapshot.upload_failure_count,
+        .cache_entry_count = snapshot.cache_snapshot.entries.size(),
+        .upload_request_count = snapshot.upload_snapshot.request_snapshots.size(),
+        .upload_result_count = snapshot.upload_snapshot.result_snapshots.size(),
+    };
+
+    if (!snapshot.ok()) {
+        summary.has_blockers = true;
+        summary.blocker_summary =
+            "image texture pipeline upload/cache diagnostics side interface is unavailable";
+        summary.entries.push_back(detail::make_render_image_texture_pipeline_blocked_payload_entry(
+            0,
+            summary.blocker_summary,
+            0));
+        summary.entry_count = summary.entries.size();
+        summary.blocked_payload_count = summary.entries.size();
+        summary.diagnostic = "image upload/cache payload summary is unavailable";
+        return summary;
+    }
+
+    summary.entries.reserve(
+        snapshot.cache_snapshot.entries.size()
+        + (snapshot.source_load_failure_count != 0 ? 1u : 0u)
+        + (snapshot.decode_failure_count != 0 ? 1u : 0u)
+        + (snapshot.upload_failure_count != 0 ? 1u : 0u));
+    for (const fake_image_texture_cache_entry_snapshot& cache_entry : snapshot.cache_snapshot.entries) {
+        const fake_image_texture_upload_request_snapshot* upload_request =
+            detail::render_image_texture_pipeline_upload_request_for_generation(
+                snapshot.upload_snapshot,
+                cache_entry.upload_generation_id);
+        const fake_image_texture_upload_result_snapshot* upload_result =
+            detail::render_image_texture_pipeline_upload_result_for_generation(
+                snapshot.upload_snapshot,
+                cache_entry.upload_generation_id);
+        summary.entries.push_back(detail::make_render_image_texture_pipeline_upload_cache_payload_entry(
+            cache_entry,
+            upload_request,
+            upload_result,
+            summary.entries.size()));
+    }
+
+    detail::append_render_image_texture_pipeline_upload_cache_payload_blocker(
+        summary,
+        "source_load_failed=" + std::to_string(snapshot.source_load_failure_count),
+        snapshot.source_load_failure_count);
+    detail::append_render_image_texture_pipeline_upload_cache_payload_blocker(
+        summary,
+        "decode_failed=" + std::to_string(snapshot.decode_failure_count),
+        snapshot.decode_failure_count);
+    detail::append_render_image_texture_pipeline_upload_cache_payload_blocker(
+        summary,
+        "upload_failed=" + std::to_string(snapshot.upload_failure_count),
+        snapshot.upload_failure_count);
+
+    for (const render_image_texture_pipeline_upload_cache_payload_entry& entry : summary.entries) {
+        if (entry.status == render_image_texture_pipeline_upload_cache_payload_status::ready) {
+            ++summary.ready_payload_count;
+        } else if (entry.status == render_image_texture_pipeline_upload_cache_payload_status::placeholder) {
+            ++summary.placeholder_payload_count;
+            summary.has_placeholders = true;
+        } else {
+            ++summary.blocked_payload_count;
+        }
+        if (entry.cache_resident) {
+            ++summary.cache_resident_payload_count;
+        }
+        if (entry.cache_hit_observed) {
+            ++summary.cache_hit_payload_count;
+        }
+        summary.decoded_byte_count += entry.decoded_byte_count;
+        summary.staging_byte_count += entry.staging_byte_count;
+        summary.uploaded_byte_count += entry.uploaded_byte_count;
+    }
+
+    summary.entry_count = summary.entries.size();
+    summary.has_blockers = summary.blocked_payload_count != 0;
+    if (summary.has_blockers && summary.blocker_summary.empty()) {
+        summary.blocker_summary = "one or more image upload/cache payloads are blocked";
+    }
+    if (summary.has_blockers) {
+        summary.diagnostic = "image upload/cache payload summary has blockers";
+    } else if (summary.has_placeholders) {
+        summary.diagnostic = "image upload/cache payload summary is placeholder-backed";
+    } else {
+        summary.diagnostic = "image upload/cache payload summary is ready";
+    }
+    return summary;
+}
+
 enum class render_image_external_decoder_selection_diff_state {
     none,
     internal_decoder,
@@ -1584,6 +2001,14 @@ render_image_texture_pipeline_upload_cache_diagnostic_snapshot(
         };
     }
     return diagnostics->upload_cache_diagnostic_snapshot();
+}
+
+inline render_image_texture_pipeline_upload_cache_payload_summary
+render_image_texture_pipeline_upload_cache_payload_diagnostic_summary(
+    const image_texture_pipeline_interface& pipeline)
+{
+    return make_render_image_texture_pipeline_upload_cache_payload_summary(
+        render_image_texture_pipeline_upload_cache_diagnostic_snapshot(pipeline));
 }
 
 enum class render_image_texture_batch_execution_entry_status {

@@ -65,6 +65,26 @@ void require_modifiers(
     require(modifiers.meta == meta, message);
 }
 
+void require_text_route_state(
+    const quiz_vulkan::input::text_focus_route_state& state,
+    bool has_focus,
+    const std::string& target_id,
+    std::size_t text_byte_count,
+    quiz_vulkan::input::text_range caret,
+    bool has_selection,
+    quiz_vulkan::input::text_range selection,
+    const char* message)
+{
+    require(state.has_focus == has_focus, message);
+    require(state.target_id == target_id, message);
+    require(state.text_byte_count == text_byte_count, message);
+    require(state.caret.start_byte == caret.start_byte, message);
+    require(state.caret.end_byte == caret.end_byte, message);
+    require(state.has_selection == has_selection, message);
+    require(state.selection.start_byte == selection.start_byte, message);
+    require(state.selection.end_byte == selection.end_byte, message);
+}
+
 const quiz_vulkan::input::action_route_policy_diagnostic& require_policy(
     const quiz_vulkan::input::input_routing_diagnostics& diagnostics,
     std::size_t index,
@@ -881,6 +901,246 @@ void test_wheel_modifiers_normalize_without_pointer_text_or_domain_routes()
         false,
         true,
         "raw modified wheel route carries modifier evidence");
+}
+
+void test_text_focus_caret_route_state_tracks_edits_ime_and_tap_focus()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    std::vector<input_event> events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::down,
+        100,
+        12.0f,
+        24.0f));
+    require(events.empty(), "text route tap down emits no gesture yet");
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        120,
+        12.0f,
+        24.0f));
+    require(events.size() == 1, "text route tap up emits tap gesture");
+    const gesture_event& tap = require_event<gesture_event>(events, 0);
+    require(tap.kind == gesture_kind::tap, "text route focus source is tap gesture");
+    require(!engine.routing_diagnostics().text_route_state.has_focus,
+        "text route tap does not focus text by itself");
+    require(engine.routing_diagnostics().summary.routes.text == 0,
+        "text route tap emits no text route");
+    require(engine.routing_diagnostics().summary.routes.focus == 0,
+        "text route tap emits no focus route");
+
+    engine.focus_text_target("tap-target");
+    require_text_route_state(
+        engine.routing_diagnostics().text_route_state,
+        true,
+        "tap-target",
+        0,
+        text_range{},
+        false,
+        text_range{},
+        "tap target focus updates current text route state");
+    require(engine.routing_diagnostics().action_routes.empty(),
+        "initial tap target focus emits no app/domain action route");
+
+    const std::string initial = std::string("A") + utf8(u8"한");
+    events = engine.process_raw_event(text(130, initial));
+    require(events.size() == 1, "text route insert emits text event");
+    const text_event& commit = require_event<text_event>(events, 0);
+    require(commit.kind == text_event_kind::commit, "text route insert emits commit kind");
+    const action_route_policy_diagnostic& commit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_commit_boundary,
+        "text route insert emits commit boundary route");
+    require_text_route_state(
+        commit_policy.text_route_before,
+        true,
+        "tap-target",
+        0,
+        text_range{},
+        false,
+        text_range{},
+        "text route insert records focused empty route state before");
+    require_text_route_state(
+        commit_policy.text_route_after,
+        true,
+        "tap-target",
+        initial.size(),
+        text_range{.start_byte = initial.size(), .end_byte = initial.size()},
+        false,
+        text_range{},
+        "text route insert records caret after utf8 insert");
+    require_text_route_state(
+        engine.routing_diagnostics().text_route_state,
+        true,
+        "tap-target",
+        initial.size(),
+        text_range{.start_byte = initial.size(), .end_byte = initial.size()},
+        false,
+        text_range{},
+        "text route insert updates current route state");
+
+    events = engine.process_raw_event(key(140, "Backspace"));
+    require(events.size() == 1, "text route backspace emits text event");
+    const text_event& backspace = require_event<text_event>(events, 0);
+    require(backspace.kind == text_event_kind::backspace,
+        "text route backspace emits backspace kind");
+    const action_route_policy_diagnostic& backspace_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_backspace_boundary,
+        "text route backspace emits backspace route");
+    require_text_route_state(
+        backspace_policy.text_route_before,
+        true,
+        "tap-target",
+        initial.size(),
+        text_range{.start_byte = initial.size(), .end_byte = initial.size()},
+        false,
+        text_range{},
+        "text route backspace records route state before deletion");
+    require_text_route_state(
+        backspace_policy.text_route_after,
+        true,
+        "tap-target",
+        1,
+        text_range{.start_byte = 1, .end_byte = 1},
+        false,
+        text_range{},
+        "text route backspace records utf8-safe caret after deletion");
+    require_text_route_state(
+        engine.routing_diagnostics().text_route_state,
+        true,
+        "tap-target",
+        1,
+        text_range{.start_byte = 1, .end_byte = 1},
+        false,
+        text_range{},
+        "text route backspace updates current route state");
+
+    const std::string preedit = utf8(u8"ㄱ");
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 150, preedit));
+    require(events.size() == 1, "text route ime preedit emits ime event");
+    const ime_event& preedit_event = require_event<ime_event>(events, 0);
+    require(preedit_event.kind == ime_event_kind::preedit,
+        "text route ime preedit emits preedit kind");
+    const action_route_policy_diagnostic& preedit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::ime_preedit,
+        "text route ime preedit emits preedit route");
+    require_text_route_state(
+        preedit_policy.text_route_before,
+        true,
+        "tap-target",
+        1,
+        text_range{.start_byte = 1, .end_byte = 1},
+        false,
+        text_range{},
+        "text route ime preedit records committed caret before");
+    require_text_route_state(
+        preedit_policy.text_route_after,
+        true,
+        "tap-target",
+        1,
+        text_range{.start_byte = 1 + preedit.size(), .end_byte = 1 + preedit.size()},
+        false,
+        text_range{},
+        "text route ime preedit records display caret after");
+    require(preedit_policy.text_route_after.composition.active,
+        "text route ime preedit route state records active composition");
+    require(preedit_policy.text_route_after.composition.preedit_text == preedit,
+        "text route ime preedit route state records preedit text");
+    require(engine.routing_diagnostics().text_route_state.composition.active,
+        "text route ime preedit updates current active composition");
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::down,
+        160,
+        42.0f,
+        24.0f));
+    require(events.empty(), "text route second tap down emits no gesture yet");
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        180,
+        42.0f,
+        24.0f));
+    require(events.size() == 1, "text route second tap emits tap gesture");
+    require(require_event<gesture_event>(events, 0).kind == gesture_kind::tap,
+        "text route second focus source is tap gesture");
+
+    engine.focus_text_target("second-target");
+    const input_routing_diagnostics& focus_diagnostics = engine.routing_diagnostics();
+    require_text_route_state(
+        focus_diagnostics.text_route_state,
+        true,
+        "second-target",
+        1,
+        text_range{.start_byte = 1, .end_byte = 1},
+        false,
+        text_range{},
+        "text route tap focus target change updates current route state");
+    require(!focus_diagnostics.text_route_state.composition.active,
+        "text route tap focus target change clears active preedit");
+    require(focus_diagnostics.action_routes.size() == 2,
+        "text route tap focus target change emits ime cleanup and focus cleanup routes");
+    const action_route_policy_diagnostic& cancel_policy = require_policy(
+        focus_diagnostics,
+        0,
+        action_route_policy_kind::ime_cancel,
+        "text route target change first route cancels ime");
+    require_text_route_state(
+        cancel_policy.text_route_before,
+        true,
+        "tap-target",
+        1,
+        text_range{.start_byte = 1 + preedit.size(), .end_byte = 1 + preedit.size()},
+        false,
+        text_range{},
+        "text route target change cancel records old focused preedit state before");
+    require(cancel_policy.text_route_before.composition.active,
+        "text route target change cancel records active preedit before");
+    require_text_route_state(
+        cancel_policy.text_route_after,
+        true,
+        "second-target",
+        1,
+        text_range{.start_byte = 1, .end_byte = 1},
+        false,
+        text_range{},
+        "text route target change cancel records new focused state after");
+    const action_route_policy_diagnostic& focus_policy = require_policy(
+        focus_diagnostics,
+        1,
+        action_route_policy_kind::focus_loss,
+        "text route target change second route records old focus loss");
+    require_text_route_state(
+        focus_policy.text_route_before,
+        true,
+        "tap-target",
+        1,
+        text_range{.start_byte = 1 + preedit.size(), .end_byte = 1 + preedit.size()},
+        false,
+        text_range{},
+        "text route target change focus records old route state before");
+    require_text_route_state(
+        focus_policy.text_route_after,
+        true,
+        "second-target",
+        1,
+        text_range{.start_byte = 1, .end_byte = 1},
+        false,
+        text_range{},
+        "text route target change focus records new route state after");
+    require(focus_diagnostics.summary.routes.ime == 1,
+        "text route target change summary counts ime cleanup");
+    require(focus_diagnostics.summary.routes.focus == 1,
+        "text route target change summary counts focus cleanup");
+    require(focus_diagnostics.summary.routes.text == 0,
+        "text route target change emits no text submit route");
+    require(!engine.text_model().has_submit_text(),
+        "text route target change does not dispatch app/domain action");
 }
 
 void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
@@ -1847,6 +2107,7 @@ int main()
     test_scroll_events_normalize_line_and_pixel_deltas();
     test_raw_platform_scroll_routes_through_input_engine();
     test_wheel_modifiers_normalize_without_pointer_text_or_domain_routes();
+    test_text_focus_caret_route_state_tracks_edits_ime_and_tap_focus();
     test_gesture_routing_diagnostics_summarize_gestures_and_wheel();
     test_gesture_policy_diagnostics_record_rejected_swipes();
     test_gesture_routing_diagnostics_cancel_and_focus_loss();

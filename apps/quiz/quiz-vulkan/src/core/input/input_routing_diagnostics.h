@@ -70,6 +70,16 @@ struct keyboard_chord_diagnostic {
     keyboard_shortcut_intent intent = keyboard_shortcut_intent::none;
 };
 
+struct text_focus_route_state {
+    bool has_focus = false;
+    std::string target_id;
+    std::size_t text_byte_count = 0;
+    text_range caret;
+    bool has_selection = false;
+    text_range selection;
+    ime_composition_state composition;
+};
+
 enum class action_route_policy_kind {
     pointer_capture_reset,
     pointer_capture_arbitration,
@@ -106,6 +116,8 @@ struct action_route_policy_diagnostic {
     bool has_selection_after = false;
     text_range selection_before;
     text_range selection_after;
+    text_focus_route_state text_route_before;
+    text_focus_route_state text_route_after;
     normalized_input_event_summary normalized_event;
     ime_composition_state composition;
     ime_composition_state composition_before;
@@ -156,6 +168,7 @@ struct input_routing_diagnostics {
     std::vector<normalized_input_event_summary> normalized_events;
     std::vector<action_route_policy_diagnostic> action_routes;
     pointer_capture_snapshot pointer_capture;
+    text_focus_route_state text_route_state;
     input_diagnostic_summary summary;
 };
 

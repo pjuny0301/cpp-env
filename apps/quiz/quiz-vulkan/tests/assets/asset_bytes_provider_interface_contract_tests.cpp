@@ -642,6 +642,7 @@ static_assert(requires(
 
 static_assert(std::is_enum_v<asset_render_resource_payload_bridge_status>);
 static_assert(std::is_enum_v<asset_render_resource_materialized_cache_status>);
+static_assert(std::is_enum_v<asset_render_resource_materialized_cache_delta_kind>);
 
 static_assert(requires(asset_render_resource_materialized_cache_request request) {
     { request.id } -> std::same_as<std::string&>;
@@ -729,6 +730,50 @@ static_assert(requires(
         std::same_as<const asset_render_resource_materialized_cache_entry*>;
 });
 
+static_assert(requires(
+    asset_render_resource_materialized_cache_diff_entry entry,
+    const asset_render_resource_materialized_cache_diff_entry& const_entry) {
+    { entry.kind } -> std::same_as<asset_render_resource_materialized_cache_delta_kind&>;
+    { entry.id } -> std::same_as<std::string&>;
+    { entry.type } -> std::same_as<asset_type&>;
+    { entry.before } -> std::same_as<std::optional<asset_render_resource_materialized_cache_entry>&>;
+    { entry.after } -> std::same_as<std::optional<asset_render_resource_materialized_cache_entry>&>;
+    { entry.logical_identity_changed } -> std::same_as<bool&>;
+    { entry.cache_key_changed } -> std::same_as<bool&>;
+    { entry.content_hash_changed } -> std::same_as<bool&>;
+    { entry.runtime_cache_key_changed } -> std::same_as<bool&>;
+    { entry.materialized_path_changed } -> std::same_as<bool&>;
+    { entry.status_changed } -> std::same_as<bool&>;
+    { entry.invalidated_runtime_cache_key } -> std::same_as<std::string&>;
+    { entry.replacement_runtime_cache_key } -> std::same_as<std::string&>;
+    { entry.diagnostic } -> std::same_as<std::string&>;
+    { const_entry.invalidates() } -> std::same_as<bool>;
+    { const_entry.has_field_delta() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_render_resource_materialized_cache_diff_summary summary,
+    const asset_render_resource_materialized_cache_diff_summary& const_summary,
+    std::string_view id) {
+    { summary.reused } -> std::same_as<std::vector<asset_render_resource_materialized_cache_diff_entry>&>;
+    { summary.added } -> std::same_as<std::vector<asset_render_resource_materialized_cache_diff_entry>&>;
+    { summary.removed } -> std::same_as<std::vector<asset_render_resource_materialized_cache_diff_entry>&>;
+    { summary.replaced } -> std::same_as<std::vector<asset_render_resource_materialized_cache_diff_entry>&>;
+    { summary.invalidated } -> std::same_as<std::vector<asset_render_resource_materialized_cache_diff_entry>&>;
+    { summary.requested_delta } -> std::same_as<std::ptrdiff_t&>;
+    { summary.ready_delta } -> std::same_as<std::ptrdiff_t&>;
+    { summary.blocked_delta } -> std::same_as<std::ptrdiff_t&>;
+    { const_summary.empty() } -> std::same_as<bool>;
+    { const_summary.change_count() } -> std::same_as<std::size_t>;
+    { const_summary.invalidation_count() } -> std::same_as<std::size_t>;
+    { const_summary.find_reused(id) } -> std::same_as<const asset_render_resource_materialized_cache_diff_entry*>;
+    { const_summary.find_added(id) } -> std::same_as<const asset_render_resource_materialized_cache_diff_entry*>;
+    { const_summary.find_removed(id) } -> std::same_as<const asset_render_resource_materialized_cache_diff_entry*>;
+    { const_summary.find_replaced(id) } -> std::same_as<const asset_render_resource_materialized_cache_diff_entry*>;
+    { const_summary.find_invalidated(id) } ->
+        std::same_as<const asset_render_resource_materialized_cache_diff_entry*>;
+});
+
 static_assert(std::has_virtual_destructor_v<asset_bytes_provider_interface>);
 static_assert(std::derived_from<fake_asset_bytes_provider, asset_bytes_provider_interface>);
 static_assert(std::derived_from<local_file_asset_bytes_provider, asset_bytes_provider_interface>);
@@ -786,6 +831,7 @@ static_assert(requires(
     asset_materialized_byte_payload_selection_status payload_selection_status,
     asset_render_resource_payload_bridge_status bridge_status,
     asset_render_resource_materialized_cache_status materialized_cache_status,
+    asset_render_resource_materialized_cache_delta_kind materialized_cache_delta_kind,
     const asset_render_resource_materialized_cache_request& materialized_cache_request,
     const std::vector<asset_render_resource_materialized_cache_request>& materialized_cache_requests,
     std::string_view id,
@@ -870,7 +916,24 @@ static_assert(requires(
         render_resource_addresses,
         payload_bundle,
         materialized_cache_requests) } -> std::same_as<asset_render_resource_materialized_cache_summary>;
+    { asset_render_resource_materialized_cache_count_delta(1U, 2U) } -> std::same_as<std::ptrdiff_t>;
+    { find_asset_render_resource_materialized_cache_entry(
+        make_asset_render_resource_materialized_cache_summary(render_resource_addresses, payload_bundle),
+        id) } -> std::same_as<const asset_render_resource_materialized_cache_entry*>;
+    { asset_render_resource_materialized_cache_logical_identity_changed(
+        make_asset_render_resource_materialized_cache_entry(render_resource_bridge_entry),
+        make_asset_render_resource_materialized_cache_entry(render_resource_bridge_entry)) } -> std::same_as<bool>;
+    { classify_asset_render_resource_materialized_cache_delta(
+        make_asset_render_resource_materialized_cache_entry(render_resource_bridge_entry),
+        make_asset_render_resource_materialized_cache_entry(render_resource_bridge_entry)) } ->
+        std::same_as<asset_render_resource_materialized_cache_delta_kind>;
+    { diff_asset_render_resource_materialized_cache_summaries(
+        make_asset_render_resource_materialized_cache_summary(render_resource_addresses, payload_bundle),
+        make_asset_render_resource_materialized_cache_summary(render_resource_addresses, payload_bundle)) } ->
+        std::same_as<asset_render_resource_materialized_cache_diff_summary>;
     { asset_render_resource_materialized_cache_status_name(materialized_cache_status) } ->
+        std::same_as<std::string>;
+    { asset_render_resource_materialized_cache_delta_kind_name(materialized_cache_delta_kind) } ->
         std::same_as<std::string>;
     { asset_shader_materialized_byte_issue_kind_name(shader_issue_kind) } -> std::same_as<std::string>;
     { asset_shader_byte_pipeline_source_kind_name(shader_source_kind) } -> std::same_as<std::string>;

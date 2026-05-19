@@ -3,9 +3,7 @@
 #include "app/app_demo.h"
 #include "platform/platform_shell.h"
 #include "render/image/image_source_bytes_loader.h"
-#include "render/image/image_texture_cache.h"
 #include "render/image/image_texture_pipeline.h"
-#include "render/image/standard_image_decoder_chain.h"
 #include "render/text/fake_text_engine.h"
 
 #include <filesystem>
@@ -74,7 +72,7 @@ public:
         return renderer_;
     }
 
-    [[nodiscard]] const render::fake_image_texture_pipeline& image_texture_pipeline() const
+    [[nodiscard]] const render::standard_image_texture_pipeline& image_texture_pipeline() const
     {
         return image_texture_pipeline_;
     }
@@ -120,17 +118,9 @@ private:
     platform_native_window_handle native_window_;
     render::normalizing_image_resolver image_resolver_;
     render::filesystem_image_source_bytes_loader image_source_bytes_loader_;
-    render::standard_image_decoder_chain image_decoder_;
-    render::fake_image_texture_uploader image_texture_uploader_;
-    render::fake_image_texture_cache image_texture_cache_{
-        image_decoder_,
-        image_texture_uploader_,
-    };
-    render::fake_image_texture_pipeline image_texture_pipeline_{
+    render::standard_image_texture_pipeline image_texture_pipeline_{
         image_resolver_,
         image_source_bytes_loader_,
-        image_texture_cache_,
-        image_texture_uploader_,
     };
 };
 

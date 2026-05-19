@@ -49,6 +49,14 @@ const quiz_vulkan::input::action_route_policy_diagnostic& require_policy(
     return policy;
 }
 
+void require_inactive_composition(
+    const quiz_vulkan::input::ime_composition_state& composition,
+    const char* message)
+{
+    require(!composition.active, message);
+    require(composition.preedit_text.empty(), message);
+}
+
 template <typename T>
 const T& require_event(const std::vector<quiz_vulkan::input::input_event>& events, std::size_t index)
 {
@@ -106,6 +114,156 @@ quiz_vulkan::raw_platform_input_event focus(
         .timestamp_ms = timestamp_ms,
         .phase = phase,
     };
+}
+
+void test_ime_route_diagnostics_expose_composition_lifecycle_snapshots()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+
+    std::vector<input_event> events =
+        engine.process_raw_event(ime(raw_platform_ime_phase::composition_start, 100));
+    require(events.empty(), "lifecycle composition start emits no input event");
+    const action_route_policy_diagnostic& start_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::ime_composition_start,
+        "lifecycle composition start emits start policy");
+    require(!start_policy.emits_input_event, "lifecycle start is diagnostic-only");
+    require_inactive_composition(start_policy.composition_before,
+        "lifecycle start records inactive composition before");
+    require(start_policy.composition_after.active, "lifecycle start records active composition after");
+    require(start_policy.composition_after.preedit_text.empty(),
+        "lifecycle start records empty preedit after");
+    require_range(start_policy.composition_after.replacement_range, 0, 0,
+        "lifecycle start records collapsed replacement after");
+    require_range(start_policy.composition_after.preedit_range, 0, 0,
+        "lifecycle start records collapsed preedit after");
+
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 110, utf8(u8"ㅎ")));
+    require(events.size() == 1, "lifecycle first preedit emits one event");
+    const action_route_policy_diagnostic& first_preedit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::ime_preedit,
+        "lifecycle first preedit emits preedit policy");
+    require(first_preedit_policy.emits_input_event, "lifecycle first preedit emits normalized event");
+    require(first_preedit_policy.composition_before.active,
+        "lifecycle first preedit records active empty composition before");
+    require(first_preedit_policy.composition_before.preedit_text.empty(),
+        "lifecycle first preedit records empty preedit before");
+    require(first_preedit_policy.composition_after.active,
+        "lifecycle first preedit records active composition after");
+    require(first_preedit_policy.composition_after.preedit_text == utf8(u8"ㅎ"),
+        "lifecycle first preedit records preedit text after");
+    require_range(first_preedit_policy.composition_after.preedit_range,
+        0,
+        std::string(utf8(u8"ㅎ")).size(),
+        "lifecycle first preedit records utf8 preedit range after");
+
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 120, utf8(u8"하")));
+    require(events.size() == 1, "lifecycle preedit update emits one event");
+    const action_route_policy_diagnostic& update_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::ime_preedit,
+        "lifecycle preedit update emits preedit policy");
+    require(update_policy.composition_before.active, "lifecycle update records active composition before");
+    require(update_policy.composition_before.preedit_text == utf8(u8"ㅎ"),
+        "lifecycle update records previous preedit before");
+    require(update_policy.composition_after.active, "lifecycle update records active composition after");
+    require(update_policy.composition_after.preedit_text == utf8(u8"하"),
+        "lifecycle update records replacement preedit after");
+    require_range(update_policy.composition_before.caret_range,
+        std::string(utf8(u8"ㅎ")).size(),
+        std::string(utf8(u8"ㅎ")).size(),
+        "lifecycle update records utf8-safe caret before");
+    require_range(update_policy.composition_after.caret_range,
+        std::string(utf8(u8"하")).size(),
+        std::string(utf8(u8"하")).size(),
+        "lifecycle update records utf8-safe caret after");
+
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::commit, 130, utf8(u8"한")));
+    require(events.size() == 1, "lifecycle commit emits one event");
+    const action_route_policy_diagnostic& commit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::ime_commit,
+        "lifecycle commit emits commit policy");
+    require(commit_policy.emits_input_event, "lifecycle commit emits normalized event");
+    require(commit_policy.composition.active, "lifecycle commit keeps pre-commit composition snapshot");
+    require(commit_policy.composition_before.active, "lifecycle commit records active composition before");
+    require(commit_policy.composition_before.preedit_text == utf8(u8"하"),
+        "lifecycle commit records preedit before");
+    require_inactive_composition(commit_policy.composition_after,
+        "lifecycle commit records inactive composition after");
+    require(commit_policy.text_byte_count_after == std::string(utf8(u8"한")).size(),
+        "lifecycle commit records committed byte count after");
+    require(engine.text_model().preedit_text().empty(), "lifecycle commit clears model preedit");
+    require(!engine.text_model().ime_composition().active, "lifecycle commit clears model composition");
+
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 140, "draft")).size() == 1,
+        "lifecycle focus cleanup preedit starts");
+    events = engine.process_raw_event(focus(raw_platform_focus_phase::lost, 150));
+    require(events.size() == 2, "lifecycle raw focus loss emits ime cancel and focus lost events");
+    const ime_event& cancel = require_event<ime_event>(events, 0);
+    require(cancel.kind == ime_event_kind::cancel, "lifecycle focus loss first event is ime cancel");
+    require(cancel.composition.preedit_text == "draft",
+        "lifecycle focus loss cancel event carries stale preedit");
+    const text_event& lost = require_event<text_event>(events, 1);
+    require(lost.kind == text_event_kind::focus_lost, "lifecycle focus loss second event is focus lost");
+
+    const input_routing_diagnostics& diagnostics = engine.routing_diagnostics();
+    require(diagnostics.action_routes.size() == 2,
+        "lifecycle focus loss emits ime cleanup and focus cleanup policies");
+    const action_route_policy_diagnostic& cancel_policy = require_policy(
+        diagnostics,
+        0,
+        action_route_policy_kind::ime_cancel,
+        "lifecycle focus loss records ime cancel policy");
+    require(cancel_policy.emits_input_event, "lifecycle focus loss cancel emits normalized ime event");
+    require(cancel_policy.composition_before.active,
+        "lifecycle focus loss cancel records active composition before");
+    require(cancel_policy.composition_before.preedit_text == "draft",
+        "lifecycle focus loss cancel records stale preedit before");
+    require_inactive_composition(cancel_policy.composition_after,
+        "lifecycle focus loss cancel records inactive composition after");
+    require(cancel_policy.text_byte_count_before == cancel_policy.text_byte_count_after,
+        "lifecycle focus loss cancel does not submit or mutate committed text");
+
+    const action_route_policy_diagnostic& focus_policy = require_policy(
+        diagnostics,
+        1,
+        action_route_policy_kind::focus_loss,
+        "lifecycle focus loss records focus policy");
+    require(focus_policy.emits_input_event, "lifecycle focus policy emits only focus event");
+    require(focus_policy.composition_before.active,
+        "lifecycle focus policy records active composition before cleanup");
+    require(focus_policy.composition_before.preedit_text == "draft",
+        "lifecycle focus policy records stale preedit before cleanup");
+    require_inactive_composition(focus_policy.composition_after,
+        "lifecycle focus policy records inactive composition after cleanup");
+
+    const input_diagnostic_summary& summary = diagnostics.summary;
+    require(summary.routes.ime == 1, "lifecycle focus loss summary counts ime cleanup");
+    require(summary.routes.focus == 1, "lifecycle focus loss summary counts focus cleanup");
+    require(summary.routes.text == 0, "lifecycle focus loss summary counts no text submit route");
+    require(summary.normalized_event_count == 0,
+        "lifecycle focus loss summary has no gesture or wheel normalized events");
+    require(summary.preedit_ended_cleanly, "lifecycle focus loss summary clears preedit");
+    require(summary.focus_ended_cleanly, "lifecycle focus loss summary clears focus");
+    require(!engine.text_model().has_submit_text(), "lifecycle focus loss does not submit text");
+
+    engine.focus_text_target("next");
+    events = engine.process_raw_event(text(160, "x"));
+    require(events.size() == 1, "lifecycle next target accepts text after cleanup");
+    require(engine.text_focus_id() == "next", "lifecycle next target remains focused");
+    require(engine.text_model().preedit_text().empty(), "lifecycle next target has no stale preedit");
+    require(engine.text_model().text() == std::string(utf8(u8"한")) + "x",
+        "lifecycle next target receives committed text without stale composition");
 }
 
 void test_keyboard_navigation_diagnostics_preserve_ime_composition()
@@ -1104,6 +1262,7 @@ void test_ime_hangul_replacement_composition_ranges()
 
 int main()
 {
+    test_ime_route_diagnostics_expose_composition_lifecycle_snapshots();
     test_keyboard_navigation_diagnostics_preserve_ime_composition();
     test_text_edit_boundary_diagnostics_replace_utf8_selection();
     test_ime_composition_suppresses_text_and_key_events();

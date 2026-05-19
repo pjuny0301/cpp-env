@@ -14,6 +14,7 @@ struct text_edit_snapshot {
     text_range caret;
     bool has_selection = false;
     text_range selection;
+    ime_composition_state composition;
 };
 
 [[nodiscard]] inline text_edit_snapshot capture_text_edit(const text_input_model& model)
@@ -25,6 +26,7 @@ struct text_edit_snapshot {
         snapshot.has_selection = true;
         snapshot.selection = *selection;
     }
+    snapshot.composition = model.ime_composition();
     return snapshot;
 }
 
@@ -41,6 +43,8 @@ inline void apply_text_edit_boundary(
     diagnostic.has_selection_after = after.has_selection;
     diagnostic.selection_before = before.selection;
     diagnostic.selection_after = after.selection;
+    diagnostic.composition_before = before.composition;
+    diagnostic.composition_after = after.composition;
 }
 
 [[nodiscard]] inline std::size_t removed_text_byte_count(text_edit_snapshot before, text_edit_snapshot after)

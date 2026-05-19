@@ -97,6 +97,12 @@ static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_exter
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_external_decoder_selection_snapshot_diff>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_external_decoder_selection_entry_diff>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_external_decoder_selection_snapshot_diff>);
+static_assert(std::derived_from<
+              quiz_vulkan::render::fake_image_texture_pipeline,
+              quiz_vulkan::render::image_texture_pipeline_upload_cache_diagnostics_interface>);
+static_assert(std::derived_from<
+              quiz_vulkan::render::standard_image_texture_pipeline,
+              quiz_vulkan::render::image_texture_pipeline_upload_cache_diagnostics_interface>);
 
 void require(bool condition, const char* message)
 {
@@ -474,6 +480,75 @@ void test_filesystem_pipeline_reads_ppm_fixture_and_reuses_cache()
     require(snapshot.entries[1].upload_count_after == 1, "repeat snapshot records unchanged upload count");
     require(snapshot.upload_snapshot.upload_count == 1, "pipeline upload snapshot records one upload");
     require(snapshot.cache_snapshot.texture_count == 1, "pipeline cache snapshot records one texture");
+
+    const image_texture_pipeline_interface& pipeline_interface = pipeline;
+    require(
+        image_texture_pipeline_upload_cache_diagnostics(pipeline_interface) != nullptr,
+        "fake filesystem pipeline exposes upload/cache side interface");
+    const render_image_texture_pipeline_upload_cache_snapshot side_snapshot =
+        render_image_texture_pipeline_upload_cache_diagnostic_snapshot(pipeline_interface);
+    require(side_snapshot.ok(), "fake filesystem side snapshot is available");
+    require(side_snapshot.acquire_count == 2, "fake filesystem side snapshot records both acquires");
+    require(side_snapshot.ready_count == 2, "fake filesystem side snapshot records ready count");
+    require(side_snapshot.cache_hit_count == 1, "fake filesystem side snapshot records cache reuse");
+    require(side_snapshot.upload_diagnostics_available, "fake filesystem side snapshot exposes upload diagnostics");
+    require(side_snapshot.upload_snapshot.upload_count == 1, "fake filesystem side snapshot records one upload");
+    require(side_snapshot.cache_snapshot.texture_count == 1, "fake filesystem side snapshot records cached texture");
+    require(
+        side_snapshot.cache_snapshot.cached_decoded_byte_count == 8,
+        "fake filesystem side snapshot records decoded byte residency");
+}
+
+void test_pipeline_upload_cache_side_interface_reports_fake_placeholder()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path root = test_data_root();
+    reset_test_data_root(root);
+    write_bytes(root / "textures" / "bad-placeholder.ppm", make_short_ppm_2x1_fixture_bytes());
+
+    const normalizing_image_resolver resolver;
+    filesystem_image_source_bytes_loader loader(root);
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    cache.set_placeholder_texture_policy(fake_image_texture_placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    });
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const image_texture_pipeline_interface& pipeline_interface = pipeline;
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{.uri = "textures/bad-placeholder.ppm"});
+    const render_image_texture_pipeline_upload_cache_snapshot side_snapshot =
+        render_image_texture_pipeline_upload_cache_diagnostic_snapshot(pipeline_interface);
+
+    require(result.ok(), "fake placeholder side interface fixture produces fallback texture");
+    require(is_fake_image_texture_placeholder_key(result.texture.key), "fake placeholder side interface fixture uses placeholder key");
+    require(side_snapshot.ok(), "fake placeholder side snapshot is available");
+    require(side_snapshot.ready_count == 1, "fake placeholder side snapshot records ready fallback");
+    require(side_snapshot.failure_count == 0, "fake placeholder side snapshot records no pipeline failure");
+    require(side_snapshot.decode_failure_count == 0, "fake placeholder side snapshot treats placeholder as ready");
+    require(side_snapshot.upload_snapshot.upload_count == 1, "fake placeholder side snapshot records placeholder upload");
+    require(
+        is_fake_image_texture_placeholder_key(side_snapshot.upload_snapshot.request_snapshots[0].key),
+        "fake placeholder side snapshot records placeholder upload key");
+    require(side_snapshot.cache_snapshot.texture_count == 1, "fake placeholder side snapshot caches placeholder texture");
+    require(
+        side_snapshot.cache_snapshot.placeholder_policy_texture_count == 1,
+        "fake placeholder side snapshot records placeholder cache count");
+    require(
+        find_cache_entry_by_source_key(side_snapshot.cache_snapshot, "textures/bad-placeholder.ppm")
+            == nullptr,
+        "fake placeholder side snapshot does not mark failed source resident");
+    require(
+        find_placeholder_cache_entry_by_requested_source_key(
+            side_snapshot.cache_snapshot,
+            "textures/bad-placeholder.ppm")
+            != nullptr,
+        "fake placeholder side snapshot records requested failed source");
 }
 
 void test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff()
@@ -4361,6 +4436,7 @@ void test_texture_frame_upload_handoff_diff_reports_frame_to_frame_evidence()
 int main()
 {
     test_filesystem_pipeline_reads_ppm_fixture_and_reuses_cache();
+    test_pipeline_upload_cache_side_interface_reports_fake_placeholder();
     test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff();
     test_filesystem_standard_jpeg_decode_failure_uses_placeholder_without_original_residency();
     test_filesystem_pipeline_reports_missing_file_source_load_failed();

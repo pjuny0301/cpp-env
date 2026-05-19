@@ -868,6 +868,50 @@ struct standard_image_texture_pipeline_snapshot {
     standard_image_texture_pipeline_decode_snapshot decoder;
 };
 
+struct render_image_texture_pipeline_upload_cache_snapshot {
+    std::size_t acquire_count = 0;
+    std::size_t ready_count = 0;
+    std::size_t failure_count = 0;
+    std::size_t cache_hit_count = 0;
+    std::size_t source_load_failure_count = 0;
+    std::size_t decode_failure_count = 0;
+    std::size_t upload_failure_count = 0;
+    std::size_t invalidation_count = 0;
+    bool cache_diagnostics_available = false;
+    bool upload_diagnostics_available = false;
+    fake_image_texture_cache_snapshot cache_snapshot;
+    fake_image_texture_upload_snapshot upload_snapshot;
+    std::string diagnostic;
+
+    bool ok() const
+    {
+        return cache_diagnostics_available || upload_diagnostics_available;
+    }
+};
+
+inline render_image_texture_pipeline_upload_cache_snapshot
+make_render_image_texture_pipeline_upload_cache_snapshot(
+    const fake_image_texture_pipeline_snapshot& snapshot)
+{
+    return render_image_texture_pipeline_upload_cache_snapshot{
+        .acquire_count = snapshot.acquire_count,
+        .ready_count = snapshot.ready_count,
+        .failure_count = snapshot.failure_count,
+        .cache_hit_count = snapshot.cache_hit_count,
+        .source_load_failure_count = snapshot.source_load_failure_count,
+        .decode_failure_count = snapshot.decode_failure_count,
+        .upload_failure_count = snapshot.upload_failure_count,
+        .invalidation_count = snapshot.invalidation_count,
+        .cache_diagnostics_available = true,
+        .upload_diagnostics_available = snapshot.upload_diagnostics_available,
+        .cache_snapshot = snapshot.cache_snapshot,
+        .upload_snapshot = snapshot.upload_snapshot,
+        .diagnostic = snapshot.upload_diagnostics_available
+            ? "image texture pipeline exposes cache and upload diagnostics"
+            : "image texture pipeline exposes cache diagnostics without upload backend snapshots",
+    };
+}
+
 enum class render_image_external_decoder_selection_diff_state {
     none,
     internal_decoder,
@@ -1510,6 +1554,37 @@ public:
     virtual render_image_texture_pipeline_result acquire_texture(
         const render_image_texture_pipeline_request& request) = 0;
 };
+
+class image_texture_pipeline_upload_cache_diagnostics_interface {
+public:
+    virtual ~image_texture_pipeline_upload_cache_diagnostics_interface() = default;
+
+    virtual render_image_texture_pipeline_upload_cache_snapshot
+    upload_cache_diagnostic_snapshot() const = 0;
+};
+
+inline const image_texture_pipeline_upload_cache_diagnostics_interface*
+image_texture_pipeline_upload_cache_diagnostics(
+    const image_texture_pipeline_interface& pipeline)
+{
+    return dynamic_cast<const image_texture_pipeline_upload_cache_diagnostics_interface*>(
+        &pipeline);
+}
+
+inline render_image_texture_pipeline_upload_cache_snapshot
+render_image_texture_pipeline_upload_cache_diagnostic_snapshot(
+    const image_texture_pipeline_interface& pipeline)
+{
+    const image_texture_pipeline_upload_cache_diagnostics_interface* diagnostics =
+        image_texture_pipeline_upload_cache_diagnostics(pipeline);
+    if (diagnostics == nullptr) {
+        return render_image_texture_pipeline_upload_cache_snapshot{
+            .diagnostic =
+                "image texture pipeline does not expose cache/upload diagnostics side interface",
+        };
+    }
+    return diagnostics->upload_cache_diagnostic_snapshot();
+}
 
 enum class render_image_texture_batch_execution_entry_status {
     ready,
@@ -2271,7 +2346,9 @@ inline render_image_texture_handle_map_diagnostics make_render_image_texture_han
 
 namespace quiz_vulkan::render {
 
-class fake_image_texture_pipeline final : public image_texture_pipeline_interface {
+class fake_image_texture_pipeline final
+    : public image_texture_pipeline_interface
+    , public image_texture_pipeline_upload_cache_diagnostics_interface {
 public:
     fake_image_texture_pipeline(
         const image_resolver_interface& resolver,
@@ -2381,6 +2458,13 @@ public:
             .upload_snapshot = current_upload_snapshot(),
             .entries = entries_,
         };
+    }
+
+    render_image_texture_pipeline_upload_cache_snapshot upload_cache_diagnostic_snapshot()
+        const override
+    {
+        return make_render_image_texture_pipeline_upload_cache_snapshot(
+            diagnostic_snapshot());
     }
 
 private:
@@ -2543,7 +2627,9 @@ private:
 
 } // namespace detail
 
-class standard_image_texture_pipeline final : public image_texture_pipeline_interface {
+class standard_image_texture_pipeline final
+    : public image_texture_pipeline_interface
+    , public image_texture_pipeline_upload_cache_diagnostics_interface {
 public:
     standard_image_texture_pipeline(
         const image_resolver_interface& resolver,
@@ -2600,6 +2686,12 @@ public:
             .pipeline = pipeline_.diagnostic_snapshot(),
             .decoder = decoder_.diagnostic_snapshot(),
         };
+    }
+
+    render_image_texture_pipeline_upload_cache_snapshot upload_cache_diagnostic_snapshot()
+        const override
+    {
+        return pipeline_.upload_cache_diagnostic_snapshot();
     }
 
 private:

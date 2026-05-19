@@ -561,6 +561,10 @@ void test_standard_pipeline_reuses_upload_residency_across_frames_and_fallbacks(
     set_source_bytes(loader, "textures/bad.ppm", make_short_ppm_bytes());
     standard_image_texture_pipeline pipeline(resolver, loader);
     pipeline.set_placeholder_texture_policy(placeholder_policy);
+    const image_texture_pipeline_interface& pipeline_interface = pipeline;
+    require(
+        image_texture_pipeline_upload_cache_diagnostics(pipeline_interface) != nullptr,
+        "standard pipeline exposes upload/cache side interface");
 
     render_image_sampler_policy linear_sampler;
     linear_sampler.min_filter = render_image_filter::linear;
@@ -583,28 +587,31 @@ void test_standard_pipeline_reuses_upload_residency_across_frames_and_fallbacks(
         make_render_image_texture_frame_snapshot(first_plan, first_execution);
     const standard_image_texture_pipeline_snapshot first_snapshot =
         pipeline.standard_diagnostic_snapshot();
+    const render_image_texture_pipeline_upload_cache_snapshot first_side_snapshot =
+        render_image_texture_pipeline_upload_cache_diagnostic_snapshot(pipeline_interface);
     const render_image_texture_upload_result_snapshot first_upload_result =
         make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
-            first_snapshot.pipeline.upload_snapshot);
+            first_side_snapshot.upload_snapshot);
     const render_image_texture_frame_resource_packet_materialization first_materialization =
         materialize_render_image_texture_frame_resource_packets(first_frame, first_upload_result);
 
     require(first_plan.ok(), "first standard residency frame plans PNG request");
     require(first_execution.ok(), "first standard residency frame executes PNG request");
     require(first_materialization.ok(), "first standard residency frame materializes resource packet");
-    require(first_snapshot.pipeline.upload_snapshot.upload_count == 1, "first standard residency frame uploads once");
+    require(first_side_snapshot.ok(), "first standard residency frame exposes side diagnostics");
+    require(first_side_snapshot.upload_snapshot.upload_count == 1, "first standard residency frame uploads once");
     require(first_snapshot.decoder.decode_attempt_count == 1, "first standard residency frame decodes once");
     require(first_snapshot.decoder.decoded_count == 1, "first standard residency frame records decoded image");
-    require(first_snapshot.pipeline.cache_snapshot.texture_count == 1, "first standard residency frame has one resident texture");
+    require(first_side_snapshot.cache_snapshot.texture_count == 1, "first standard residency frame has one resident texture");
     require(
-        first_snapshot.pipeline.cache_snapshot.cached_decoded_byte_count == 16,
+        first_side_snapshot.cache_snapshot.cached_decoded_byte_count == 16,
         "first standard residency frame tracks decoded RGBA bytes");
     require(!first_execution.entries[0].cache_hit, "first standard residency frame is a cache miss");
     require(!first_execution.entries[0].placeholder_texture, "first standard residency frame is not placeholder-backed");
     require(!first_plan.entries[0].stable_texture_cache_key.empty(), "first standard residency frame has stable texture key");
 
     const fake_image_texture_cache_entry_snapshot* first_cache_entry =
-        find_cache_entry_by_source_key(first_snapshot.pipeline.cache_snapshot, "textures/card.png");
+        find_cache_entry_by_source_key(first_side_snapshot.cache_snapshot, "textures/card.png");
     require(first_cache_entry != nullptr, "first standard residency frame creates resident cache entry");
     require(first_cache_entry->upload_generation_id == 1, "first resident cache entry records upload generation");
     require(first_cache_entry->decoded_byte_count == 16, "first resident cache entry records decoded bytes");
@@ -632,9 +639,11 @@ void test_standard_pipeline_reuses_upload_residency_across_frames_and_fallbacks(
         make_render_image_texture_frame_snapshot(second_plan, second_execution);
     const standard_image_texture_pipeline_snapshot second_snapshot =
         pipeline.standard_diagnostic_snapshot();
+    const render_image_texture_pipeline_upload_cache_snapshot second_side_snapshot =
+        render_image_texture_pipeline_upload_cache_diagnostic_snapshot(pipeline_interface);
     const render_image_texture_upload_result_snapshot second_upload_result =
         make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
-            second_snapshot.pipeline.upload_snapshot);
+            second_side_snapshot.upload_snapshot);
     const render_image_texture_frame_resource_packet_materialization second_materialization =
         materialize_render_image_texture_frame_resource_packets(second_frame, second_upload_result);
 
@@ -647,17 +656,17 @@ void test_standard_pipeline_reuses_upload_residency_across_frames_and_fallbacks(
         second_plan.entries[0].stable_texture_cache_key == first_plan.entries[0].stable_texture_cache_key,
         "second standard residency frame keeps stable cache key");
     require(
-        second_snapshot.pipeline.upload_snapshot.upload_count == 1,
+        second_side_snapshot.upload_snapshot.upload_count == 1,
         "second standard residency frame does not request another upload");
     require(second_snapshot.decoder.decode_attempt_count == 1, "second standard residency frame does not decode again");
-    require(second_snapshot.pipeline.cache_hit_count == 1, "standard residency snapshot counts second-frame hit");
-    require(second_snapshot.pipeline.cache_snapshot.texture_count == 1, "second standard residency frame keeps one texture resident");
+    require(second_side_snapshot.cache_hit_count == 1, "standard residency snapshot counts second-frame hit");
+    require(second_side_snapshot.cache_snapshot.texture_count == 1, "second standard residency frame keeps one texture resident");
     require(
-        second_snapshot.pipeline.cache_snapshot.resident_access_count == 2,
+        second_side_snapshot.cache_snapshot.resident_access_count == 2,
         "second standard residency frame records resident access reuse");
 
     const fake_image_texture_cache_entry_snapshot* second_cache_entry =
-        find_cache_entry_by_source_key(second_snapshot.pipeline.cache_snapshot, "textures/card.png");
+        find_cache_entry_by_source_key(second_side_snapshot.cache_snapshot, "textures/card.png");
     require(second_cache_entry != nullptr, "second standard residency frame keeps resident cache entry");
     require(
         second_cache_entry->texture.id == first_cache_entry->texture.id,
@@ -679,12 +688,14 @@ void test_standard_pipeline_reuses_upload_residency_across_frames_and_fallbacks(
         "second materialization reuses uploaded byte evidence");
 
     const std::size_t upload_count_before_decode_failure =
-        second_snapshot.pipeline.upload_snapshot.upload_count;
+        second_side_snapshot.upload_snapshot.upload_count;
     const render_image_texture_batch_plan decode_failure_plan = make_single_image_plan("textures/bad.ppm");
     const render_image_texture_batch_execution_diagnostics decode_failure_execution =
         execute_render_image_texture_batch_plan(decode_failure_plan, pipeline);
     const standard_image_texture_pipeline_snapshot decode_failure_snapshot =
         pipeline.standard_diagnostic_snapshot();
+    const render_image_texture_pipeline_upload_cache_snapshot decode_failure_side_snapshot =
+        render_image_texture_pipeline_upload_cache_diagnostic_snapshot(pipeline_interface);
 
     require(decode_failure_plan.ok(), "decode failure residency frame plans malformed source");
     require(decode_failure_execution.ok(), "decode failure residency frame uses placeholder fallback");
@@ -695,19 +706,19 @@ void test_standard_pipeline_reuses_upload_residency_across_frames_and_fallbacks(
         decode_failure_snapshot.decoder.failed_decode_count == 1,
         "decode failure residency frame records failed standard decode");
     require(
-        decode_failure_snapshot.pipeline.upload_snapshot.upload_count
+        decode_failure_side_snapshot.upload_snapshot.upload_count
             == upload_count_before_decode_failure + 1,
         "decode failure residency frame uploads one placeholder texture");
     require(
-        decode_failure_snapshot.pipeline.cache_snapshot.placeholder_policy_texture_count == 1,
+        decode_failure_side_snapshot.cache_snapshot.placeholder_policy_texture_count == 1,
         "decode failure residency frame records one placeholder texture");
     require(
-        find_cache_entry_by_source_key(decode_failure_snapshot.pipeline.cache_snapshot, "textures/bad.ppm")
+        find_cache_entry_by_source_key(decode_failure_side_snapshot.cache_snapshot, "textures/bad.ppm")
             == nullptr,
         "decode failure residency frame does not mark failed source texture resident");
     const fake_image_texture_cache_entry_snapshot* decode_failure_placeholder =
         find_placeholder_cache_entry_by_requested_source_key(
-            decode_failure_snapshot.pipeline.cache_snapshot,
+            decode_failure_side_snapshot.cache_snapshot,
             "textures/bad.ppm");
     require(
         decode_failure_placeholder != nullptr,
@@ -717,12 +728,14 @@ void test_standard_pipeline_reuses_upload_residency_across_frames_and_fallbacks(
         "decode failure placeholder keeps deterministic decoded bytes");
 
     const std::size_t upload_count_before_missing_source =
-        decode_failure_snapshot.pipeline.upload_snapshot.upload_count;
+        decode_failure_side_snapshot.upload_snapshot.upload_count;
     const render_image_texture_batch_plan missing_source_plan = make_single_image_plan("textures/missing.png");
     const render_image_texture_batch_execution_diagnostics missing_source_execution =
         execute_render_image_texture_batch_plan(missing_source_plan, pipeline);
     const standard_image_texture_pipeline_snapshot missing_source_snapshot =
         pipeline.standard_diagnostic_snapshot();
+    const render_image_texture_pipeline_upload_cache_snapshot missing_source_side_snapshot =
+        render_image_texture_pipeline_upload_cache_diagnostic_snapshot(pipeline_interface);
 
     require(missing_source_plan.ok(), "missing source residency frame plans source key");
     require(!missing_source_execution.ok(), "missing source residency frame remains blocked");
@@ -734,15 +747,15 @@ void test_standard_pipeline_reuses_upload_residency_across_frames_and_fallbacks(
         !missing_source_execution.entries[0].placeholder_texture,
         "missing source residency frame does not synthesize cache residency");
     require(
-        missing_source_snapshot.pipeline.upload_snapshot.upload_count == upload_count_before_missing_source,
+        missing_source_side_snapshot.upload_snapshot.upload_count == upload_count_before_missing_source,
         "missing source residency frame does not upload placeholder without source bytes");
     require(
-        find_cache_entry_by_source_key(missing_source_snapshot.pipeline.cache_snapshot, "textures/missing.png")
+        find_cache_entry_by_source_key(missing_source_side_snapshot.cache_snapshot, "textures/missing.png")
             == nullptr,
         "missing source residency frame does not mark missing source resident");
     require(
         find_placeholder_cache_entry_by_requested_source_key(
-            missing_source_snapshot.pipeline.cache_snapshot,
+            missing_source_side_snapshot.cache_snapshot,
             "textures/missing.png")
             == nullptr,
         "missing source residency frame does not create placeholder cache entry");

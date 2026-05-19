@@ -1,6 +1,6 @@
 # Quiz Current Handoff
 
-Last updated: 2026-05-18
+Last updated: 2026-05-19
 
 This file is intentionally short. Use it as the first read before `big_plan.md`,
 `requirements_traceability_matrix.md`, or per-requirement implementation notes.
@@ -23,9 +23,10 @@ Historical integration notes are kept in git history, not repeated here.
   tests, and descriptor payload bind recording are integrated.
 - Text: atlas packet consumption, HarfBuzz shaping handoff diagnostics, and real
   font atlas draw evidence and draw packet consumption diffs are integrated.
-- Image: staging payload blocker coverage, staging payload diff summaries, and
-  decoded-byte resource materialization are integrated. Active worker work is
-  decoded draw payload evidence.
+- Image: staging payload blocker coverage, staging payload diff summaries,
+  decoded-byte resource materialization, and decoded draw payload evidence are
+  integrated. The oversized resource packet plan header is split into focused
+  image render handoff headers.
 - Asset: materialized byte payload request/review evidence and shader byte
   pipeline summary are integrated.
 - Input/IME: wheel modifier diagnostics are integrated; input is idle unless
@@ -33,14 +34,13 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Active Workers
 
-- `codex-vulkan-native-command-packet-executor-20260516`: idle after descriptor
-  payload bind recording integration.
-- `codex-text-freetype-prototype-20260514`: idle after real font draw packet
-  consumption diff integration.
+- `codex-vulkan-native-command-packet-executor-20260516`: busy on native
+  descriptor bind-call readiness.
+- `codex-text-freetype-prototype-20260514`: busy on compact text render-frame
+  handoff summary.
 - `codex-asset-unified-cache-key-20260514`: idle after shader byte source
   pipeline summary and focused-header split.
-- `codex-image-texture-next-20260514`: busy on
-  `codex/image-decoded-draw-payload-evidence-20260518`.
+- `codex-image-texture-next-20260514`: integrated decoded draw payload evidence.
 - `codex-input-ime`: idle after wheel/drag/touch-like diagnostics work.
 - Idle sessions are intentionally kept alive. Give them fresh baseline branches
   before new work; do not re-merge historical ahead commits.
@@ -180,6 +180,12 @@ Historical integration notes are kept in git history, not repeated here.
   `quiz_vulkan_fake_text_engine_freetype_raster_payload_tests`; focused CTest
   passed 4/4 for shaped atlas update, glyph quad packet, text frame resource
   packet materialization, and FreeType raster payload.
+- After `7a06bc6` plus the image header split, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests`,
+  `quiz_vulkan_standard_image_texture_pipeline_tests`,
+  `quiz_vulkan_image_texture_frame_resource_packet_plan_tests`, and
+  `quiz_vulkan_image_texture_frame_resource_packet_materialization_tests`;
+  focused `ctest -R image_texture --output-on-failure` passed 8/8.
 
 ## Useful Commands
 

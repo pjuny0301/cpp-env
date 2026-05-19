@@ -305,9 +305,14 @@ target_sources(
             src/render/image/image_texture_cache_snapshot.h
             src/render/image/image_texture_diagnostics.h
             src/render/image/image_texture_frame_binding_summary.h
+            src/render/image/image_draw_list_texture_frame_composition.h
+            src/render/image/image_renderer_texture_quad_draw_payload.h
+            src/render/image/image_renderer_texture_quad_packet_diff.h
+            src/render/image/image_renderer_texture_quad_packet_plan.h
             src/render/image/image_texture_frame_resource_materialization_diff.h
             src/render/image/image_texture_frame_resource_packet_materialization.h
             src/render/image/image_texture_frame_resource_packet_plan.h
+            src/render/image/image_texture_frame_resource_packet_plan_core.h
             src/render/image/image_texture_frame_snapshot.h
             src/render/image/image_texture_frame_upload_handoff.h
             src/render/image/image_texture_pipeline.h

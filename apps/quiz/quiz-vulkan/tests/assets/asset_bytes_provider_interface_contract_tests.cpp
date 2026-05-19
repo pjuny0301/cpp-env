@@ -589,6 +589,7 @@ static_assert(requires(
 
 static_assert(std::is_enum_v<asset_shader_byte_pipeline_source_kind>);
 static_assert(std::is_enum_v<asset_shader_byte_pipeline_blocker_kind>);
+static_assert(std::is_enum_v<asset_shader_payload_runtime_stage>);
 
 static_assert(requires(
     asset_shader_byte_pipeline_source_entry entry,
@@ -638,6 +639,56 @@ static_assert(requires(
     { const_summary.find_ready(id) } -> std::same_as<const asset_shader_byte_pipeline_source_entry*>;
     { const_summary.find_blocked(id) } -> std::same_as<const asset_shader_byte_pipeline_source_entry*>;
     { const_summary.find_entry(id) } -> std::same_as<const asset_shader_byte_pipeline_source_entry*>;
+});
+
+static_assert(requires(
+    asset_shader_payload_runtime_entry entry,
+    const asset_shader_payload_runtime_entry& const_entry) {
+    { entry.id } -> std::same_as<std::string&>;
+    { entry.stage } -> std::same_as<asset_shader_payload_runtime_stage&>;
+    { entry.source_kind } -> std::same_as<asset_shader_byte_pipeline_source_kind&>;
+    { entry.blocker } -> std::same_as<asset_shader_byte_pipeline_blocker_kind&>;
+    { entry.cache_key } -> std::same_as<asset_cache_key&>;
+    { entry.source_uri } -> std::same_as<std::string&>;
+    { entry.materialized_path } -> std::same_as<std::filesystem::path&>;
+    { entry.byte_count } -> std::same_as<std::size_t&>;
+    { entry.payload_byte_count } -> std::same_as<std::size_t&>;
+    { entry.content_hash } -> std::same_as<std::string&>;
+    { entry.cache_revision } -> std::same_as<std::string&>;
+    { entry.materialized_byte_identity } -> std::same_as<std::string&>;
+    { entry.runtime_identity } -> std::same_as<std::string&>;
+    { entry.ready } -> std::same_as<bool&>;
+    { entry.diagnostic } -> std::same_as<std::string&>;
+    { const_entry.ok() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_shader_payload_runtime_summary summary,
+    const asset_shader_payload_runtime_summary& const_summary,
+    std::string_view id,
+    std::string_view runtime_identity) {
+    { summary.ready } -> std::same_as<std::vector<asset_shader_payload_runtime_entry>&>;
+    { summary.blocked } -> std::same_as<std::vector<asset_shader_payload_runtime_entry>&>;
+    { summary.input_shader_count } -> std::same_as<std::size_t&>;
+    { summary.requested_shader_count } -> std::same_as<std::size_t&>;
+    { summary.vertex_stage_count } -> std::same_as<std::size_t&>;
+    { summary.fragment_stage_count } -> std::same_as<std::size_t&>;
+    { summary.compute_stage_count } -> std::same_as<std::size_t&>;
+    { summary.geometry_stage_count } -> std::same_as<std::size_t&>;
+    { summary.tessellation_control_stage_count } -> std::same_as<std::size_t&>;
+    { summary.tessellation_evaluation_stage_count } -> std::same_as<std::size_t&>;
+    { summary.unknown_stage_count } -> std::same_as<std::size_t&>;
+    { summary.revisioned_count } -> std::same_as<std::size_t&>;
+    { summary.missing_revision_count } -> std::same_as<std::size_t&>;
+    { const_summary.ok() } -> std::same_as<bool>;
+    { const_summary.ready_count() } -> std::same_as<std::size_t>;
+    { const_summary.blocked_count() } -> std::same_as<std::size_t>;
+    { const_summary.entry_count() } -> std::same_as<std::size_t>;
+    { const_summary.find_ready(id) } -> std::same_as<const asset_shader_payload_runtime_entry*>;
+    { const_summary.find_blocked(id) } -> std::same_as<const asset_shader_payload_runtime_entry*>;
+    { const_summary.find_entry(id) } -> std::same_as<const asset_shader_payload_runtime_entry*>;
+    { const_summary.find_runtime_identity(runtime_identity) } ->
+        std::same_as<const asset_shader_payload_runtime_entry*>;
 });
 
 static_assert(std::is_enum_v<asset_render_resource_payload_bridge_status>);
@@ -820,7 +871,9 @@ static_assert(requires(
     asset_shader_materialized_byte_issue_kind shader_issue_kind,
     asset_shader_byte_pipeline_source_kind shader_source_kind,
     asset_shader_byte_pipeline_blocker_kind shader_blocker_kind,
+    asset_shader_payload_runtime_stage shader_runtime_stage,
     const asset_shader_materialized_byte_pipeline_summary& shader_pipeline,
+    const asset_shader_byte_pipeline_source_summary& shader_source_summary,
     const asset_runtime_resolver_policy_summary& resolver_policy,
     const asset_pack_index_root_selection_summary& root_selection,
     const std::vector<std::string>& expected_shader_ids,
@@ -889,6 +942,8 @@ static_assert(requires(
         std::same_as<asset_shader_byte_pipeline_source_summary>;
     { summarize_shader_byte_pipeline_sources(shader_pipeline, resolver_policy) } ->
         std::same_as<asset_shader_byte_pipeline_source_summary>;
+    { summarize_shader_payload_runtime(shader_source_summary) } ->
+        std::same_as<asset_shader_payload_runtime_summary>;
     { asset_render_resource_payload_bridge_status_from_selection(payload_selection_status) } ->
         std::same_as<asset_render_resource_payload_bridge_status>;
     { make_asset_render_resource_payload_selection_request(render_resource_address) } ->
@@ -938,6 +993,7 @@ static_assert(requires(
     { asset_shader_materialized_byte_issue_kind_name(shader_issue_kind) } -> std::same_as<std::string>;
     { asset_shader_byte_pipeline_source_kind_name(shader_source_kind) } -> std::same_as<std::string>;
     { asset_shader_byte_pipeline_blocker_kind_name(shader_blocker_kind) } -> std::same_as<std::string>;
+    { asset_shader_payload_runtime_stage_name(shader_runtime_stage) } -> std::same_as<std::string>;
 });
 
 } // namespace

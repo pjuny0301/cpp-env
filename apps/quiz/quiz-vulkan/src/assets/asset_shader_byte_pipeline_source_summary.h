@@ -3,6 +3,8 @@
 #include "assets/asset_typed_materialized_bytes.h"
 #include "assets/asset_pack_index.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <filesystem>
 #include <string>
@@ -130,6 +132,142 @@ struct asset_shader_byte_pipeline_source_summary {
         return find_blocked(id);
     }
 };
+
+enum class asset_shader_payload_runtime_stage {
+    unknown,
+    vertex,
+    fragment,
+    compute,
+    geometry,
+    tessellation_control,
+    tessellation_evaluation,
+};
+
+struct asset_shader_payload_runtime_entry {
+    std::string id;
+    asset_shader_payload_runtime_stage stage = asset_shader_payload_runtime_stage::unknown;
+    asset_shader_byte_pipeline_source_kind source_kind =
+        asset_shader_byte_pipeline_source_kind::missing_source;
+    asset_shader_byte_pipeline_blocker_kind blocker =
+        asset_shader_byte_pipeline_blocker_kind::missing_source;
+    asset_cache_key cache_key;
+    std::string source_uri;
+    std::filesystem::path materialized_path;
+    std::size_t byte_count = 0U;
+    std::size_t payload_byte_count = 0U;
+    std::string content_hash;
+    std::string cache_revision;
+    std::string materialized_byte_identity;
+    std::string runtime_identity;
+    bool ready = false;
+    std::string diagnostic;
+
+    [[nodiscard]] bool ok() const
+    {
+        return ready && blocker == asset_shader_byte_pipeline_blocker_kind::none
+            && !runtime_identity.empty();
+    }
+};
+
+struct asset_shader_payload_runtime_summary {
+    std::vector<asset_shader_payload_runtime_entry> ready;
+    std::vector<asset_shader_payload_runtime_entry> blocked;
+    std::size_t input_shader_count = 0U;
+    std::size_t requested_shader_count = 0U;
+    std::size_t vertex_stage_count = 0U;
+    std::size_t fragment_stage_count = 0U;
+    std::size_t compute_stage_count = 0U;
+    std::size_t geometry_stage_count = 0U;
+    std::size_t tessellation_control_stage_count = 0U;
+    std::size_t tessellation_evaluation_stage_count = 0U;
+    std::size_t unknown_stage_count = 0U;
+    std::size_t revisioned_count = 0U;
+    std::size_t missing_revision_count = 0U;
+
+    [[nodiscard]] bool ok() const
+    {
+        return blocked.empty();
+    }
+
+    [[nodiscard]] std::size_t ready_count() const
+    {
+        return ready.size();
+    }
+
+    [[nodiscard]] std::size_t blocked_count() const
+    {
+        return blocked.size();
+    }
+
+    [[nodiscard]] std::size_t entry_count() const
+    {
+        return ready_count() + blocked_count();
+    }
+
+    [[nodiscard]] const asset_shader_payload_runtime_entry* find_ready(
+        std::string_view id) const
+    {
+        for (const asset_shader_payload_runtime_entry& entry : ready) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_shader_payload_runtime_entry* find_blocked(
+        std::string_view id) const
+    {
+        for (const asset_shader_payload_runtime_entry& entry : blocked) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_shader_payload_runtime_entry* find_entry(
+        std::string_view id) const
+    {
+        if (const asset_shader_payload_runtime_entry* entry = find_ready(id); entry != nullptr) {
+            return entry;
+        }
+        return find_blocked(id);
+    }
+
+    [[nodiscard]] const asset_shader_payload_runtime_entry* find_runtime_identity(
+        std::string_view runtime_identity) const
+    {
+        for (const asset_shader_payload_runtime_entry& entry : ready) {
+            if (entry.runtime_identity == runtime_identity) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+};
+
+inline std::string asset_shader_payload_runtime_stage_name(
+    asset_shader_payload_runtime_stage stage)
+{
+    switch (stage) {
+        case asset_shader_payload_runtime_stage::unknown:
+            return "unknown";
+        case asset_shader_payload_runtime_stage::vertex:
+            return "vertex";
+        case asset_shader_payload_runtime_stage::fragment:
+            return "fragment";
+        case asset_shader_payload_runtime_stage::compute:
+            return "compute";
+        case asset_shader_payload_runtime_stage::geometry:
+            return "geometry";
+        case asset_shader_payload_runtime_stage::tessellation_control:
+            return "tessellation_control";
+        case asset_shader_payload_runtime_stage::tessellation_evaluation:
+            return "tessellation_evaluation";
+    }
+    return "unknown";
+}
 
 namespace detail {
 
@@ -401,6 +539,154 @@ inline void add_shader_byte_pipeline_source_entry(
     }
 }
 
+inline std::string shader_payload_runtime_lowercase(std::string_view value)
+{
+    std::string result(value);
+    std::ranges::transform(result, result.begin(), [](char character) {
+        return static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+    });
+    return result;
+}
+
+inline bool shader_payload_runtime_has_stage_suffix(
+    std::string_view identity,
+    std::string_view suffix)
+{
+    return identity.ends_with(suffix)
+        || identity.ends_with(std::string(suffix) + ".spv");
+}
+
+inline asset_shader_payload_runtime_stage infer_shader_payload_runtime_stage(
+    std::string_view source_uri,
+    const std::filesystem::path& materialized_path)
+{
+    const std::string identity = shader_payload_runtime_lowercase(
+        source_uri.empty() ? materialized_path.generic_string() : std::string(source_uri));
+    if (shader_payload_runtime_has_stage_suffix(identity, ".vert")) {
+        return asset_shader_payload_runtime_stage::vertex;
+    }
+    if (shader_payload_runtime_has_stage_suffix(identity, ".frag")) {
+        return asset_shader_payload_runtime_stage::fragment;
+    }
+    if (shader_payload_runtime_has_stage_suffix(identity, ".comp")) {
+        return asset_shader_payload_runtime_stage::compute;
+    }
+    if (shader_payload_runtime_has_stage_suffix(identity, ".geom")) {
+        return asset_shader_payload_runtime_stage::geometry;
+    }
+    if (shader_payload_runtime_has_stage_suffix(identity, ".tesc")) {
+        return asset_shader_payload_runtime_stage::tessellation_control;
+    }
+    if (shader_payload_runtime_has_stage_suffix(identity, ".tese")) {
+        return asset_shader_payload_runtime_stage::tessellation_evaluation;
+    }
+    return asset_shader_payload_runtime_stage::unknown;
+}
+
+inline std::string shader_payload_runtime_cache_revision(
+    const asset_cache_key& cache_key)
+{
+    const asset_cache_key_classification classification = classify_asset_cache_key(cache_key);
+    return classification.cache_revision;
+}
+
+inline std::string make_shader_payload_runtime_identity(
+    asset_shader_payload_runtime_stage stage,
+    const asset_cache_key& cache_key,
+    std::string_view content_hash,
+    std::size_t payload_byte_count)
+{
+    if (cache_key.empty() && content_hash.empty() && payload_byte_count == 0U) {
+        return {};
+    }
+
+    return "shader-runtime|stage=" + asset_shader_payload_runtime_stage_name(stage)
+        + "|key=" + cache_key + "|hash=" + std::string(content_hash)
+        + "|bytes=" + std::to_string(payload_byte_count);
+}
+
+inline asset_shader_payload_runtime_entry make_shader_payload_runtime_entry(
+    const asset_shader_byte_pipeline_source_entry& source)
+{
+    asset_shader_payload_runtime_entry entry{
+        .id = source.id,
+        .stage = infer_shader_payload_runtime_stage(source.source_uri, source.materialized_path),
+        .source_kind = source.source_kind,
+        .blocker = source.blocker,
+        .cache_key = source.cache_key,
+        .source_uri = source.source_uri,
+        .materialized_path = source.materialized_path,
+        .byte_count = source.byte_count,
+        .payload_byte_count = source.payload_byte_count,
+        .content_hash = source.content_hash,
+        .cache_revision = shader_payload_runtime_cache_revision(source.cache_key),
+        .materialized_byte_identity = source.materialized_byte_identity,
+        .ready = source.ready,
+        .diagnostic = source.diagnostic,
+    };
+
+    if (entry.ready) {
+        entry.runtime_identity = make_shader_payload_runtime_identity(
+            entry.stage,
+            entry.cache_key,
+            entry.content_hash,
+            entry.payload_byte_count);
+    }
+    if (entry.diagnostic.empty()) {
+        entry.diagnostic =
+            entry.ready ? "shader payload runtime entry is ready" : "shader payload runtime entry is blocked";
+    }
+
+    return entry;
+}
+
+inline void count_shader_payload_runtime_entry(
+    asset_shader_payload_runtime_summary& summary,
+    const asset_shader_payload_runtime_entry& entry)
+{
+    switch (entry.stage) {
+        case asset_shader_payload_runtime_stage::vertex:
+            ++summary.vertex_stage_count;
+            break;
+        case asset_shader_payload_runtime_stage::fragment:
+            ++summary.fragment_stage_count;
+            break;
+        case asset_shader_payload_runtime_stage::compute:
+            ++summary.compute_stage_count;
+            break;
+        case asset_shader_payload_runtime_stage::geometry:
+            ++summary.geometry_stage_count;
+            break;
+        case asset_shader_payload_runtime_stage::tessellation_control:
+            ++summary.tessellation_control_stage_count;
+            break;
+        case asset_shader_payload_runtime_stage::tessellation_evaluation:
+            ++summary.tessellation_evaluation_stage_count;
+            break;
+        case asset_shader_payload_runtime_stage::unknown:
+            ++summary.unknown_stage_count;
+            break;
+    }
+
+    if (entry.cache_revision.empty()) {
+        ++summary.missing_revision_count;
+    } else {
+        ++summary.revisioned_count;
+    }
+}
+
+inline void add_shader_payload_runtime_entry(
+    asset_shader_payload_runtime_summary& summary,
+    asset_shader_payload_runtime_entry entry)
+{
+    count_shader_payload_runtime_entry(summary, entry);
+    if (entry.ready) {
+        summary.ready.push_back(std::move(entry));
+    } else {
+        summary.blocked.push_back(std::move(entry));
+    }
+}
+
 } // namespace detail
 
 inline asset_shader_byte_pipeline_source_summary summarize_shader_byte_pipeline_sources(
@@ -466,6 +752,28 @@ inline asset_shader_byte_pipeline_source_summary summarize_shader_byte_pipeline_
 {
     const asset_pack_index_root_selection_summary root_selection;
     return summarize_shader_byte_pipeline_sources(shader_pipeline, resolver_policy, root_selection);
+}
+
+inline asset_shader_payload_runtime_summary summarize_shader_payload_runtime(
+    const asset_shader_byte_pipeline_source_summary& source_summary)
+{
+    asset_shader_payload_runtime_summary summary{
+        .input_shader_count = source_summary.input_shader_count,
+        .requested_shader_count = source_summary.requested_shader_count,
+    };
+
+    for (const asset_shader_byte_pipeline_source_entry& entry : source_summary.ready) {
+        detail::add_shader_payload_runtime_entry(
+            summary,
+            detail::make_shader_payload_runtime_entry(entry));
+    }
+    for (const asset_shader_byte_pipeline_source_entry& entry : source_summary.blocked) {
+        detail::add_shader_payload_runtime_entry(
+            summary,
+            detail::make_shader_payload_runtime_entry(entry));
+    }
+
+    return summary;
 }
 
 inline std::string asset_shader_byte_pipeline_source_kind_name(

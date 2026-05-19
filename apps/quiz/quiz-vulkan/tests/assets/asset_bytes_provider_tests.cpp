@@ -2166,6 +2166,164 @@ void test_shader_byte_pipeline_source_summary_combines_manifest_fallback_and_pay
         "stale shader diagnostic is stable");
 }
 
+void test_shader_payload_runtime_summary_tracks_stage_revision_and_cache_identity()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    const std::filesystem::path before_root = fixture_root / "runtime-before";
+    const std::filesystem::path after_root = fixture_root / "runtime-after";
+    const std::string spirv_a = bytes_to_string(make_spirv_fixture_bytes());
+    std::string spirv_b = spirv_a;
+    spirv_b.push_back(static_cast<char>(0x01));
+
+    write_fixture_file(before_root / "external" / "shaders" / "stable.vert.spv", spirv_a);
+    write_fixture_file(before_root / "external" / "shaders" / "revision.vert.spv", spirv_a);
+    write_fixture_file(before_root / "external" / "shaders" / "effect.frag.spv", spirv_a);
+    write_fixture_file(before_root / "external" / "shaders" / "task.comp.spv", spirv_a);
+    write_fixture_file(after_root / "external" / "shaders" / "stable.vert.spv", spirv_a);
+    write_fixture_file(after_root / "external" / "shaders" / "revision.vert.spv", spirv_a);
+    write_fixture_file(after_root / "external" / "shaders" / "effect.frag.spv", spirv_b);
+    write_fixture_file(after_root / "external" / "shaders" / "task.comp.spv", spirv_a);
+
+    const auto make_runtime_summary =
+        [](const std::filesystem::path& root, std::string shader_revision) {
+            asset_manifest manifest;
+            manifest.roots.push_back(asset_manifest_root{
+                .id = "external_shader_pack",
+                .root_path = root / "external",
+            });
+            manifest.entries.push_back(asset_manifest_entry{
+                .id = "stable_vertex",
+                .type = asset_type::shader,
+                .uri = "asset://shaders/stable.vert.spv",
+                .root_id = "external_shader_pack",
+            });
+            manifest.entries.push_back(asset_manifest_entry{
+                .id = "revision_vertex",
+                .type = asset_type::shader,
+                .uri = "asset://shaders/revision.vert.spv",
+                .root_id = "external_shader_pack",
+                .cache_revision = std::move(shader_revision),
+            });
+            manifest.entries.push_back(asset_manifest_entry{
+                .id = "changed_fragment",
+                .type = asset_type::shader,
+                .uri = "asset://shaders/effect.frag.spv",
+                .root_id = "external_shader_pack",
+                .cache_revision = "fragment-rev1",
+            });
+            manifest.entries.push_back(asset_manifest_entry{
+                .id = "compute_shader",
+                .type = asset_type::shader,
+                .uri = "asset://shaders/task.comp.spv",
+                .root_id = "external_shader_pack",
+            });
+
+            const normalizing_asset_resolver resolver;
+            const local_file_asset_bytes_provider provider;
+            const runtime_asset_catalog catalog = build_runtime_asset_catalog(manifest, resolver);
+            const asset_materialized_byte_payload_bundle bundle =
+                make_materialized_asset_byte_payload_bundle(provider, catalog);
+            const asset_shader_materialized_byte_pipeline_summary shader_pipeline =
+                summarize_shader_materialized_byte_pipeline(bundle);
+            const asset_runtime_resolver_policy_summary resolver_policy =
+                summarize_asset_runtime_resolver_policy(manifest, resolver);
+            const asset_pack_index_root_selection_summary root_selection =
+                summarize_asset_pack_index_root_selection(manifest);
+            const asset_shader_byte_pipeline_source_summary source_summary =
+                summarize_shader_byte_pipeline_sources(shader_pipeline, resolver_policy, root_selection);
+            return summarize_shader_payload_runtime(source_summary);
+        };
+
+    const asset_shader_payload_runtime_summary before =
+        make_runtime_summary(before_root, "shader-rev1");
+    const asset_shader_payload_runtime_summary after =
+        make_runtime_summary(after_root, "shader-rev2");
+
+    require(before.ok(), "shader runtime summary starts with ready shader byte entries");
+    require(after.ok(), "updated shader runtime summary starts with ready shader byte entries");
+    require(before.entry_count() == 4U, "shader runtime summary emits every shader payload");
+    require(before.ready_count() == 4U, "shader runtime summary keeps valid shader payloads ready");
+    require(before.blocked_count() == 0U, "shader runtime summary has no blocked valid shader payloads");
+    require(before.vertex_stage_count == 2U, "shader runtime summary counts vertex-like shader payloads");
+    require(before.fragment_stage_count == 1U, "shader runtime summary counts fragment-like shader payloads");
+    require(before.compute_stage_count == 1U, "shader runtime summary counts compute-like shader payloads");
+    require(before.unknown_stage_count == 0U, "shader runtime summary classifies known shader stages");
+    require(before.revisioned_count == 2U, "shader runtime summary counts revised shader cache keys");
+    require(before.missing_revision_count == 2U, "shader runtime summary counts shader keys without revisions");
+
+    const asset_shader_payload_runtime_entry* stable_before = before.find_ready("stable_vertex");
+    const asset_shader_payload_runtime_entry* stable_after = after.find_ready("stable_vertex");
+    require(stable_before != nullptr && stable_after != nullptr, "shader runtime summary finds stable shader payloads");
+    require(stable_before->ok() && stable_after->ok(), "stable shader runtime entries are consumer-ready");
+    require(
+        stable_before->stage == asset_shader_payload_runtime_stage::vertex,
+        "stable shader runtime entry infers vertex stage from source uri");
+    require(stable_before->cache_revision.empty(), "stable shader runtime entry has no revision token");
+    require(
+        stable_before->runtime_identity == stable_after->runtime_identity,
+        "unchanged shader bytes reuse stable runtime identity across materialized roots");
+    require(
+        stable_before->materialized_path != stable_after->materialized_path,
+        "stable shader runtime evidence can move between materialized roots");
+    require(
+        stable_before->cache_key == stable_after->cache_key,
+        "stable shader runtime evidence keeps the same cache key");
+    require(
+        stable_before->content_hash == stable_after->content_hash,
+        "stable shader runtime evidence keeps the same content hash");
+    require(
+        stable_before->runtime_identity.find(fixture_root.string()) == std::string::npos
+            && stable_after->runtime_identity.find(fixture_root.string()) == std::string::npos,
+        "shader runtime identity does not leak absolute fixture paths");
+    require(
+        before.find_runtime_identity(stable_before->runtime_identity) == stable_before,
+        "shader runtime summary can find ready entries by runtime identity");
+
+    const asset_shader_payload_runtime_entry* revision_before = before.find_ready("revision_vertex");
+    const asset_shader_payload_runtime_entry* revision_after = after.find_ready("revision_vertex");
+    require(
+        revision_before != nullptr && revision_after != nullptr,
+        "shader runtime summary finds revisioned shader payloads");
+    require(
+        revision_before->cache_revision == "shader-rev1" && revision_after->cache_revision == "shader-rev2",
+        "shader runtime entries expose parsed cache revisions");
+    require(
+        revision_before->content_hash == revision_after->content_hash,
+        "revisioned shader fixture keeps identical byte hash evidence");
+    require(
+        revision_before->runtime_identity != revision_after->runtime_identity,
+        "shader revision changes invalidate runtime identity even when bytes are unchanged");
+
+    const asset_shader_payload_runtime_entry* fragment_before = before.find_ready("changed_fragment");
+    const asset_shader_payload_runtime_entry* fragment_after = after.find_ready("changed_fragment");
+    require(
+        fragment_before != nullptr && fragment_after != nullptr,
+        "shader runtime summary finds content-changing shader payloads");
+    require(
+        fragment_before->stage == asset_shader_payload_runtime_stage::fragment,
+        "shader runtime entry infers fragment stage from source uri");
+    require(
+        fragment_before->cache_revision == fragment_after->cache_revision,
+        "content-changing shader keeps stable manifest revision token");
+    require(
+        fragment_before->content_hash != fragment_after->content_hash,
+        "content-changing shader records changed hash evidence");
+    require(
+        fragment_before->runtime_identity != fragment_after->runtime_identity,
+        "changed shader bytes invalidate runtime identity");
+
+    const asset_shader_payload_runtime_entry* compute = before.find_ready("compute_shader");
+    require(compute != nullptr, "shader runtime summary finds compute shader payloads");
+    require(
+        compute->stage == asset_shader_payload_runtime_stage::compute,
+        "shader runtime entry infers compute stage from source uri");
+    require(
+        asset_shader_payload_runtime_stage_name(compute->stage) == "compute",
+        "shader runtime stage names are stable");
+}
+
 void test_render_resource_payload_bridge_matches_addresses_to_materialized_payloads()
 {
     using namespace quiz_vulkan::assets;
@@ -3713,6 +3871,7 @@ int main()
     test_materialized_asset_byte_payload_bundle_diff_tracks_snapshot_changes();
     test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads();
     test_shader_byte_pipeline_source_summary_combines_manifest_fallback_and_payload_evidence();
+    test_shader_payload_runtime_summary_tracks_stage_revision_and_cache_identity();
     test_render_resource_payload_bridge_matches_addresses_to_materialized_payloads();
     test_render_resource_manifest_to_payload_bridge_e2e_uses_materialized_bytes();
     test_render_resource_materialized_cache_summary_reuses_manifest_payload_identity();

@@ -209,19 +209,40 @@ make_ready_command_submit()
         });
 }
 
+quiz_vulkan::render::vulkan_backend::vulkan_native_swapchain_acquire_operation_result
+make_ready_native_acquire_operation()
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    return vulkan_backend::vulkan_native_swapchain_acquire_operation_result{
+        .checked = true,
+        .status = vulkan_backend::vulkan_native_swapchain_acquire_operation_status::ready,
+        .device = vulkan_backend::vulkan_device_handle{.value = 80},
+        .swapchain = vulkan_backend::vulkan_swapchain_handle{.value = 90},
+        .selected_image_index = 2,
+        .image_id = vulkan_backend::vulkan_swapchain_image_id{.value = 9},
+        .image_handle = vulkan_backend::vulkan_swapchain_image_handle{.value = 9009},
+        .image_binding_ready = true,
+        .image_available = true,
+        .image_acquired = true,
+        .vk_acquire_next_image_callable = true,
+        .command_recording_may_consume_acquired_image = true,
+    };
+}
+
 void test_queue_submit_adapter_submits_before_presenting()
 {
     namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
 
     vulkan_backend::fake_vulkan_queue_submit_adapter fake;
+    const vulkan_backend::vulkan_queue_submit_present_request present_request =
+        vulkan_backend::make_vulkan_queue_submit_present_request_from_acquire(
+            make_ready_native_acquire_operation());
     const vulkan_backend::vulkan_queue_submit_present_result result =
         vulkan_backend::submit_and_present_vulkan_queue_frame(
             fake.adapter(),
             make_ready_command_submit(),
-            vulkan_backend::vulkan_queue_submit_present_request{
-                .require_present = true,
-                .image_id = vulkan_backend::vulkan_swapchain_image_id{.value = 9},
-            });
+            present_request);
 
     require(result.checked, "queue submit adapter result is checked");
     require(
@@ -229,11 +250,30 @@ void test_queue_submit_adapter_submits_before_presenting()
         "queue submit adapter reports submitted and presented");
     require(result.completed(), "queue submit adapter result completes");
     require(result.submit_before_present(), "queue submit adapter result records submit before present");
+    require(result.present_execution_ready, "queue submit adapter records present execution readiness");
+    require(result.command_submit_ready, "queue submit adapter records command submit readiness");
+    require(result.submitted_frame_ready, "queue submit adapter records submitted frame readiness");
+    require(result.present_wait_intent_ready, "queue submit adapter records present wait intent");
+    require(result.submit_signal_intent_ready, "queue submit adapter records submit signal intent");
+    require(result.present_queue_family_ready, "queue submit adapter records present queue family evidence");
+    require(result.present_queue_family_index == 1, "queue submit adapter records present family index");
+    require(result.acquired_image_index == 2, "queue submit adapter records acquired image index");
+    require(result.acquired_image_index_ready, "queue submit adapter records acquired index readiness");
+    require(result.image_handle.value == 9009, "queue submit adapter records acquired image handle");
+    require(result.acquired_image_handle_ready, "queue submit adapter records acquired handle readiness");
     require(fake.state().submit_before_present(), "fake adapter observes submit before present");
     require(fake.state().last_submit_call.queue.value == 100, "fake adapter receives submit queue");
+    require(fake.state().last_submit_call.wait_intent_count == 1, "fake adapter receives wait intent count");
+    require(fake.state().last_submit_call.signal_intent_count == 2, "fake adapter receives signal intent count");
+    require(fake.state().last_submit_call.command_submit_ready, "fake adapter receives command submit gate");
     require(fake.state().last_present_call.queue.value == 101, "fake adapter receives present queue");
+    require(fake.state().last_present_call.queue_family_index == 1, "fake adapter receives present family index");
+    require(fake.state().last_present_call.queue_family_ready, "fake adapter receives present family readiness");
     require(fake.state().last_submit_call.command_buffer.value == 500, "fake adapter receives command buffer");
     require(fake.state().last_present_call.image_id.value == 9, "fake adapter receives present image");
+    require(fake.state().last_present_call.acquired_image_index == 2, "fake adapter receives acquired image index");
+    require(fake.state().last_present_call.image_handle.value == 9009, "fake adapter receives acquired image handle");
+    require(fake.state().last_present_call.submitted_frame_ready, "fake adapter receives submitted frame gate");
 }
 
 void test_queue_submit_adapter_maps_recoverable_and_fatal_submit_failures()
@@ -298,6 +338,12 @@ void test_queue_submit_adapter_maps_recoverable_and_fatal_present_failures()
         "queue submit adapter maps recoverable present failure");
     require(recoverable.recoverable_failure(), "recoverable present failure is classified");
     require(recoverable.submit_before_present(), "present failure still occurs after submit");
+    require(
+        recoverable.present_execution_ready,
+        "recoverable present failure still records a complete present attempt");
+    require(
+        recoverable.submitted_frame_ready,
+        "recoverable present failure records submitted frame readiness");
 
     vulkan_backend::fake_vulkan_queue_submit_adapter fatal_fake(
         vulkan_backend::fake_vulkan_queue_submit_adapter_options{

@@ -1,4 +1,5 @@
 #include "assets/asset_path_policy.h"
+#include "assets/asset_render_resource_address.h"
 
 #include <concepts>
 #include <cstddef>
@@ -87,6 +88,80 @@ static_assert(requires(asset_manifest_path_policy_validation_summary summary) {
     { summary.ok() } -> std::same_as<bool>;
 });
 
+static_assert(std::is_enum_v<asset_render_resource_address_status>);
+static_assert(std::is_enum_v<asset_render_resource_address_kind>);
+
+static_assert(requires(
+    asset_render_resource_cache_key_components components,
+    const asset_render_resource_cache_key_components& const_components) {
+    { components.status } -> std::same_as<asset_cache_key_policy_status&>;
+    { components.type } -> std::same_as<asset_type&>;
+    { components.source_kind } -> std::same_as<asset_source_kind&>;
+    { components.type_component } -> std::same_as<std::string&>;
+    { components.source_component } -> std::same_as<std::string&>;
+    { components.revision_component } -> std::same_as<std::string&>;
+    { components.source_path } -> std::same_as<std::string&>;
+    { components.cache_revision } -> std::same_as<std::string&>;
+    { const_components.ok() } -> std::same_as<bool>;
+    { const_components.has_cache_revision() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_render_resource_address_entry entry,
+    const asset_render_resource_address_entry& const_entry) {
+    { entry.manifest_index } -> std::same_as<std::size_t&>;
+    { entry.id } -> std::same_as<std::string&>;
+    { entry.type } -> std::same_as<asset_type&>;
+    { entry.address_kind } -> std::same_as<asset_render_resource_address_kind&>;
+    { entry.source_kind } -> std::same_as<asset_source_kind&>;
+    { entry.root_space } -> std::same_as<asset_runtime_resolver_root_space&>;
+    { entry.canonical_identity } -> std::same_as<std::string&>;
+    { entry.source_uri } -> std::same_as<std::string&>;
+    { entry.source_path } -> std::same_as<std::string&>;
+    { entry.resolved_root_id } -> std::same_as<std::string&>;
+    { entry.cache_key } -> std::same_as<asset_cache_key&>;
+    { entry.cache_key_components } -> std::same_as<asset_render_resource_cache_key_components&>;
+    { const_entry.ok() } -> std::same_as<bool>;
+});
+
+static_assert(requires(asset_render_resource_address_diagnostic diagnostic) {
+    { diagnostic.status } -> std::same_as<asset_render_resource_address_status&>;
+    { diagnostic.manifest_index } -> std::same_as<std::size_t&>;
+    { diagnostic.id } -> std::same_as<std::string&>;
+    { diagnostic.related_id } -> std::same_as<std::string&>;
+    { diagnostic.type } -> std::same_as<asset_type&>;
+    { diagnostic.source_kind } -> std::same_as<asset_source_kind&>;
+    { diagnostic.cache_key } -> std::same_as<asset_cache_key&>;
+    { diagnostic.source_uri } -> std::same_as<std::string&>;
+    { diagnostic.diagnostic } -> std::same_as<std::string&>;
+});
+
+static_assert(requires(
+    asset_render_resource_address_summary summary,
+    const asset_render_resource_address_summary& const_summary,
+    std::string_view id,
+    std::string_view cache_key,
+    std::string_view canonical_identity) {
+    { summary.entries } -> std::same_as<std::vector<asset_render_resource_address_entry>&>;
+    { summary.diagnostics } -> std::same_as<std::vector<asset_render_resource_address_diagnostic>&>;
+    { summary.accepted_count } -> std::same_as<std::size_t&>;
+    { summary.rejected_count } -> std::same_as<std::size_t&>;
+    { summary.canonical_asset_uri_count } -> std::same_as<std::size_t&>;
+    { summary.local_file_count } -> std::same_as<std::size_t&>;
+    { summary.local_fixture_boundary_count } -> std::same_as<std::size_t&>;
+    { summary.build_external_boundary_count } -> std::same_as<std::size_t&>;
+    { summary.path_traversal_rejection_count } -> std::same_as<std::size_t&>;
+    { summary.unsupported_asset_type_count } -> std::same_as<std::size_t&>;
+    { summary.cache_key_component_mismatch_count } -> std::same_as<std::size_t&>;
+    { const_summary.ok() } -> std::same_as<bool>;
+    { const_summary.entry_count() } -> std::same_as<std::size_t>;
+    { const_summary.diagnostic_count() } -> std::same_as<std::size_t>;
+    { const_summary.find_entry(id) } -> std::same_as<const asset_render_resource_address_entry*>;
+    { const_summary.find_cache_key(cache_key) } -> std::same_as<const asset_render_resource_address_entry*>;
+    { const_summary.find_canonical_identity(canonical_identity) } ->
+        std::same_as<const asset_render_resource_address_entry*>;
+});
+
 static_assert(requires(
     const asset_path_policy_catalog& catalog,
     std::string_view id,
@@ -126,6 +201,30 @@ static_assert(requires(const asset_manifest& manifest, const asset_resolver_inte
         std::same_as<std::vector<asset_path_policy_kind_counts>>;
     { validate_asset_manifest_path_policy(manifest, resolver) } ->
         std::same_as<asset_manifest_path_policy_validation_summary>;
+    { summarize_asset_render_resource_addresses(manifest, resolver) } ->
+        std::same_as<asset_render_resource_address_summary>;
+});
+
+static_assert(requires(
+    asset_type type,
+    asset_runtime_resolver_policy_status resolver_status,
+    asset_cache_key cache_key,
+    asset_source_kind source_kind,
+    asset_runtime_resolver_root_space root_space,
+    asset_render_resource_address_kind kind,
+    asset_render_resource_address_status address_status) {
+    { asset_render_resource_address_type_supported(type) } -> std::same_as<bool>;
+    { asset_render_resource_address_status_from_resolver_policy(resolver_status) } ->
+        std::same_as<asset_render_resource_address_status>;
+    { make_asset_render_resource_cache_key_components(cache_key) } ->
+        std::same_as<asset_render_resource_cache_key_components>;
+    { asset_render_resource_address_kind_for_source(source_kind, root_space) } ->
+        std::same_as<asset_render_resource_address_kind>;
+    { make_asset_render_resource_local_identity(kind, "root", "path.bin") } -> std::same_as<std::string>;
+    { make_asset_render_resource_canonical_identity(kind, "asset://path.bin", "root", "path.bin") } ->
+        std::same_as<std::string>;
+    { asset_render_resource_address_status_name(address_status) } -> std::same_as<std::string>;
+    { asset_render_resource_address_kind_name(kind) } -> std::same_as<std::string>;
 });
 
 } // namespace

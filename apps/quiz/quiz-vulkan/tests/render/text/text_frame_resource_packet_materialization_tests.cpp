@@ -529,6 +529,52 @@ void test_resource_packet_consumption_diff_reports_added_removed_and_changed_ide
     require(diff.policy.backend_flag_changed_count == 1U, "diff counts real backend flag changes");
     require(diff.policy.changed_page_count == 1U, "diff counts changed page summaries");
     require(diff.changed_page_ids.size() == 1U, "diff exposes changed page id");
+
+    const render_text_frame_resource_packet_consumption_packet_diff* changed_packet = nullptr;
+    for (const render_text_frame_resource_packet_consumption_packet_diff& packet_diff : diff.packet_diffs) {
+        if (packet_diff.changed) {
+            changed_packet = &packet_diff;
+            break;
+        }
+    }
+    require(changed_packet != nullptr, "diff exposes changed packet details");
+    require(changed_packet->resource_packet_id == kept_after.resource_packet_id, "changed packet preserves resource packet id");
+    require(changed_packet->previous_stable_packet_key != changed_packet->current_stable_packet_key, "changed packet preserves stable key transition");
+    require(changed_packet->previous_upload_request_id != changed_packet->current_upload_request_id, "changed packet preserves upload request id transition");
+    require(changed_packet->previous_upload_operation_id != changed_packet->current_upload_operation_id, "changed packet preserves upload operation id transition");
+    require(changed_packet->stable_packet_key_changed, "changed packet marks stable packet key change");
+    require(changed_packet->page_id_changed, "changed packet marks atlas page id change");
+    require(changed_packet->page_revision_changed, "changed packet marks page revision change");
+    require(changed_packet->page_extent_changed, "changed packet marks page extent change");
+    require(changed_packet->sampler_key_changed, "changed packet marks sampler key change");
+    require(changed_packet->uv_bounds_changed, "changed packet marks UV bounds change");
+    require(changed_packet->layout_bounds_changed, "changed packet marks layout bounds change");
+    require(changed_packet->upload_request_id_changed, "changed packet marks upload request id change");
+    require(changed_packet->upload_operation_id_changed, "changed packet marks upload operation id change");
+    require(changed_packet->uploaded_byte_count_changed, "changed packet marks uploaded byte change");
+    require(changed_packet->fallback_flag_changed, "changed packet marks deterministic fallback flag change");
+    require(changed_packet->backend_flag_changed, "changed packet marks real backend flag change");
+    require(changed_packet->upload_rgba_bytes_delta == 64, "changed packet preserves upload byte delta");
+    require(changed_packet->previous_page_id != changed_packet->current_page_id, "changed packet preserves page id values");
+    require(
+        changed_packet->previous_page_revision != changed_packet->current_page_revision,
+        "changed packet preserves page revision values");
+    require(changed_packet->current_page_width == 128U, "changed packet preserves current page width");
+    require(changed_packet->current_page_height == 128U, "changed packet preserves current page height");
+
+    const render_text_frame_resource_packet_consumption_page_diff* changed_page = nullptr;
+    for (const render_text_frame_resource_packet_consumption_page_diff& page_diff : diff.page_diffs) {
+        if (page_diff.changed) {
+            changed_page = &page_diff;
+            break;
+        }
+    }
+    require(changed_page != nullptr, "diff exposes changed page details");
+    require(changed_page->page_extent_changed, "changed page marks extent change");
+    require(changed_page->sampler_key_changed, "changed page marks sampler key change");
+    require(changed_page->previous_sampler_key != changed_page->current_sampler_key, "changed page preserves sampler key transition");
+    require(changed_page->current_page_width == 128U, "changed page preserves current page width");
+    require(changed_page->current_page_height == 128U, "changed page preserves current page height");
 }
 
 void test_resource_packet_consumption_diff_reports_readiness_regressions_and_improvements()

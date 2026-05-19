@@ -108,6 +108,8 @@ struct action_route_policy_diagnostic {
     text_range selection_after;
     normalized_input_event_summary normalized_event;
     ime_composition_state composition;
+    ime_composition_state composition_before;
+    ime_composition_state composition_after;
     gesture_policy_snapshot gesture_policy;
     keyboard_chord_diagnostic keyboard;
     pointer_capture_snapshot pointer_capture_before;

@@ -568,8 +568,32 @@ void test_staging_payload_plan_records_rows_alignment_and_blockers()
     require(aligned_diff.row_padding_byte_delta == 8, "aligned staging diff records padding delta");
     require(aligned_diff.total_staging_byte_delta == 8, "aligned staging diff records staging byte delta");
     require(
+        aligned_diff.change_summary == "staging_bytes=8->16,alignment=4->16,row_padding=0->8",
+        "aligned staging diff emits compact layout summary");
+    require(
         aligned_diff.diagnostic == "image texture staging payload plan changed staging bytes",
         "aligned staging diff diagnostic is stable");
+    const render_image_texture_staging_payload_plan_diff unchanged_diff =
+        diff_render_image_texture_staging_payload_plans(base_plan, base_plan);
+    require(!unchanged_diff.changed(), "unchanged staging diff reports stable no-op");
+    require(
+        unchanged_diff.change_summary == "no staging payload plan changes",
+        "unchanged staging diff summary is stable");
+
+    const render_image_texture_staging_payload_plan invalid_alignment_plan =
+        make_render_image_texture_staging_payload_plan(layout, base_mipmap_plan, 0);
+    require(!invalid_alignment_plan.ok(), "staging payload plan rejects zero row alignment");
+    require(
+        invalid_alignment_plan.status == render_image_texture_staging_payload_plan_status::blocked_invalid_alignment,
+        "zero-alignment staging plan reports invalid-alignment blocker");
+    require(invalid_alignment_plan.alignment_byte_count == 0, "zero-alignment staging plan records requested alignment");
+    require(invalid_alignment_plan.row_copy_count == 0, "zero-alignment staging plan records no row copies");
+    require(invalid_alignment_plan.total_staging_byte_count == 0, "zero-alignment staging plan records no staging bytes");
+    require(invalid_alignment_plan.layout_ready, "zero-alignment staging plan preserves layout readiness");
+    require(invalid_alignment_plan.decoded_payload_available, "zero-alignment staging plan preserves payload availability");
+    require(
+        invalid_alignment_plan.blocker_summary == "staging row alignment must be non-zero",
+        "zero-alignment staging plan blocker is stable");
 
     render_image_sampler_policy mipmapped_sampler = sampler;
     mipmapped_sampler.mipmap_mode = render_image_mipmap_mode::linear;
@@ -603,6 +627,28 @@ void test_staging_payload_plan_records_rows_alignment_and_blockers()
     require(mipmapped_plan.mip_level_references[1].generated_mip_reference, "generated mip reference is explicit");
     require(mipmapped_plan.row_copies[4].mip_level == 1, "mipmapped row copy begins level one after base rows");
     require(mipmapped_plan.row_copies[6].mip_level == 2, "mipmapped row copy records terminal level");
+
+    render_image_sampler_policy mismatched_sampler = sampler;
+    mismatched_sampler.wrap_u = render_image_wrap_mode::repeat;
+    const render_image_texture_upload_payload_layout_evidence mismatched_layout =
+        make_render_image_texture_upload_payload_layout_evidence(key, mismatched_sampler, base_image);
+    const render_image_texture_mipmap_upload_plan mismatched_mipmap_plan =
+        make_render_image_texture_mipmap_upload_plan(base_image, mismatched_sampler);
+    const render_image_texture_staging_payload_plan invalid_layout_plan =
+        make_render_image_texture_staging_payload_plan(mismatched_layout, mismatched_mipmap_plan);
+    require(!invalid_layout_plan.ok(), "staging payload plan blocks invalid layout evidence");
+    require(
+        invalid_layout_plan.status == render_image_texture_staging_payload_plan_status::blocked_invalid_layout,
+        "invalid-layout staging plan reports layout blocker");
+    require(invalid_layout_plan.decoded_payload_available, "invalid-layout staging plan preserves payload availability");
+    require(!invalid_layout_plan.layout_ready, "invalid-layout staging plan records layout blocker");
+    require(invalid_layout_plan.mipmap_plan_ready, "invalid-layout staging plan preserves mipmap readiness");
+    require(invalid_layout_plan.row_copy_count == 0, "invalid-layout staging plan records no row copies");
+    require(invalid_layout_plan.total_staging_byte_count == 0, "invalid-layout staging plan records no staging bytes");
+    require(
+        invalid_layout_plan.blocker_summary
+            == "image texture upload payload layout sampler does not match texture key",
+        "invalid-layout staging plan preserves layout diagnostic");
 
     render_decoded_image invalid_payload = base_image;
     invalid_payload.pixels.pop_back();
@@ -1398,8 +1444,13 @@ void test_texture_upload_result_diff_reports_added_changed_and_regressed_packets
     require(staging_diff.after_staging_payload_byte_count == 16, "staging payload diff records after aggregate bytes");
     require(staging_diff.staging_payload_byte_delta == 8, "staging payload diff records aggregate byte delta");
     require(
-        staging_diff.staging_payload_summary == "request=1:staging_bytes=8->16",
-        "staging payload diff emits compact staging byte summary");
+        staging_diff.staging_payload_summary
+            == "request=1:staging_bytes=8->16,alignment=4->16,row_padding=0->8,cache_key_changed,sampler_changed",
+        "staging payload diff emits compact layout and identity summary");
+    require(
+        staging_diff.entries[0].staging_payload_plan_diff.change_summary
+            == "staging_bytes=8->16,alignment=4->16,row_padding=0->8,cache_key_changed,sampler_changed",
+        "staging payload packet diff records compact change summary");
     require(
         staging_diff.entries[0].staging_payload_plan_diff.alignment_changed,
         "staging payload packet diff records alignment evidence");
@@ -1473,6 +1524,23 @@ void test_texture_upload_result_diff_reports_added_changed_and_regressed_packets
         staging_regression_diff.entries[0].staging_payload_plan_diff.after_blocker_summary
             == "mutated staging blocker",
         "staging regression packet diff preserves blocker summary");
+    require(
+        staging_regression_diff.staging_payload_summary == "request=1:blocker=ready->blocked_invalid_layout",
+        "staging regression diff summarizes blocker transition");
+
+    const render_image_texture_upload_result_snapshot_diff staging_recovery_diff =
+        diff_render_image_texture_upload_result_snapshots(staging_regressed, before);
+    require(staging_recovery_diff.ok(), "blocked-to-ready staging plan diff is a recovery");
+    require(staging_recovery_diff.has_recovery, "staging recovery diff exposes recovery flag");
+    require(
+        staging_recovery_diff.staging_recovery_count == 1,
+        "staging recovery diff counts staging recovery");
+    require(
+        staging_recovery_diff.entries[0].staging_payload_plan_diff.ready_recovered,
+        "staging recovery packet diff records ready recovery");
+    require(
+        staging_recovery_diff.staging_payload_summary == "request=1:blocker=blocked_invalid_layout->ready",
+        "staging recovery diff summarizes blocker recovery");
 }
 
 void test_texture_upload_snapshot_diff_reports_added_uploads_and_byte_deltas()

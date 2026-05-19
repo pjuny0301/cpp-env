@@ -466,6 +466,16 @@ void record_font_fallback_chain_plan(
     diagnostics.font_fallback_chain_diagnostic = std::move(plan.diagnostic);
 }
 
+void record_text_frame_draw_plan(fake_text_engine_diagnostics& diagnostics)
+{
+    diagnostics.text_frame_draw_plan =
+        plan_render_text_frame_draw_packets(render_text_frame_draw_plan_request{
+            .frame = diagnostics.text_frame_snapshot,
+            .materializations = diagnostics.glyph_atlas_materializations,
+            .item_index = 0U,
+        });
+}
+
 void record_atlas_upload_request_bridge(
     fake_text_engine_diagnostics& diagnostics,
     const render_text_request& request)
@@ -511,6 +521,7 @@ void record_atlas_upload_request_bridge(
             .atlas_upload_bridge = diagnostics.atlas_upload_request_bridge,
             .queued_atlas_upload_request_ids = diagnostics.queued_atlas_upload_request_ids,
         });
+    record_text_frame_draw_plan(diagnostics);
 }
 
 void record_font_backend_capability(
@@ -1088,6 +1099,22 @@ std::string automatic_harfbuzz_fallback_reason(
     return {};
 }
 
+std::string shaping_handoff_atlas_blocker_reason_for(
+    const render_text_shaped_glyph& glyph,
+    const float line_height)
+{
+    if (!glyph.glyph_supported) {
+        return "glyph is unsupported";
+    }
+    if (glyph.advance_x <= 0.0f) {
+        return "glyph has no positive atlas advance";
+    }
+    if (line_height <= 0.0f) {
+        return "glyph line height is not positive";
+    }
+    return {};
+}
+
 void record_shaping_handoff(
     fake_text_engine_diagnostics& diagnostics,
     const render_style_id& style_token,
@@ -1122,12 +1149,22 @@ void record_shaping_handoff(
         && adapter_status != render_text_font_backend_adapter_status::backend_unavailable) {
         ++diagnostics.shaping_handoff_policy.adapter_failure_run_count;
     }
+    if (!fallback_reason.empty()) {
+        ++diagnostics.shaping_handoff_policy.fallback_reason_run_count;
+    }
 
     for (const render_text_shaped_glyph& glyph : shaped_run.glyphs) {
-        const bool cacheable = glyph.glyph_supported && glyph.advance_x > 0.0f && line_height > 0.0f;
+        const std::string atlas_blocker_reason =
+            shaping_handoff_atlas_blocker_reason_for(glyph, line_height);
+        const bool cacheable = atlas_blocker_reason.empty();
         ++diagnostics.shaping_handoff_policy.glyph_count;
         if (cacheable) {
             ++diagnostics.shaping_handoff_policy.atlas_ready_glyph_count;
+        } else {
+            ++diagnostics.shaping_handoff_policy.atlas_blocked_glyph_count;
+        }
+        if (!fallback_reason.empty()) {
+            ++diagnostics.shaping_handoff_policy.fallback_reason_glyph_count;
         }
 
         diagnostics.shaping_handoffs.push_back(fake_text_engine_shaping_handoff_snapshot{
@@ -1157,6 +1194,7 @@ void record_shaping_handoff(
             .cacheable = cacheable,
             .atlas_ready = cacheable,
             .fallback_reason = fallback_reason,
+            .atlas_blocker_reason = atlas_blocker_reason,
         });
     }
 }
@@ -3063,6 +3101,10 @@ void record_glyph_atlas_materialization_diagnostics(
             .has_atlas_update = update != nullptr,
             .atlas_update_bounds = update == nullptr ? render_rect{} : update->updated_bounds,
             .atlas_update_rgba_bytes = update == nullptr ? 0U : update->rgba.size(),
+            .line_index = cluster == nullptr ? 0U : cluster->snapshot.line_index,
+            .pen_x = cluster == nullptr ? 0.0f : cluster->bounds.x,
+            .pen_y = cluster == nullptr ? 0.0f : cluster->bounds.y,
+            .baseline = cluster == nullptr ? 0.0f : cluster->snapshot.baseline,
         };
 
         append_render_text_glyph_atlas_materialization(
@@ -3632,6 +3674,7 @@ std::vector<render_text_atlas_update> fake_text_engine::consume_atlas_updates()
         std::move(diagnostics_.text_frame_snapshot),
         diagnostics_.consumed_atlas_upload_request_ids,
         updates.size());
+    record_text_frame_draw_plan(diagnostics_);
     return updates;
 }
 

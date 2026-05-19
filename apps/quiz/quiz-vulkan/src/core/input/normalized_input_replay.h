@@ -207,6 +207,7 @@ struct normalized_input_replay_pointer_timeline_entry {
     std::size_t tracked_pointer_count_before = 0;
     std::size_t tracked_pointer_count_after = 0;
     normalized_input_event_summary normalized_event;
+    input_modifier_state modifiers;
     gesture_policy_snapshot gesture_policy;
     bool capture_changed = false;
     bool capture_ended_cleanly_after = true;
@@ -1102,6 +1103,7 @@ inline void accumulate_normalized_input_replay_pointer_summary(
             .tracked_pointer_count_before = route.tracked_pointer_count_before,
             .tracked_pointer_count_after = route.tracked_pointer_count_after,
             .normalized_event = route.normalized_event,
+            .modifiers = route.normalized_event.modifiers,
             .gesture_policy = route.gesture_policy,
         };
         entry.capture_changed =

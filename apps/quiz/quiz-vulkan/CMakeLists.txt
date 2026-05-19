@@ -241,9 +241,12 @@ target_sources(
             src/assets/asset_pack_index.h
             src/assets/asset_pack_validation.h
             src/assets/asset_path_policy.h
+            src/assets/asset_render_resource_address.h
+            src/assets/asset_render_resource_payload_bridge.h
             src/assets/asset_resolver.h
             src/assets/asset_runtime_catalog.h
             src/assets/asset_runtime_resolver_policy.h
+            src/assets/asset_shader_byte_pipeline_source_summary.h
             src/assets/asset_typed_materialized_bytes.h
 )
 target_compile_features(quiz_vulkan_asset_contract INTERFACE cxx_std_23)
@@ -304,9 +307,14 @@ target_sources(
             src/render/image/image_texture_cache_snapshot.h
             src/render/image/image_texture_diagnostics.h
             src/render/image/image_texture_frame_binding_summary.h
+            src/render/image/image_draw_list_texture_frame_composition.h
+            src/render/image/image_renderer_texture_quad_draw_payload.h
+            src/render/image/image_renderer_texture_quad_packet_diff.h
+            src/render/image/image_renderer_texture_quad_packet_plan.h
             src/render/image/image_texture_frame_resource_materialization_diff.h
             src/render/image/image_texture_frame_resource_packet_materialization.h
             src/render/image/image_texture_frame_resource_packet_plan.h
+            src/render/image/image_texture_frame_resource_packet_plan_core.h
             src/render/image/image_texture_frame_snapshot.h
             src/render/image/image_texture_frame_upload_handoff.h
             src/render/image/image_texture_pipeline.h
@@ -349,9 +357,16 @@ target_sources(
             src/render/text/font_unicode_coverage.h
             src/render/text/glyph_run.h
             src/render/text/text_frame_draw_plan.h
+            src/render/text/text_frame_resource_packet_consumption_diff.h
+            src/render/text/text_frame_resource_packet_materialization.h
+            src/render/text/text_render_frame_handoff_summary.h
             src/render/text/text_frame_snapshot.h
             src/render/text/text_frame_upload_handoff.h
+            src/render/text/text_frame_upload_handoff_core.h
+            src/render/text/text_frame_upload_handoff_diff.h
             src/render/text/text_engine.h
+            src/render/text/text_atlas_packet_consumption_evidence.h
+            src/render/text/text_renderer_glyph_quad_packet.h
             src/render/text/utf8_line_break.h
             src/render/text/utf8_text_run.h
 )
@@ -604,6 +619,7 @@ target_link_libraries(
         quiz_vulkan_app_presentation
         quiz_vulkan_text_engine
         quiz_vulkan_text_scene_bridge
+        quiz_vulkan_image_engine
         quiz_vulkan_domain
         quiz_vulkan_deck_source_asset_adapter
         quiz_vulkan_input
@@ -751,6 +767,7 @@ if(BUILD_TESTING)
             quiz_vulkan_app_presentation
             quiz_vulkan_text_engine
             quiz_vulkan_text_scene_bridge
+            quiz_vulkan_image_engine
             quiz_vulkan_domain
     )
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_app_demo_tests)

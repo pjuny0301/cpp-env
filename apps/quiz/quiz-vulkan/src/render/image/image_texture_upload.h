@@ -768,6 +768,7 @@ struct render_image_texture_staging_payload_plan_diff {
     bool ready_recovered = false;
     bool regression = false;
     bool recovery = false;
+    std::string change_summary;
     std::string diagnostic;
 
     bool changed() const
@@ -795,6 +796,19 @@ inline std::int64_t render_image_texture_staging_payload_plan_size_delta(
     const std::size_t magnitude = before_value - after_value;
     return magnitude > max_delta ? std::numeric_limits<std::int64_t>::min()
                                  : -static_cast<std::int64_t>(magnitude);
+}
+
+inline void append_render_image_texture_staging_payload_plan_diff_summary(
+    std::string& summary,
+    const std::string& fragment)
+{
+    if (fragment.empty()) {
+        return;
+    }
+    if (!summary.empty()) {
+        summary += ",";
+    }
+    summary += fragment;
 }
 
 inline render_image_texture_staging_payload_plan_diff
@@ -885,6 +899,65 @@ make_render_image_texture_staging_payload_plan_diff(
         diff.status = render_image_texture_staging_payload_plan_diff_status::unchanged;
     }
     diff.status_name = render_image_texture_staging_payload_plan_diff_status_name(diff.status);
+
+    if (diff.total_staging_byte_count_changed) {
+        append_render_image_texture_staging_payload_plan_diff_summary(
+            diff.change_summary,
+            "staging_bytes=" + std::to_string(diff.before_total_staging_byte_count)
+                + "->" + std::to_string(diff.after_total_staging_byte_count));
+    }
+    if (diff.row_copy_count_changed) {
+        append_render_image_texture_staging_payload_plan_diff_summary(
+            diff.change_summary,
+            "rows=" + std::to_string(diff.before_row_copy_count)
+                + "->" + std::to_string(diff.after_row_copy_count));
+    }
+    if (diff.alignment_changed) {
+        append_render_image_texture_staging_payload_plan_diff_summary(
+            diff.change_summary,
+            "alignment=" + std::to_string(diff.before_alignment_byte_count)
+                + "->" + std::to_string(diff.after_alignment_byte_count));
+    }
+    if (diff.padding_changed) {
+        append_render_image_texture_staging_payload_plan_diff_summary(
+            diff.change_summary,
+            "row_padding=" + std::to_string(diff.before_total_row_padding_byte_count)
+                + "->" + std::to_string(diff.after_total_row_padding_byte_count));
+    }
+    if (diff.cache_key_changed) {
+        append_render_image_texture_staging_payload_plan_diff_summary(
+            diff.change_summary,
+            "cache_key_changed");
+    }
+    if (diff.sampler_changed) {
+        append_render_image_texture_staging_payload_plan_diff_summary(
+            diff.change_summary,
+            "sampler_changed");
+    }
+    if (diff.mip_level_readiness_changed) {
+        append_render_image_texture_staging_payload_plan_diff_summary(
+            diff.change_summary,
+            "mip_levels=" + std::to_string(diff.before_mip_level_reference_count)
+                + "->" + std::to_string(diff.after_mip_level_reference_count));
+    }
+    if (diff.blocker_changed) {
+        const std::string before_blocker =
+            diff.before_blocked ? diff.before_plan_status_name : std::string{"ready"};
+        const std::string after_blocker =
+            diff.after_blocked ? diff.after_plan_status_name : std::string{"ready"};
+        append_render_image_texture_staging_payload_plan_diff_summary(
+            diff.change_summary,
+            before_blocker == after_blocker
+                ? std::string{"blocker_summary_changed"}
+                : "blocker=" + before_blocker + "->" + after_blocker);
+    }
+    if (diff.status == render_image_texture_staging_payload_plan_diff_status::added) {
+        append_render_image_texture_staging_payload_plan_diff_summary(diff.change_summary, "added");
+    } else if (diff.status == render_image_texture_staging_payload_plan_diff_status::removed) {
+        append_render_image_texture_staging_payload_plan_diff_summary(diff.change_summary, "removed");
+    } else if (diff.change_summary.empty()) {
+        diff.change_summary = "no staging payload plan changes";
+    }
 
     if (diff.status == render_image_texture_staging_payload_plan_diff_status::unchanged) {
         diff.diagnostic = "image texture staging payload plan unchanged";

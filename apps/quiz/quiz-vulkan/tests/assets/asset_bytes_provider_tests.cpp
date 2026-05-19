@@ -1,4 +1,5 @@
 #include "assets/asset_bytes_provider.h"
+#include "assets/asset_render_resource_payload_bridge.h"
 
 #include "asset_bytes_provider_interface_contract_tests.cpp"
 
@@ -1807,7 +1808,35 @@ void test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads()
     require(summary.empty_shader_bytes_count == 1U, "shader pipeline counts empty shader bytes");
     require(summary.non_spirv_magic_count == 1U, "shader pipeline counts non-SPIR-V-looking .spv bytes");
     require(summary.duplicate_id_count == 2U, "shader pipeline counts duplicate shader id entries");
+    require(summary.issue_count() == 7U, "shader pipeline totals all validation issues");
     require(summary.find_entry("card_front") == nullptr, "shader pipeline ignores non-shader payload groups");
+    require(
+        asset_shader_materialized_byte_issue_kind_name(
+            asset_shader_materialized_byte_issue_kind::blocked_materialization)
+            == "blocked_materialization",
+        "shader pipeline issue kind names include blocked materialization");
+    require(
+        asset_shader_materialized_byte_issue_kind_name(
+            asset_shader_materialized_byte_issue_kind::blocked_byte_load)
+            == "blocked_byte_load",
+        "shader pipeline issue kind names include blocked byte load");
+    require(
+        asset_shader_materialized_byte_issue_kind_name(asset_shader_materialized_byte_issue_kind::integrity_failure)
+            == "integrity_failure",
+        "shader pipeline issue kind names include integrity failure");
+    require(
+        asset_shader_materialized_byte_issue_kind_name(
+            asset_shader_materialized_byte_issue_kind::empty_shader_bytes)
+            == "empty_shader_bytes",
+        "shader pipeline issue kind names include empty shader bytes");
+    require(
+        asset_shader_materialized_byte_issue_kind_name(asset_shader_materialized_byte_issue_kind::non_spirv_magic)
+            == "non_spirv_magic",
+        "shader pipeline issue kind names include SPIR-V magic failures");
+    require(
+        asset_shader_materialized_byte_issue_kind_name(asset_shader_materialized_byte_issue_kind::duplicate_id)
+            == "duplicate_id",
+        "shader pipeline issue kind names include duplicate ids");
 
     const asset_shader_materialized_byte_pipeline_entry* ready = summary.find_ready("ui_shader");
     require(ready != nullptr, "shader pipeline can find ready shader payloads");
@@ -1828,6 +1857,9 @@ void test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads()
     require(ready->spirv_magic_checked, "shader pipeline checks SPIR-V magic for non-empty .spv payloads");
     require(ready->spirv_magic_valid, "shader pipeline accepts SPIR-V magic bytes");
     require(ready->issues.empty(), "ready shader has no validation issues");
+    require(
+        !ready->has_issue(asset_shader_materialized_byte_issue_kind::non_spirv_magic),
+        "ready shader issue lookup reports no SPIR-V magic failure");
     require(ready->diagnostic == "shader materialized byte payload ready", "ready shader diagnostic is stable");
 
     const asset_shader_materialized_byte_pipeline_entry* rootless = summary.find_blocked("rootless_shader");
@@ -1839,6 +1871,9 @@ void test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads()
             0U,
             asset_shader_materialized_byte_issue_kind::blocked_materialization),
         "shader pipeline reports blocked materialization issue");
+    require(
+        rootless->has_issue(asset_shader_materialized_byte_issue_kind::blocked_materialization),
+        "shader pipeline issue lookup finds blocked materialization");
     require(
         rootless->materialized_status == runtime_materialized_asset_lookup_status::missing_rooted_path,
         "shader pipeline preserves materialization blocker status");
@@ -1886,6 +1921,9 @@ void test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads()
             0U,
             asset_shader_materialized_byte_issue_kind::non_spirv_magic),
         "shader pipeline reports non-SPIR-V magic issue");
+    require(
+        text_shader->has_issue(asset_shader_materialized_byte_issue_kind::non_spirv_magic),
+        "shader pipeline issue lookup finds non-SPIR-V magic failures");
     require(text_shader->spirv_magic_checked, "non-empty .spv shader bytes are magic checked");
     require(!text_shader->spirv_magic_valid, "text shader bytes fail SPIR-V magic validation");
 
@@ -1903,6 +1941,440 @@ void test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads()
         }
     }
     require(duplicate_entries == 2U, "shader pipeline keeps both duplicate shader entries as blocked evidence");
+}
+
+void test_shader_byte_pipeline_source_summary_combines_manifest_fallback_and_payload_evidence()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "fixture",
+        .aliases = {"fallback_shaders"},
+        .root_path = fixture_root / "packaged",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "external_shader_pack",
+        .root_path = fixture_root / "build" / "external" / "shader_pack",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "manifest_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/manifest.vert.spv",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "external_shader",
+        .type = asset_type::shader,
+        .uri = "shaders/external.vert.spv",
+        .root_id = "external_shader_pack",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "fixture_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/fixture.vert.spv",
+        .root_id = "fixture",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "fallback_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/fallback.vert.spv",
+        .root_id = "fallback_shaders",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "traversal_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/%2e%2e/secret.vert.spv",
+        .root_id = "fixture",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "missing_root_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/missing-root.vert.spv",
+        .root_id = "missing",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_runtime_resolver_policy_summary resolver_policy =
+        summarize_asset_runtime_resolver_policy(manifest, resolver);
+    const asset_pack_index_root_selection_summary root_selection =
+        summarize_asset_pack_index_root_selection(manifest);
+
+    asset_materialized_byte_payload_bundle bundle;
+    bundle.shaders.blocked.push_back(make_shader_payload_bundle_entry(
+        "manifest_shader",
+        "asset://shaders/manifest.vert.spv",
+        "/assets/shaders/manifest.vert.spv",
+        {},
+        asset_materialized_bytes_handoff_status::materialization_blocked));
+    bundle.shaders.ready.push_back(make_shader_payload_bundle_entry(
+        "external_shader",
+        "shaders/external.vert.spv",
+        "/assets/shaders/external.vert.spv",
+        make_spirv_fixture_bytes()));
+    bundle.shaders.ready.push_back(make_shader_payload_bundle_entry(
+        "fixture_shader",
+        "asset://shaders/fixture.vert.spv",
+        "/assets/shaders/fixture.vert.spv",
+        make_spirv_fixture_bytes()));
+    bundle.shaders.ready.push_back(make_shader_payload_bundle_entry(
+        "fallback_shader",
+        "asset://shaders/fallback.vert.spv",
+        "/assets/shaders/fallback.vert.spv",
+        make_spirv_fixture_bytes()));
+    bundle.shaders.ready.push_back(make_shader_payload_bundle_entry(
+        "stale_shader",
+        "asset://shaders/stale.vert.spv",
+        "/assets/shaders/stale.vert.spv",
+        make_spirv_fixture_bytes()));
+
+    const asset_shader_materialized_byte_pipeline_summary shader_pipeline =
+        summarize_shader_materialized_byte_pipeline(bundle);
+    const std::vector<std::string> expected_shader_ids{
+        "manifest_shader",
+        "external_shader",
+        "fixture_shader",
+        "fallback_shader",
+        "traversal_shader",
+        "missing_root_shader",
+        "missing_shader",
+        "stale_shader",
+    };
+
+    const asset_shader_byte_pipeline_source_summary source_summary =
+        summarize_shader_byte_pipeline_sources(
+            shader_pipeline,
+            resolver_policy,
+            root_selection,
+            expected_shader_ids);
+
+    require(!source_summary.ok(), "shader source summary reports blocked source evidence");
+    require(source_summary.input_shader_count == 5U, "shader source summary preserves payload input count");
+    require(source_summary.requested_shader_count == 8U, "shader source summary records expected shader ids");
+    require(source_summary.entry_count() == 8U, "shader source summary emits requested missing source evidence");
+    require(source_summary.ready_count() == 3U, "shader source summary only marks consumer-ready shader bytes ready");
+    require(source_summary.blocked_count() == 5U, "shader source summary blocks source and payload problems");
+    require(source_summary.manifest_source_count == 1U, "shader source summary classifies direct manifest sources");
+    require(source_summary.build_external_source_count == 1U, "shader source summary classifies build external roots");
+    require(source_summary.local_fixture_source_count == 1U, "shader source summary classifies local fixture roots");
+    require(source_summary.fallback_source_count == 1U, "shader source summary classifies fallback root sources");
+    require(source_summary.missing_source_count == 4U, "shader source summary classifies missing source evidence");
+    require(source_summary.traversal_rejection_count == 1U, "shader source summary counts traversal rejections");
+    require(source_summary.missing_root_count == 1U, "shader source summary counts missing roots");
+    require(source_summary.missing_manifest_count == 1U, "shader source summary counts missing manifest entries");
+    require(source_summary.stale_manifest_count == 1U, "shader source summary counts stale payload manifest evidence");
+    require(
+        asset_shader_byte_pipeline_source_kind_name(asset_shader_byte_pipeline_source_kind::fallback)
+            == "fallback",
+        "shader source summary exposes stable source kind names");
+    require(
+        asset_shader_byte_pipeline_blocker_kind_name(asset_shader_byte_pipeline_blocker_kind::traversal_rejected)
+            == "traversal_rejected",
+        "shader source summary exposes stable blocker names");
+
+    const asset_shader_byte_pipeline_source_entry* external = source_summary.find_ready("external_shader");
+    require(external != nullptr, "shader source summary finds build external ready shaders");
+    require(external->ok(), "build external shader source is ready for consumers");
+    require(
+        external->source_kind == asset_shader_byte_pipeline_source_kind::build_external,
+        "build external shader source kind is explicit");
+    require(
+        external->root_space == asset_runtime_resolver_root_space::build_external,
+        "build external shader keeps root-space classification");
+    require(external->manifest_entry_found, "build external shader keeps manifest evidence");
+    require(external->cache_key == "shader|shaders/external.vert.spv", "build external shader keeps cache key");
+    require(external->source_uri == "shaders/external.vert.spv", "build external shader keeps source uri");
+    require(external->byte_count == 8U, "build external shader keeps reported byte count");
+    require(external->payload_byte_count == 8U, "build external shader keeps owned byte count");
+    require(
+        external->content_hash == make_asset_bytes_content_hash(make_spirv_fixture_bytes()),
+        "build external shader keeps content hash");
+    require(
+        external->materialized_byte_identity
+            == "shader|shaders/external.vert.spv|hash="
+                + make_asset_bytes_content_hash(make_spirv_fixture_bytes()) + "|bytes=8",
+        "build external shader has stable byte identity");
+
+    const asset_shader_byte_pipeline_source_entry* fixture = source_summary.find_ready("fixture_shader");
+    require(fixture != nullptr, "shader source summary finds fixture ready shaders");
+    require(
+        fixture->source_kind == asset_shader_byte_pipeline_source_kind::local_fixture,
+        "fixture shader source kind is explicit");
+    require(
+        fixture->root_space == asset_runtime_resolver_root_space::local_fixture,
+        "fixture shader keeps root-space classification");
+
+    const asset_shader_byte_pipeline_source_entry* fallback = source_summary.find_ready("fallback_shader");
+    require(fallback != nullptr, "shader source summary finds fallback ready shaders");
+    require(
+        fallback->source_kind == asset_shader_byte_pipeline_source_kind::fallback,
+        "fallback shader source kind is explicit");
+    require(fallback->fallback_selected, "fallback shader records fallback selection");
+    require(fallback->requested_root_id == "fallback_shaders", "fallback shader keeps requested root id");
+    require(fallback->selected_root_id == "fixture", "fallback shader keeps selected root id");
+
+    const asset_shader_byte_pipeline_source_entry* manifest_only =
+        source_summary.find_blocked("manifest_shader");
+    require(manifest_only != nullptr, "shader source summary finds rootless manifest shaders");
+    require(
+        manifest_only->source_kind == asset_shader_byte_pipeline_source_kind::manifest,
+        "rootless manifest shader source kind remains manifest");
+    require(
+        manifest_only->blocker == asset_shader_byte_pipeline_blocker_kind::materialization_blocked,
+        "rootless manifest shader records materialization blocker");
+    require(manifest_only->manifest_entry_found, "rootless manifest shader keeps manifest evidence");
+
+    const asset_shader_byte_pipeline_source_entry* traversal =
+        source_summary.find_blocked("traversal_shader");
+    require(traversal != nullptr, "shader source summary includes traversal rejection evidence");
+    require(
+        traversal->blocker == asset_shader_byte_pipeline_blocker_kind::traversal_rejected,
+        "traversal shader records traversal blocker");
+    require(traversal->traversal_rejected, "traversal shader exposes traversal rejection flag");
+    require(
+        traversal->source_kind == asset_shader_byte_pipeline_source_kind::missing_source,
+        "traversal shader is not source-ready");
+
+    const asset_shader_byte_pipeline_source_entry* missing_root =
+        source_summary.find_blocked("missing_root_shader");
+    require(missing_root != nullptr, "shader source summary includes missing root evidence");
+    require(
+        missing_root->blocker == asset_shader_byte_pipeline_blocker_kind::missing_root,
+        "missing root shader records missing root blocker");
+    require(
+        missing_root->cache_key == "shader|asset://shaders/missing-root.vert.spv",
+        "missing root shader preserves diagnostic cache key");
+
+    const asset_shader_byte_pipeline_source_entry* missing_manifest =
+        source_summary.find_blocked("missing_shader");
+    require(missing_manifest != nullptr, "shader source summary includes requested missing ids");
+    require(
+        missing_manifest->blocker == asset_shader_byte_pipeline_blocker_kind::missing_manifest_entry,
+        "missing shader records missing manifest blocker");
+    require(!missing_manifest->manifest_entry_found, "missing shader records absent manifest evidence");
+
+    const asset_shader_byte_pipeline_source_entry* stale = source_summary.find_blocked("stale_shader");
+    require(stale != nullptr, "shader source summary includes stale payload evidence");
+    require(
+        stale->blocker == asset_shader_byte_pipeline_blocker_kind::stale_manifest_entry,
+        "stale shader records stale manifest blocker");
+    require(!stale->ready, "stale shader bytes are not consumer-ready without manifest evidence");
+    require(!stale->materialized_byte_identity.empty(), "stale shader keeps materialized byte identity");
+    require(
+        stale->diagnostic == "shader byte pipeline payload has no current manifest evidence",
+        "stale shader diagnostic is stable");
+}
+
+void test_render_resource_payload_bridge_matches_addresses_to_materialized_payloads()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .root_path = fixture_root / "packaged",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "external_shader_pack",
+        .root_path = fixture_root / "build" / "external" / "shader_pack",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "asset://cards/front.png",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "body_font",
+        .type = asset_type::font,
+        .uri = "fonts/body.ttf",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "ui_shader",
+        .type = asset_type::shader,
+        .uri = "shaders/ui.vert.spv",
+        .root_id = "external_shader_pack",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "missing_image",
+        .type = asset_type::image,
+        .uri = "asset://cards/missing.png",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "wrong_type",
+        .type = asset_type::image,
+        .uri = "asset://cards/wrong-type.png",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "stale_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/stale.vert.spv",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "duplicate_a",
+        .type = asset_type::image,
+        .uri = "asset://cards/shared.png",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "duplicate_b",
+        .type = asset_type::image,
+        .uri = "ASSET:///cards/./shared.png",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_render_resource_address_summary addresses =
+        summarize_asset_render_resource_addresses(manifest, resolver);
+    require(addresses.ok(), "render resource bridge fixture starts from accepted addresses");
+    require(addresses.entry_count() == 8U, "render resource bridge fixture contains all addresses");
+
+    asset_materialized_byte_payload_bundle bundle;
+    bundle.images.ready.push_back(make_payload_bundle_entry(
+        "card_front",
+        asset_type::image,
+        "asset://cards/front.png",
+        "/assets/cards/front.png",
+        "image bytes",
+        ""));
+    bundle.fonts.ready.push_back(make_payload_bundle_entry(
+        "body_font",
+        asset_type::font,
+        "fonts/body.ttf",
+        "/assets/fonts/body.ttf",
+        "font bytes",
+        ""));
+    bundle.shaders.ready.push_back(make_shader_payload_bundle_entry(
+        "ui_shader",
+        "shaders/ui.vert.spv",
+        "/assets/shaders/ui.vert.spv",
+        make_spirv_fixture_bytes()));
+    bundle.sounds.ready.push_back(make_payload_bundle_entry(
+        "wrong_type",
+        asset_type::sound,
+        "asset://sounds/wrong-type.ogg",
+        "/assets/sounds/wrong-type.ogg",
+        "sound bytes",
+        ""));
+    bundle.shaders.ready.push_back(make_shader_payload_bundle_entry(
+        "stale_shader",
+        "asset://shaders/stale-old.vert.spv",
+        "/assets/shaders/stale-old.vert.spv",
+        make_spirv_fixture_bytes()));
+    bundle.images.ready.push_back(make_payload_bundle_entry(
+        "duplicate_a",
+        asset_type::image,
+        "asset://cards/shared.png",
+        "/assets/cards/shared-a.png",
+        "shared image a",
+        ""));
+    bundle.images.ready.push_back(make_payload_bundle_entry(
+        "duplicate_b",
+        asset_type::image,
+        "asset://cards/shared.png",
+        "/assets/cards/shared-b.png",
+        "shared image b",
+        ""));
+
+    const asset_render_resource_payload_bridge_summary bridge =
+        bridge_asset_render_resource_addresses_to_payloads(addresses, bundle);
+
+    require(!bridge.ok(), "render resource payload bridge reports blocked handoff evidence");
+    require(bridge.requested_address_count == 8U, "render resource payload bridge records requested addresses");
+    require(bridge.entry_count() == 8U, "render resource payload bridge emits one result per address");
+    require(bridge.accepted_count == 4U, "render resource payload bridge counts accepted matches");
+    require(bridge.blocked_count() == 4U, "render resource payload bridge counts blocked matches");
+    require(
+        bridge.missing_materialized_bytes_count == 1U,
+        "render resource payload bridge counts missing materialized bytes");
+    require(bridge.type_mismatch_count == 1U, "render resource payload bridge counts type mismatches");
+    require(bridge.cache_key_mismatch_count == 1U, "render resource payload bridge counts cache-key mismatches");
+    require(
+        bridge.duplicate_canonical_identity_count == 1U,
+        "render resource payload bridge counts duplicate canonical identities");
+    require(
+        bridge.duplicate_materialized_payload_id_count == 0U,
+        "render resource payload bridge does not report duplicate payload ids in this fixture");
+
+    const asset_render_resource_payload_bridge_entry* image = bridge.find_accepted("card_front");
+    require(image != nullptr, "render resource payload bridge finds accepted image payload");
+    require(image->ok(), "accepted image bridge entry is ok");
+    require(image->selection.selected(), "accepted image bridge entry keeps selection result");
+    require(image->selected_snapshot.has_value(), "accepted image bridge entry keeps compact payload snapshot");
+    require(image->selection.payload != nullptr, "accepted image bridge entry keeps payload pointer");
+    require(
+        image->selection.payload->bytes.size() == image->selected_snapshot->payload_byte_count,
+        "accepted image bridge entry points to bytes without copying them into the snapshot");
+    require(
+        image->address.canonical_identity == "asset://cards/front.png",
+        "accepted image bridge entry keeps canonical render identity");
+    require(
+        image->selected_snapshot->cache_key == "image|asset://cards/front.png",
+        "accepted image bridge entry keeps payload cache key");
+    require(
+        image->selected_snapshot->content_hash
+            == make_asset_bytes_content_hash(detail::make_asset_byte_vector("image bytes")),
+        "accepted image bridge entry keeps content hash evidence");
+
+    const asset_render_resource_payload_bridge_entry* font = bridge.find_accepted("body_font");
+    require(font != nullptr, "render resource payload bridge finds accepted font payload");
+    require(font->selected_snapshot->type == asset_type::font, "accepted font bridge entry keeps font type");
+    require(
+        font->address.canonical_identity == "local-fixture://packaged/fonts/body.ttf",
+        "accepted font bridge entry keeps stable fixture identity");
+
+    const asset_render_resource_payload_bridge_entry* shader = bridge.find_accepted("ui_shader");
+    require(shader != nullptr, "render resource payload bridge finds accepted shader payload");
+    require(shader->selected_snapshot->type == asset_type::shader, "accepted shader bridge entry keeps shader type");
+    require(
+        shader->address.canonical_identity
+            == "build-external://external_shader_pack/shaders/ui.vert.spv",
+        "accepted shader bridge entry keeps stable build-external identity");
+
+    const asset_render_resource_payload_bridge_entry* missing = bridge.find_blocked("missing_image");
+    require(missing != nullptr, "render resource payload bridge finds missing materialized bytes");
+    require(
+        missing->status == asset_render_resource_payload_bridge_status::missing_materialized_bytes,
+        "missing image bridge entry reports missing materialized bytes");
+    require(!missing->selected_snapshot.has_value(), "missing image bridge entry has no selected snapshot");
+
+    const asset_render_resource_payload_bridge_entry* wrong_type = bridge.find_blocked("wrong_type");
+    require(wrong_type != nullptr, "render resource payload bridge finds type mismatches");
+    require(
+        wrong_type->status == asset_render_resource_payload_bridge_status::type_mismatch,
+        "wrong type bridge entry reports type mismatch");
+    require(wrong_type->selection.actual_type == asset_type::sound, "wrong type bridge entry records actual type");
+    require(wrong_type->selection.expected_type == asset_type::image, "wrong type bridge entry records expected type");
+
+    const asset_render_resource_payload_bridge_entry* stale = bridge.find_blocked("stale_shader");
+    require(stale != nullptr, "render resource payload bridge finds cache-key mismatches");
+    require(
+        stale->status == asset_render_resource_payload_bridge_status::cache_key_mismatch,
+        "stale shader bridge entry reports cache-key mismatch");
+    require(
+        stale->selection.actual_cache_key == "shader|asset://shaders/stale-old.vert.spv",
+        "stale shader bridge entry records actual payload cache key");
+    require(
+        stale->selection.expected_cache_key == asset_cache_key{"shader|asset://shaders/stale.vert.spv"},
+        "stale shader bridge entry records expected address cache key");
+
+    const asset_render_resource_payload_bridge_entry* duplicate_a = bridge.find_accepted("duplicate_a");
+    require(duplicate_a != nullptr, "render resource payload bridge accepts first canonical identity owner");
+    require(
+        bridge.find_canonical_identity("asset://cards/shared.png") == duplicate_a,
+        "render resource payload bridge finds first canonical identity owner deterministically");
+
+    const asset_render_resource_payload_bridge_entry* duplicate_b = bridge.find_blocked("duplicate_b");
+    require(duplicate_b != nullptr, "render resource payload bridge finds duplicate canonical identities");
+    require(
+        duplicate_b->status == asset_render_resource_payload_bridge_status::duplicate_canonical_identity,
+        "duplicate canonical bridge entry reports duplicate identity");
+    require(duplicate_b->related_id == "duplicate_a", "duplicate canonical bridge entry records first owner");
+    require(!duplicate_b->selected_snapshot.has_value(), "duplicate canonical bridge entry does not select payload");
+    require(
+        asset_render_resource_payload_bridge_status_name(duplicate_b->status)
+            == "duplicate_canonical_identity",
+        "render resource payload bridge status names are stable");
 }
 
 void test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics()
@@ -2716,6 +3188,8 @@ int main()
     test_materialized_asset_byte_payload_bundle_groups_loaded_bytes_by_type();
     test_materialized_asset_byte_payload_bundle_diff_tracks_snapshot_changes();
     test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads();
+    test_shader_byte_pipeline_source_summary_combines_manifest_fallback_and_payload_evidence();
+    test_render_resource_payload_bridge_matches_addresses_to_materialized_payloads();
     test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics();
     test_materialized_asset_byte_payload_request_transaction_preserves_order_and_counts();
     test_materialized_asset_byte_payload_request_transaction_review_summary_groups_by_expected_type();

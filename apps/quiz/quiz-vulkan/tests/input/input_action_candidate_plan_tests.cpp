@@ -36,6 +36,20 @@ void require_range(
     require(range.end_byte == end_byte, message);
 }
 
+void require_modifiers(
+    quiz_vulkan::input::input_modifier_state modifiers,
+    bool alt,
+    bool ctrl,
+    bool shift,
+    bool meta,
+    const char* message)
+{
+    require(modifiers.alt == alt, message);
+    require(modifiers.ctrl == ctrl, message);
+    require(modifiers.shift == shift, message);
+    require(modifiers.meta == meta, message);
+}
+
 quiz_vulkan::raw_platform_input_event pointer(
     quiz_vulkan::raw_platform_pointer_phase phase,
     std::int64_t timestamp_ms,
@@ -90,7 +104,11 @@ quiz_vulkan::raw_platform_input_event platform_scroll(
     float y,
     float delta_x,
     float delta_y,
-    quiz_vulkan::raw_platform_scroll_delta_unit unit)
+    quiz_vulkan::raw_platform_scroll_delta_unit unit,
+    bool alt = false,
+    bool ctrl = false,
+    bool shift = false,
+    bool meta = false)
 {
     return quiz_vulkan::raw_platform_scroll_event{
         .timestamp_ms = timestamp_ms,
@@ -99,6 +117,10 @@ quiz_vulkan::raw_platform_input_event platform_scroll(
         .delta_x = delta_x,
         .delta_y = delta_y,
         .unit = unit,
+        .alt = alt,
+        .ctrl = ctrl,
+        .shift = shift,
+        .meta = meta,
     };
 }
 
@@ -166,7 +188,17 @@ void test_replay_evidence_maps_to_semantic_free_candidates()
         step("pointer-down", pointer(raw_platform_pointer_phase::down, 200, 0.0f, 0.0f, raw_platform_pointer_button::primary, 7)),
         step("pointer-drag", pointer(raw_platform_pointer_phase::move, 220, 12.0f, 0.0f, raw_platform_pointer_button::primary, 7)),
         step("pointer-up", pointer(raw_platform_pointer_phase::up, 240, 14.0f, 0.0f, raw_platform_pointer_button::primary, 7)),
-        step("wheel", platform_scroll(260, 3.0f, 4.0f, 0.0f, -2.0f, raw_platform_scroll_delta_unit::lines)),
+        step("wheel", platform_scroll(
+            260,
+            3.0f,
+            4.0f,
+            0.0f,
+            -2.0f,
+            raw_platform_scroll_delta_unit::lines,
+            false,
+            true,
+            false,
+            true)),
     };
 
     const normalized_input_replay_recording recording = replay_normalized_input_fixture(
@@ -259,10 +291,24 @@ void test_replay_evidence_maps_to_semantic_free_candidates()
     const input_action_candidate* wheel_candidate =
         find_first_candidate(plan, input_action_candidate_kind::wheel_scroll);
     require(wheel_candidate != nullptr, "wheel scroll candidate exists");
+    require(wheel_candidate->emits_input_event,
+        "wheel scroll candidate records normalized input-event evidence only");
     require(wheel_candidate->line_delta_y == -2.0f,
         "wheel scroll candidate carries normalized line delta");
     require(wheel_candidate->pixel_delta_y == 0.0f,
         "wheel scroll candidate preserves pixel delta evidence");
+    require_modifiers(wheel_candidate->modifiers,
+        false,
+        true,
+        false,
+        true,
+        "wheel scroll candidate carries modifier evidence");
+    require_modifiers(wheel_candidate->normalized_event.modifiers,
+        false,
+        true,
+        false,
+        true,
+        "wheel scroll candidate keeps normalized modifier evidence");
 
     const input_action_candidate_batch_plan pointer_batch =
         plan_input_action_candidates_for_batch(recording.batches[7], 7);
@@ -290,7 +336,16 @@ void test_candidate_resolution_selects_primary_results_and_supporting_evidence()
         step("pointer-down", pointer(raw_platform_pointer_phase::down, 200, 0.0f, 0.0f, raw_platform_pointer_button::primary, 7)),
         step("pointer-drag", pointer(raw_platform_pointer_phase::move, 220, 12.0f, 0.0f, raw_platform_pointer_button::primary, 7)),
         step("pointer-up", pointer(raw_platform_pointer_phase::up, 240, 14.0f, 0.0f, raw_platform_pointer_button::primary, 7)),
-        step("wheel", platform_scroll(260, 3.0f, 4.0f, 0.0f, -2.0f, raw_platform_scroll_delta_unit::lines)),
+        step("wheel", platform_scroll(
+            260,
+            3.0f,
+            4.0f,
+            0.0f,
+            -2.0f,
+            raw_platform_scroll_delta_unit::lines,
+            true,
+            false,
+            true)),
     };
 
     const normalized_input_replay_recording recording = replay_normalized_input_fixture(
@@ -348,6 +403,12 @@ void test_candidate_resolution_selects_primary_results_and_supporting_evidence()
         "wheel result records delta reason");
     require(wheel_result->has_wheel_delta,
         "wheel result carries delta evidence");
+    require_modifiers(wheel_result->candidate.modifiers,
+        true,
+        false,
+        true,
+        false,
+        "wheel result preserves modifier evidence");
 
     const input_action_candidate_batch_plan pointer_batch =
         plan_input_action_candidates_for_batch(recording.batches[7], 7);
@@ -397,7 +458,16 @@ void test_resolution_replay_summary_groups_handoff_results_by_batch()
         step("ime-commit", ime(raw_platform_ime_phase::commit, 130, utf8(u8"한"))),
         step("pointer-down", pointer(raw_platform_pointer_phase::down, 200, 0.0f, 0.0f, raw_platform_pointer_button::primary, 7)),
         step("pointer-drag", pointer(raw_platform_pointer_phase::move, 220, 12.0f, 0.0f, raw_platform_pointer_button::primary, 7)),
-        step("wheel", platform_scroll(260, 3.0f, 4.0f, 0.0f, -2.0f, raw_platform_scroll_delta_unit::lines)),
+        step("wheel", platform_scroll(
+            260,
+            3.0f,
+            4.0f,
+            0.0f,
+            -2.0f,
+            raw_platform_scroll_delta_unit::lines,
+            false,
+            true,
+            true)),
     };
 
     const normalized_input_replay_recording recording = replay_normalized_input_fixture(
@@ -485,6 +555,12 @@ void test_resolution_replay_summary_groups_handoff_results_by_batch()
         "wheel batch summary exposes line delta");
     require(wheel_batch.selected[0].has_wheel_delta,
         "wheel batch summary carries wheel delta flag");
+    require_modifiers(wheel_batch.selected[0].modifiers,
+        false,
+        true,
+        true,
+        false,
+        "wheel batch summary exposes modifier evidence");
 }
 
 void test_candidate_resolution_rejects_invalid_and_suppressed_evidence()

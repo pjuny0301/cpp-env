@@ -89,6 +89,10 @@ struct render_text_glyph_atlas_materialization_request {
     bool has_atlas_update = false;
     render_rect atlas_update_bounds;
     std::size_t atlas_update_rgba_bytes = 0;
+    std::size_t line_index = 0;
+    float pen_x = 0.0f;
+    float pen_y = 0.0f;
+    float baseline = 0.0f;
 };
 
 struct render_text_glyph_atlas_materialization_from_raster_request {
@@ -123,6 +127,10 @@ struct render_text_glyph_atlas_materialization_from_raster_request {
     render_rect atlas_bounds;
     bool has_atlas_update = false;
     render_text_atlas_update atlas_update;
+    std::size_t line_index = 0;
+    float pen_x = 0.0f;
+    float pen_y = 0.0f;
+    float baseline = 0.0f;
 };
 
 struct render_text_glyph_atlas_materialization_snapshot {
@@ -177,6 +185,10 @@ struct render_text_glyph_atlas_materialization_snapshot {
     bool materialized = false;
     bool queued = false;
     bool clean_reuse = false;
+    std::size_t line_index = 0;
+    float pen_x = 0.0f;
+    float pen_y = 0.0f;
+    float baseline = 0.0f;
     std::string diagnostic;
 };
 
@@ -406,6 +418,12 @@ inline render_text_glyph_atlas_materialization_snapshot make_render_text_glyph_a
             || status == render_text_glyph_atlas_materialization_status::materialized_clean_reuse,
         .queued = status == render_text_glyph_atlas_materialization_status::materialized_upload_ready,
         .clean_reuse = status == render_text_glyph_atlas_materialization_status::materialized_clean_reuse,
+        .line_index = request.line_index,
+        .pen_x = request.has_layout_bounds ? request.layout_bounds.x : request.pen_x,
+        .pen_y = request.has_layout_bounds ? request.layout_bounds.y : request.pen_y,
+        .baseline = request.baseline == 0.0f && request.has_layout_bounds
+            ? request.layout_bounds.bottom()
+            : request.baseline,
         .diagnostic = std::move(diagnostic),
     };
 }
@@ -484,6 +502,10 @@ make_render_text_glyph_atlas_materialization_from_raster_result(
             .atlas_update_rgba_bytes = request.has_atlas_update
                 ? request.atlas_update.rgba.size()
                 : 0U,
+            .line_index = request.line_index,
+            .pen_x = request.pen_x,
+            .pen_y = request.pen_y,
+            .baseline = request.baseline,
         });
 }
 
@@ -708,7 +730,11 @@ inline bool render_text_glyph_atlas_materialization_relevant_fields_equal(
         && before.atlas_update_rgba_bytes == after.atlas_update_rgba_bytes
         && before.materialized == after.materialized
         && before.queued == after.queued
-        && before.clean_reuse == after.clean_reuse;
+        && before.clean_reuse == after.clean_reuse
+        && before.line_index == after.line_index
+        && before.pen_x == after.pen_x
+        && before.pen_y == after.pen_y
+        && before.baseline == after.baseline;
 }
 
 inline std::string render_text_glyph_atlas_materialization_diff_summary_for(

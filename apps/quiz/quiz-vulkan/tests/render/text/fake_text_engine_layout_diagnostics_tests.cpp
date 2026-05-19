@@ -2111,8 +2111,17 @@ void test_fake_text_engine_harfbuzz_handoff_shapes_materialized_font_bytes()
         diagnostics.shaping_handoff_policy.deterministic_fallback_run_count == 0U,
         "HarfBuzz handoff policy records no deterministic fallback");
     require(
+        diagnostics.shaping_handoff_policy.fallback_reason_run_count == 0U,
+        "HarfBuzz handoff policy records no fallback reason");
+    require(
         diagnostics.shaping_handoff_policy.atlas_ready_glyph_count > 0U,
         "HarfBuzz handoff records atlas-ready glyph evidence");
+    require(
+        diagnostics.shaping_handoff_policy.atlas_blocked_glyph_count == 0U,
+        "HarfBuzz handoff records no atlas blocker for fixture glyphs");
+    require(
+        diagnostics.shaping_handoff_policy.fallback_reason_glyph_count == 0U,
+        "HarfBuzz handoff records no glyph fallback reason");
     require(
         diagnostics.shaping_handoffs.size() == layout.glyphs.size(),
         "HarfBuzz handoff emits one handoff record per layout glyph");
@@ -2136,6 +2145,7 @@ void test_fake_text_engine_harfbuzz_handoff_shapes_materialized_font_bytes()
         require(handoff.cluster_byte_count == text.size(), "handoff keeps combined cluster byte range");
         require(handoff.cluster_codepoint_offset == 0U, "handoff keeps cluster codepoint offset");
         require(handoff.cluster_codepoint_count == 2U, "handoff keeps base plus combining mark codepoint range");
+        require(handoff.atlas_blocker_reason.empty(), "handoff records no atlas blocker for HarfBuzz glyphs");
         saw_positive_advance = saw_positive_advance || handoff.advance_x > 0.0f;
     }
     require(saw_positive_advance, "HarfBuzz handoff records font-backed glyph advance");
@@ -2379,6 +2389,15 @@ void test_fake_text_engine_harfbuzz_handoff_keeps_deterministic_fallback_without
     require(
         diagnostics.shaping_handoff_policy.harfbuzz_run_count == 0U,
         "missing bytes handoff policy does not claim HarfBuzz shaping");
+    require(
+        diagnostics.shaping_handoff_policy.fallback_reason_run_count == 1U,
+        "missing bytes handoff policy counts fallback reason");
+    require(
+        diagnostics.shaping_handoff_policy.atlas_blocked_glyph_count == 0U,
+        "missing bytes fallback remains atlas-ready before raster bytes");
+    require(
+        diagnostics.shaping_handoff_policy.fallback_reason_glyph_count == 1U,
+        "missing bytes handoff policy maps fallback reason to glyph evidence");
 
     const fake_text_engine_shaping_handoff_snapshot& handoff = diagnostics.shaping_handoffs.front();
     require(handoff.backend_library == render_text_font_backend_library::deterministic_fake, "fallback backend is deterministic fake");
@@ -2393,6 +2412,7 @@ void test_fake_text_engine_harfbuzz_handoff_keeps_deterministic_fallback_without
         handoff.fallback_reason.find("materialized font bytes") != std::string::npos,
         "handoff fallback reason names missing materialized bytes");
     require(handoff.atlas_ready, "deterministic fallback handoff remains atlas-ready before raster bytes");
+    require(handoff.atlas_blocker_reason.empty(), "atlas-ready fallback handoff has no atlas blocker");
 
     require(diagnostics.has_shaping_atlas_handoffs(), "missing bytes record atlas handoff bridge");
     require(
@@ -3092,6 +3112,57 @@ void test_fake_text_engine_traces_repeated_layout_to_clean_atlas_page()
         diagnostics.glyph_atlas_materialization_policy.clean_reuse_count == 1,
         "materialization policy counts clean reuse");
     require(
+        diagnostics.has_line_run_atlas_uploads(),
+        "repeated layout records line/run atlas upload bridge");
+    require(
+        diagnostics.line_run_atlas_upload_policy.cluster_count == 1U,
+        "repeated layout line/run upload bridge counts one cluster");
+    require(
+        diagnostics.line_run_atlas_upload_policy.clean_reuse_cluster_count == 1U,
+        "line/run upload bridge counts clean atlas reuse");
+    require(
+        diagnostics.line_run_atlas_upload_policy.reused_cluster_count == 1U,
+        "line/run upload bridge reports reused atlas data");
+    require(
+        diagnostics.line_run_atlas_upload_policy.upload_ready_cluster_count == 0U,
+        "clean reuse line/run upload emits no new upload-ready payload");
+    require(
+        diagnostics.line_run_atlas_upload_policy.blocked_cluster_count == 0U,
+        "clean reuse line/run upload is not blocked");
+    require(
+        diagnostics.line_run_atlas_upload_policy.unique_cache_key_count == 1U,
+        "clean reuse line/run upload preserves cache key coverage");
+    require(
+        diagnostics.line_run_atlas_upload_policy.unique_page_key_count == 1U,
+        "clean reuse line/run upload preserves atlas page coverage");
+    const fake_text_engine_line_run_atlas_upload_snapshot& line_upload =
+        diagnostics.line_run_atlas_uploads.front();
+    require(line_upload.has_line_run_evidence, "clean reuse line/run upload links line evidence");
+    require(line_upload.line_index == 0U && line_upload.run_index == 0U, "clean reuse line/run upload preserves line/run ids");
+    require(line_upload.cluster_index == 0U, "clean reuse line/run upload preserves cluster id");
+    require(line_upload.has_cache_key, "clean reuse line/run upload records required atlas cache key");
+    require(line_upload.cache_key == materialization.cache_key, "clean reuse line/run upload preserves cache key");
+    require(line_upload.page.id == materialization.page.id, "clean reuse line/run upload preserves atlas page id");
+    require(!line_upload.stable_page_key.empty(), "clean reuse line/run upload records stable page key");
+    require(line_upload.has_materialization, "clean reuse line/run upload links materialization");
+    require(line_upload.has_raster_payload, "clean reuse line/run upload still has raster payload facts");
+    require(line_upload.raster_payload_upload_ready, "clean reuse line/run upload keeps raster payload readiness");
+    require(line_upload.clean_reuse, "line/run upload marks clean reuse");
+    require(line_upload.reused, "line/run upload marks reused atlas data");
+    require(!line_upload.has_upload_request, "clean reuse line/run upload does not expose a new upload request");
+    require(!line_upload.upload_ready, "clean reuse line/run upload does not claim a new upload");
+    require(!line_upload.blocked, "clean reuse line/run upload is not blocked");
+    require(line_upload.blocker_reason.empty(), "clean reuse line/run upload has no blocker reason");
+    require(
+        line_upload.upload_status == render_text_atlas_upload_request_status::clean_reuse,
+        "line/run upload records clean-reuse upload status");
+    require(
+        line_upload.materialization_status == render_text_glyph_atlas_materialization_status::materialized_clean_reuse,
+        "line/run upload records clean-reuse materialization status");
+    require(
+        line_upload.upload_request_id == diagnostics.atlas_upload_request_bridge.requests.front().request_id,
+        "line/run upload keeps stable upload request identity for reuse evidence");
+    require(
         diagnostics.glyph_atlas_page_policy.repeated_layout_clean_page_count > 0,
         "atlas page policy records repeated clean page");
 }
@@ -3130,6 +3201,18 @@ void test_fake_text_engine_traces_shaped_glyph_without_cache_key()
     require(
         diagnostics.shaped_atlas_update_trace_policy.shaped_glyph_without_cache_key_count == 1,
         "trace policy counts missing cache key");
+    require(diagnostics.has_shaping_handoffs(), "standalone mark records shaping handoff");
+    require(
+        diagnostics.shaping_handoff_policy.atlas_blocked_glyph_count == 1,
+        "standalone mark handoff counts atlas-blocked glyph");
+    require(
+        diagnostics.shaping_handoff_policy.atlas_ready_glyph_count == 0,
+        "standalone mark handoff records no atlas-ready glyphs");
+    const fake_text_engine_shaping_handoff_snapshot& handoff = diagnostics.shaping_handoffs.front();
+    require(!handoff.atlas_ready, "standalone mark handoff is not atlas-ready");
+    require(
+        handoff.atlas_blocker_reason.find("positive atlas advance") != std::string::npos,
+        "standalone mark handoff records zero-advance atlas blocker");
     require(
         diagnostics.glyph_atlas_materializations.size() == 1,
         "standalone combining mark records one materialization decision");

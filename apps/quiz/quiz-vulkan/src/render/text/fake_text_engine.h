@@ -13,6 +13,7 @@
 #include "render/text/font_shaping_backend.h"
 #include "render/text/glyph_run.h"
 #include "render/text/text_engine.h"
+#include "render/text/text_frame_draw_plan.h"
 
 #include <cstddef>
 #include <optional>
@@ -142,6 +143,7 @@ struct fake_text_engine_shaping_handoff_snapshot {
     bool cacheable = false;
     bool atlas_ready = false;
     std::string fallback_reason;
+    std::string atlas_blocker_reason;
 };
 
 struct fake_text_engine_shaping_handoff_policy_snapshot {
@@ -153,7 +155,10 @@ struct fake_text_engine_shaping_handoff_policy_snapshot {
     std::size_t materialized_font_byte_run_count = 0;
     std::size_t missing_font_byte_run_count = 0;
     std::size_t adapter_failure_run_count = 0;
+    std::size_t fallback_reason_run_count = 0;
     std::size_t atlas_ready_glyph_count = 0;
+    std::size_t atlas_blocked_glyph_count = 0;
+    std::size_t fallback_reason_glyph_count = 0;
 };
 
 struct fake_text_engine_shaping_atlas_handoff_snapshot {
@@ -447,6 +452,7 @@ struct fake_text_engine_diagnostics {
     std::vector<std::string> consumed_atlas_upload_request_ids;
     std::size_t consumed_atlas_update_count = 0;
     render_text_frame_snapshot text_frame_snapshot;
+    render_text_frame_draw_plan_snapshot text_frame_draw_plan;
     std::vector<render_text_shaped_atlas_update_trace_snapshot> shaped_atlas_update_traces;
     render_text_shaped_atlas_update_trace_policy_snapshot shaped_atlas_update_trace_policy;
     std::vector<render_text_glyph_cache_face_snapshot> glyph_cache_faces;
@@ -707,6 +713,12 @@ struct fake_text_engine_diagnostics {
         return !text_frame_snapshot.frame_id.empty()
             || text_frame_snapshot.policy.layout_request_count > 0U
             || text_frame_snapshot.policy.upload_request_count > 0U;
+    }
+
+    bool has_text_frame_draw_plan() const
+    {
+        return text_frame_draw_plan.has_draw_packets()
+            || text_frame_draw_plan.policy.materialization_count > 0U;
     }
 
     bool has_shaped_atlas_update_traces() const

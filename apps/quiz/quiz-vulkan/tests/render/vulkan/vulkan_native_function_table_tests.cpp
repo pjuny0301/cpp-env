@@ -197,21 +197,24 @@ void test_native_function_table_collects_default_backend_entrypoints()
     require(diagnostics.queue_present_ready, "native function table records queue present symbol ready");
     require(diagnostics.required_extensions_ready, "native function table has no default extension gate");
     require(diagnostics.required_extension_count == 0, "native function table does not force extension checks");
-    require(diagnostics.requested_symbol_count == 15, "native function table requests default backend symbols");
-    require(diagnostics.required_symbol_count == 15, "native function table counts required symbols");
-    require(diagnostics.available_symbol_count == 15, "native function table counts available symbols");
+    require(diagnostics.requested_symbol_count == 16, "native function table requests default backend symbols");
+    require(diagnostics.required_symbol_count == 16, "native function table counts required symbols");
+    require(diagnostics.available_symbol_count == 16, "native function table counts available symbols");
     require(diagnostics.missing_required_symbol_count == 0, "native function table has no missing symbols");
     require(
-        resolver.state().resolve_call_count == 15,
+        resolver.state().resolve_call_count == 16,
         "fake resolver is called once per default native symbol");
     require(
         diagnostics.symbols.front().name == "vkBeginCommandBuffer",
         "native function table preserves stable command recording symbol order");
     require(
-        diagnostics.symbols[10].name == "vkCreateSwapchainKHR",
+        diagnostics.symbols[4].name == "vkCmdBindVertexBuffers",
+        "native function table preserves stable vertex buffer bind symbol order");
+    require(
+        diagnostics.symbols[11].name == "vkCreateSwapchainKHR",
         "native function table preserves stable swapchain symbol order");
     require(
-        diagnostics.symbols[13].name == "vkAcquireNextImageKHR",
+        diagnostics.symbols[14].name == "vkAcquireNextImageKHR",
         "native function table preserves stable acquire symbol order");
     require(
         diagnostics.symbols.back().name == "vkQueuePresentKHR",
@@ -503,8 +506,8 @@ void test_native_function_table_allows_missing_optional_custom_symbol()
         diagnostics.status == vulkan_backend::vulkan_native_function_table_status::ready,
         "native function table permits missing optional custom symbol");
     require(diagnostics.ready_for_backend_path(), "optional missing symbol does not block backend path");
-    require(diagnostics.requested_symbol_count == 16, "native function table includes optional symbol");
-    require(diagnostics.available_symbol_count == 15, "native function table counts optional missing symbol");
+    require(diagnostics.requested_symbol_count == 17, "native function table includes optional symbol");
+    require(diagnostics.available_symbol_count == 16, "native function table counts optional missing symbol");
     require(
         diagnostics.missing_required_symbol_count == 0,
         "native function table does not count optional missing as required");

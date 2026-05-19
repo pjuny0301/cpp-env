@@ -166,6 +166,29 @@ int main()
     assert(image_pipeline.image_texture_pipeline().diagnostic_snapshot().ready_count == 1);
     assert(image_pipeline.image_source_bytes_loader().base_directory() == image_fixture.parent_path());
 
+    app_render_frame second_image_frame = image_pipeline.render(app_render_request{
+        .snapshot = &image_snapshot,
+    });
+    assert(second_image_frame.report.screen_id == "quiz_active");
+    assert(second_image_frame.report.image_texture_pipeline_ran);
+    assert(second_image_frame.report.image_texture_ready_count == 1);
+    assert(second_image_frame.report.image_texture_renderer_handoff_ready);
+    const render::fake_image_texture_pipeline_snapshot image_pipeline_snapshot =
+        image_pipeline.image_texture_pipeline().diagnostic_snapshot();
+    assert(image_pipeline_snapshot.acquire_count == 2);
+    assert(image_pipeline_snapshot.ready_count == 2);
+    assert(image_pipeline_snapshot.cache_hit_count == 1);
+    assert(image_pipeline_snapshot.upload_snapshot.upload_count == 1);
+    assert(image_pipeline_snapshot.entries.size() == 2);
+    assert(!image_pipeline_snapshot.entries[0].cache_hit);
+    assert(image_pipeline_snapshot.entries[1].cache_hit);
+    assert(
+        image_pipeline_snapshot.entries[0].source_key
+        == image_pipeline_snapshot.entries[1].source_key);
+    assert(
+        image_pipeline_snapshot.entries[0].texture.id
+        == image_pipeline_snapshot.entries[1].texture.id);
+
     state.dispatch(domain::make_submit_option_action(0), 200);
     app_render_report feedback_report = render_app_snapshot(state.snapshot());
     assert(feedback_report.screen_id == "quiz_feedback");

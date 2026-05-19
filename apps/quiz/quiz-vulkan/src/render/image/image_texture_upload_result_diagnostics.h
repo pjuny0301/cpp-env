@@ -806,10 +806,7 @@ diff_render_image_texture_upload_result_snapshots(
             append_render_image_texture_upload_result_summary(
                 diff.staging_payload_summary,
                 "request=" + std::to_string(entry.request_id)
-                    + ":staging_bytes="
-                    + std::to_string(entry.before_staging_payload_byte_count)
-                    + "->"
-                    + std::to_string(entry.after_staging_payload_byte_count));
+                    + ":" + entry.staging_payload_plan_diff.change_summary);
         }
         if (entry.staging_payload_plan_diff.row_copy_count_changed) {
             ++diff.staging_row_copy_count_changed_count;

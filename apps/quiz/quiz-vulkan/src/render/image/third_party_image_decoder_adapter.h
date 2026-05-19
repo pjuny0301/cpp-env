@@ -170,12 +170,14 @@ public:
     explicit optional_third_party_image_decoder_chain(
         const third_party_image_decoder_backend_interface& backend)
         : adapter_(backend)
+        , fallback_(standard_image_stb_jpeg_route::disabled)
     {
     }
 
     explicit optional_third_party_image_decoder_chain(
         const third_party_image_decoder_backend_interface* backend)
         : adapter_(backend)
+        , fallback_(standard_image_stb_jpeg_route::disabled)
     {
     }
 
@@ -183,6 +185,7 @@ public:
         const third_party_image_decoder_backend_interface& backend,
         const stb_image_decoder_dependency_probe_interface& stb_probe)
         : adapter_(backend)
+        , fallback_(standard_image_stb_jpeg_route::disabled)
         , stb_probe_(&stb_probe)
     {
     }
@@ -191,6 +194,7 @@ public:
         const third_party_image_decoder_backend_interface* backend,
         const stb_image_decoder_dependency_probe_interface* stb_probe)
         : adapter_(backend)
+        , fallback_(standard_image_stb_jpeg_route::disabled)
         , stb_probe_(stb_probe)
     {
     }

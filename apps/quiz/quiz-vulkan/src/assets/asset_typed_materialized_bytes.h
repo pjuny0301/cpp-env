@@ -956,6 +956,16 @@ struct asset_shader_materialized_byte_pipeline_entry {
     {
         return issues.empty();
     }
+
+    [[nodiscard]] bool has_issue(asset_shader_materialized_byte_issue_kind kind) const
+    {
+        for (const asset_shader_materialized_byte_issue& issue : issues) {
+            if (issue.kind == kind) {
+                return true;
+            }
+        }
+        return false;
+    }
 };
 
 struct asset_shader_materialized_byte_pipeline_summary {
@@ -987,6 +997,12 @@ struct asset_shader_materialized_byte_pipeline_summary {
     [[nodiscard]] std::size_t entry_count() const
     {
         return ready_count() + blocked_count();
+    }
+
+    [[nodiscard]] std::size_t issue_count() const
+    {
+        return blocked_materialization_count + blocked_byte_load_count + integrity_failure_count
+            + empty_shader_bytes_count + non_spirv_magic_count + duplicate_id_count;
     }
 
     [[nodiscard]] const asset_shader_materialized_byte_pipeline_entry* find_ready(
@@ -2007,6 +2023,26 @@ inline asset_shader_materialized_byte_pipeline_summary summarize_shader_material
     return summary;
 }
 
+inline std::string asset_shader_materialized_byte_issue_kind_name(
+    asset_shader_materialized_byte_issue_kind kind)
+{
+    switch (kind) {
+        case asset_shader_materialized_byte_issue_kind::blocked_materialization:
+            return "blocked_materialization";
+        case asset_shader_materialized_byte_issue_kind::blocked_byte_load:
+            return "blocked_byte_load";
+        case asset_shader_materialized_byte_issue_kind::integrity_failure:
+            return "integrity_failure";
+        case asset_shader_materialized_byte_issue_kind::empty_shader_bytes:
+            return "empty_shader_bytes";
+        case asset_shader_materialized_byte_issue_kind::non_spirv_magic:
+            return "non_spirv_magic";
+        case asset_shader_materialized_byte_issue_kind::duplicate_id:
+            return "duplicate_id";
+    }
+    return "blocked_materialization";
+}
+
 inline std::string asset_materialized_byte_payload_selection_status_name(
     asset_materialized_byte_payload_selection_status status)
 {
@@ -2241,3 +2277,5 @@ inline asset_materialized_byte_payload_request_transaction_diff_summary diff_mat
 }
 
 } // namespace quiz_vulkan::assets
+
+#include "assets/asset_shader_byte_pipeline_source_summary.h"

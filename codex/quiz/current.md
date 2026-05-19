@@ -19,39 +19,42 @@ details belong in git history.
 
 ## Integrated Baseline
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `066f6b0`.
+- Main branch `codex/quiz-vulkan-remake-baseline` is at `31ba743`.
 - Integrated since the previous remote baseline:
-  - asset render resource address to byte-payload bridge;
-  - standard PNG decode through the existing STB path;
-  - input gesture route diagnostics;
-  - multiline text atlas frame handoff;
-  - native Vulkan vertex-buffer bind evidence.
+  - app/runtime image texture cache reuse verification and missing image-engine
+    link wiring;
+  - asset manifest to typed materialized bytes to render payload bridge coverage;
+  - standard image decode to texture cache/upload residency coverage;
+  - text atlas residency blocker diagnostics;
+  - native Vulkan draw packet resource execution evidence.
 - Full Windows MinGW CTest passed 108/108 in
   `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
 
 ## Active Bottlenecks
 
-- Vulkan: keep moving from recorded command evidence toward real native
-  swapchain/pipeline execution, while preserving renderer-only inputs.
-- Text: keep replacing fake handoff coverage with font/shaping/atlas evidence
-  behind the text engine contract.
-- Image: expand STB-backed decode coverage and texture upload/cache behavior
-  without letting renderer or scene code decode files directly.
-- Asset: keep render resources resolved through asset/materialized-byte
-  contracts, not ad hoc file paths.
+- Vulkan: native draw resource execution is tracked; keep moving toward real
+  buffer/descriptor allocation and swapchain/pipeline execution while preserving
+  renderer-only inputs.
+- Text: atlas residency blockers are tracked; keep replacing fake handoff
+  coverage with font/shaping/atlas evidence behind the text engine contract.
+- Image: standard decode cache/upload residency is covered; keep expanding real
+  texture upload/cache behavior without letting renderer or scene code decode
+  files directly.
+- Asset: manifest/render resources can bridge to materialized bytes; keep asset
+  payloads resolved through stable cache identities, not ad hoc file paths.
 - Input/IME: gesture route diagnostics are integrated; only resume when a
   user-visible input route or IME contract becomes the active blocker.
 
 ## Active Workers
 
 - `codex-vulkan-native-command-packet-executor-20260516`: latest commit
-  `1cc792d` integrated as `066f6b0`; session remains alive.
-- `codex-text-freetype-prototype-20260514`: latest commit `ac9c110`
-  integrated as `9d0dcf5`; session remains alive.
-- `codex-asset-unified-cache-key-20260514`: latest commit `353bf28`
-  integrated as `3d3878d`; session remains alive.
-- `codex-image-texture-next-20260514`: latest commit `c80a3e6`
-  integrated as `03ce5dc`; session remains alive.
+  `378ad84` integrated as `31ba743`; session remains alive.
+- `codex-text-freetype-prototype-20260514`: latest commit `1819a70`
+  integrated as `d64924e`; session remains alive.
+- `codex-asset-unified-cache-key-20260514`: latest commit `311b00f`
+  integrated as `3f461ca`; session remains alive.
+- `codex-image-texture-next-20260514`: latest commit `8731734`
+  integrated as `2a22d99`; session remains alive.
 - `codex-input-ime`: latest commit `5e87138` integrated as `ce94ecd`;
   session remains alive.
 - Idle sessions are intentionally kept alive. Give them fresh baseline branches

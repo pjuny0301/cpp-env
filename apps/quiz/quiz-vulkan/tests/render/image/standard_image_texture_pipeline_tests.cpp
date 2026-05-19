@@ -571,6 +571,183 @@ void test_standard_pipeline_materializes_decoded_bytes_for_resource_consumption(
         "placeholder materialization preserves placeholder texture key");
 }
 
+void test_standard_pipeline_threads_decoded_bytes_into_draw_payloads()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_texture_placeholder_policy placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    };
+
+    normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    set_source_bytes(loader, "textures/card.ppm", make_ppm_bytes());
+    set_source_bytes(loader, "textures/bad.ppm", make_short_ppm_bytes());
+    standard_image_texture_pipeline pipeline(resolver, loader);
+    pipeline.set_placeholder_texture_policy(placeholder_policy);
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.mag_filter = render_image_filter::nearest;
+
+    render_draw_list draw_list;
+    draw_list.commands = {
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "card-image",
+            .parent_node_id = "card",
+            .bounds = render_rect{.x = 0.0f, .y = 0.0f, .width = 10.0f, .height = 10.0f},
+            .content_bounds = render_rect{.x = 1.0f, .y = 1.0f, .width = 8.0f, .height = 8.0f},
+            .image = render_image_ref{.uri = "textures/card.ppm", .alt_text = "card", .sampler = nearest_sampler},
+        },
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "fallback-image",
+            .parent_node_id = "card",
+            .bounds = render_rect{.x = 12.0f, .y = 0.0f, .width = 10.0f, .height = 10.0f},
+            .content_bounds = render_rect{.x = 12.0f, .y = 0.0f, .width = 10.0f, .height = 10.0f},
+            .image = render_image_ref{.uri = "textures/bad.ppm", .alt_text = "fallback"},
+        },
+    };
+
+    const render_image_draw_list_frame_handoff_snapshot handoff =
+        make_render_image_draw_list_frame_handoff_snapshot(draw_list, "decoded-draw-frame");
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(
+        handoff,
+        resolver,
+        render_image_texture_batch_plan_options{.placeholder_policy = placeholder_policy});
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(plan, pipeline);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(plan, execution);
+    const render_image_texture_upload_result_snapshot upload_result =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
+            pipeline.standard_diagnostic_snapshot().pipeline.upload_snapshot);
+    const render_image_texture_frame_resource_packet_plan resources =
+        make_render_image_texture_frame_resource_packet_plan(frame, upload_result);
+    const render_image_texture_frame_resource_packet_materialization materialization =
+        materialize_render_image_texture_frame_resource_packets(resources);
+    const render_image_texture_frame_resource_packet_consumption_summary consumption =
+        make_render_image_texture_frame_resource_packet_consumption_summary(materialization);
+    const render_image_draw_list_texture_frame_composition composition =
+        make_render_image_draw_list_texture_frame_composition(handoff, plan, frame, resources);
+    const render_image_renderer_texture_quad_packet_summary quad_summary =
+        make_render_image_renderer_texture_quad_packet_summary_with_resource_consumption(
+            make_render_image_renderer_texture_quad_packet_summary(composition),
+            consumption);
+    const render_image_renderer_texture_quad_draw_payload_frame payload_frame =
+        make_render_image_renderer_texture_quad_draw_payload_frame(quad_summary);
+
+    require(execution.ok(), "standard draw payload batch executes with placeholder fallback");
+    require(consumption.ok(), "standard draw payload consumption is renderer-ready");
+    require(quad_summary.ok(), "standard draw payload quad summary is ready");
+    require(payload_frame.ok(), "standard draw payload frame is consumable");
+    require(payload_frame.payload_count == 2, "standard draw payload frame records both image commands");
+    require(payload_frame.draw_ready_payload_count == 1, "standard draw payload frame records one real texture payload");
+    require(payload_frame.placeholder_payload_count == 1, "standard draw payload frame records one placeholder payload");
+    require(payload_frame.fallback_placeholder_payload_count == 0, "standard draw payload frame does not use draw-time fallback");
+    require(payload_frame.decoded_resource_ready_payload_count == 2, "standard draw payload frame counts decoded resources");
+    require(payload_frame.decoded_payload_byte_count == 20, "standard draw payload frame sums decoded bytes");
+    require(payload_frame.staging_payload_byte_count == 20, "standard draw payload frame sums staging bytes");
+    require(
+        payload_frame.decoded_resource_summary
+            == "decoded_payloads=2; payload_hashes=2; decoded_bytes=20; staging_bytes=20",
+        "standard draw payload decoded summary is stable");
+
+    const render_image_renderer_texture_quad_draw_payload& ready = payload_frame.payloads[0];
+    require(ready.draw_ready, "standard draw payload keeps real texture draw-ready");
+    require(ready.decoded_resource_ready, "standard draw payload preserves decoded readiness");
+    require(ready.decoded_payload_hash == consumption.entries[0].decoded_payload_hash, "standard draw payload preserves decoded hash");
+    require(ready.decoded_byte_count == 4, "standard draw payload records real RGBA byte count");
+    require(ready.upload_layout_byte_count == 4, "standard draw payload records upload layout bytes");
+    require(ready.staging_payload_byte_count == 4, "standard draw payload records staging bytes");
+    require(ready.upload_generation_id == consumption.entries[0].upload_generation_id, "standard draw payload preserves upload generation");
+    require(ready.stable_texture_cache_key.find("textures/card.ppm") != std::string::npos, "standard draw payload preserves cache key");
+    require(ready.sampler_key == render_image_sampler_policy_stable_fragment(nearest_sampler), "standard draw payload preserves sampler key");
+
+    const render_image_renderer_texture_quad_draw_payload& placeholder = payload_frame.payloads[1];
+    require(placeholder.placeholder_backed, "standard draw payload keeps placeholder-backed texture");
+    require(!placeholder.fallback_placeholder, "standard draw payload distinguishes uploaded placeholder from draw fallback");
+    require(placeholder.decoded_resource_ready, "standard placeholder draw payload has decoded placeholder bytes");
+    require(placeholder.decoded_byte_count == 16, "standard placeholder draw payload records placeholder RGBA bytes");
+    require(placeholder.staging_payload_byte_count == 16, "standard placeholder draw payload records placeholder staging bytes");
+}
+
+void test_standard_pipeline_draw_payload_fallback_preserves_decode_blocker()
+{
+    using namespace quiz_vulkan::render;
+
+    normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    set_source_bytes(loader, "textures/short.ppm", make_short_ppm_bytes());
+    standard_image_texture_pipeline pipeline(resolver, loader);
+
+    render_draw_list draw_list;
+    draw_list.commands = {
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "blocked-image",
+            .parent_node_id = "root",
+            .bounds = render_rect{.x = 0.0f, .y = 0.0f, .width = 8.0f, .height = 8.0f},
+            .content_bounds = render_rect{.x = 0.0f, .y = 0.0f, .width = 8.0f, .height = 8.0f},
+            .image = render_image_ref{.uri = "textures/short.ppm", .alt_text = "bad"},
+        },
+    };
+
+    const render_image_draw_list_frame_handoff_snapshot handoff =
+        make_render_image_draw_list_frame_handoff_snapshot(draw_list, "decoded-blocker-frame");
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(handoff, resolver);
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(plan, pipeline);
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(plan, execution);
+    const render_image_texture_upload_result_snapshot upload_result =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
+            pipeline.standard_diagnostic_snapshot().pipeline.upload_snapshot);
+    const render_image_texture_frame_resource_packet_plan resources =
+        make_render_image_texture_frame_resource_packet_plan(frame, upload_result);
+    const render_image_texture_frame_resource_packet_materialization materialization =
+        materialize_render_image_texture_frame_resource_packets(resources);
+    const render_image_texture_frame_resource_packet_consumption_summary consumption =
+        make_render_image_texture_frame_resource_packet_consumption_summary(materialization);
+    const render_image_draw_list_texture_frame_composition composition =
+        make_render_image_draw_list_texture_frame_composition(handoff, plan, frame, resources);
+    const render_image_renderer_texture_quad_packet_summary quad_summary =
+        make_render_image_renderer_texture_quad_packet_summary_with_resource_consumption(
+            make_render_image_renderer_texture_quad_packet_summary(composition),
+            consumption);
+
+    render_image_renderer_texture_quad_draw_payload_options options;
+    options.placeholder_policy.enabled = true;
+    options.placeholder_policy.width = 2;
+    options.placeholder_policy.height = 2;
+    options.placeholder_policy.source_key_prefix = "placeholder://decoded-draw/";
+    const render_image_renderer_texture_quad_draw_payload_frame payload_frame =
+        make_render_image_renderer_texture_quad_draw_payload_frame(quad_summary, options);
+
+    require(!execution.ok(), "standard draw payload blocker batch fails before fallback payload");
+    require(!consumption.ok(), "standard draw payload blocker consumption is blocked");
+    require(!quad_summary.ok(), "standard draw payload blocker quad summary is blocked");
+    require(payload_frame.ok(), "draw-time placeholder policy makes blocked payload consumable");
+    require(payload_frame.placeholder_payload_count == 1, "draw-time fallback produces placeholder payload");
+    require(payload_frame.fallback_placeholder_payload_count == 1, "draw-time fallback is counted separately");
+    require(payload_frame.has_decoded_resource_blockers, "draw-time fallback keeps decoded blocker aggregate");
+
+    const render_image_renderer_texture_quad_draw_payload& payload = payload_frame.payloads[0];
+    require(payload.placeholder_backed, "blocked decoded payload becomes placeholder-backed under policy");
+    require(payload.fallback_placeholder, "blocked decoded payload uses draw-time fallback");
+    require(payload.decoded_resource_blocked, "fallback payload preserves decoded blocked state");
+    require(
+        payload.decoded_resource_blocker_summary.find("pixel data size does not match dimensions")
+            != std::string::npos,
+        "fallback payload preserves decoder byte-count blocker");
+    require(
+        payload.diagnostic.find("using deterministic placeholder texture for upload_failed") == 0,
+        "fallback payload diagnostic remains placeholder-friendly");
+}
+
 void test_standard_pipeline_materialization_reports_source_and_decode_blockers()
 {
     using namespace quiz_vulkan::render;
@@ -733,6 +910,8 @@ int main()
     test_standard_pipeline_reuses_cached_decode_and_upload_for_same_normalized_key();
     test_standard_pipeline_decodes_and_uploads_distinct_cache_revision_after_invalidation();
     test_standard_pipeline_materializes_decoded_bytes_for_resource_consumption();
+    test_standard_pipeline_threads_decoded_bytes_into_draw_payloads();
+    test_standard_pipeline_draw_payload_fallback_preserves_decode_blocker();
     test_standard_pipeline_materialization_reports_source_and_decode_blockers();
     test_standard_pipeline_reports_unsupported_decode_with_candidate_diagnostics();
     test_standard_pipeline_reports_invalid_decode_with_candidate_diagnostics();

@@ -4,6 +4,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdio>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -46,6 +47,31 @@ void require(bool condition, const char* message)
         std::fprintf(stderr, "Requirement failed: %s\n", message);
     }
     assert((condition) && message);
+}
+
+void attach_decoded_upload_evidence(
+    quiz_vulkan::render::render_image_texture_frame_upload_handoff_entry& entry,
+    std::size_t width,
+    std::size_t height,
+    std::byte fill)
+{
+    using namespace quiz_vulkan::render;
+
+    render_decoded_image decoded{
+        .width = width,
+        .height = height,
+        .pixel_format = render_image_pixel_format::rgba8_srgb,
+        .pixels = {},
+    };
+    decoded.pixels.resize(expected_render_decoded_image_byte_count(decoded), fill);
+    entry.decoded_payload = make_render_image_decoded_payload_evidence(decoded);
+    entry.payload_layout = make_render_image_texture_upload_payload_layout_evidence(
+        entry.texture_key,
+        entry.sampler,
+        decoded);
+    entry.staging_payload_plan = make_render_image_texture_staging_payload_plan(
+        entry.payload_layout,
+        make_render_image_texture_mipmap_upload_plan(decoded, entry.sampler));
 }
 
 quiz_vulkan::render::render_image_texture_frame_upload_handoff_entry make_ready_handoff_entry(
@@ -95,6 +121,11 @@ quiz_vulkan::render::render_image_texture_frame_upload_handoff_entry make_ready_
     entry.diagnostic = placeholder_backed
         ? "image frame upload handoff entry uses placeholder texture"
         : "image frame upload handoff entry is ready";
+    attach_decoded_upload_evidence(
+        entry,
+        entry.texture_width,
+        entry.texture_height,
+        placeholder_backed ? std::byte{0x7f} : std::byte{0xff});
     return entry;
 }
 
@@ -236,6 +267,11 @@ quiz_vulkan::render::render_image_texture_frame_resource_packet_plan make_ready_
         entry.cache_key_summary = plan_entry.stable_texture_cache_key;
         entry.sampler_summary = sampler_key;
         entry.diagnostic = "test upload handoff entry is ready";
+        attach_decoded_upload_evidence(
+            entry,
+            entry.texture_width,
+            entry.texture_height,
+            std::byte{static_cast<unsigned char>(0x40 + plan_entry.request_index)});
         handoff.entries.push_back(entry);
         handoff.uploaded_byte_count += entry.uploaded_byte_count;
         handoff.total_mip_level_count += entry.mip_level_count;
@@ -323,6 +359,23 @@ quiz_vulkan::render::render_image_renderer_texture_quad_packet make_test_rendere
         .renderer_handoff_ready = ready,
         .blocker_summary = ready ? "" : "resource packet blocked renderer texture quad packet",
     };
+    packet.decoded_resource_evidence_present = true;
+    packet.decoded_payload_hash = ready ? 10'000 + packet_index : 0;
+    packet.decoded_byte_count = ready ? 256 + packet_index : 0;
+    packet.upload_layout_byte_count = packet.decoded_byte_count;
+    packet.upload_layout_row_stride_byte_count = ready ? 16 : 0;
+    packet.staging_payload_byte_count = ready ? 256 + packet_index : 0;
+    packet.staging_row_copy_count = ready ? 16 : 0;
+    packet.decoded_payload_valid = ready;
+    packet.upload_payload_layout_ready = ready;
+    packet.staging_payload_ready = ready;
+    packet.decoded_resource_ready = ready;
+    packet.decoded_resource_blocked = !ready;
+    packet.decoded_resource_summary = "decoded_bytes=" + std::to_string(packet.decoded_byte_count)
+        + "; staging_bytes=" + std::to_string(packet.staging_payload_byte_count)
+        + "; payload_hash=" + std::to_string(packet.decoded_payload_hash);
+    packet.decoded_resource_blocker_summary =
+        ready ? "" : "resource packet blocked renderer texture quad packet";
     finalize_render_image_renderer_texture_quad_packet(packet);
     return packet;
 }
@@ -338,14 +391,27 @@ quiz_vulkan::render::render_image_renderer_texture_quad_packet_summary make_test
         .image_command_count = packets.size(),
     };
 
+    std::map<std::uint64_t, bool> decoded_payload_hashes;
     for (render_image_renderer_texture_quad_packet& packet : packets) {
         packet.packet_index = summary.packets.size();
+        if (packet.decoded_resource_evidence_present && packet.decoded_payload_hash != 0) {
+            decoded_payload_hashes.emplace(packet.decoded_payload_hash, true);
+        }
         count_render_image_renderer_texture_quad_packet(summary, packet);
         summary.packets.push_back(packet);
     }
 
     summary.packet_count = summary.packets.size();
+    summary.decoded_payload_hash_count = decoded_payload_hashes.size();
     summary.renderer_quad_packets_ready = summary.packet_count != 0 && !summary.has_blockers;
+    summary.decoded_resource_summary =
+        "decoded_resources=" + std::to_string(summary.decoded_resource_ready_count)
+        + "; payload_hashes=" + std::to_string(summary.decoded_payload_hash_count)
+        + "; decoded_bytes=" + std::to_string(summary.decoded_payload_byte_count)
+        + "; staging_bytes=" + std::to_string(summary.staging_payload_byte_count);
+    if (summary.decoded_resource_blocker_summary.empty()) {
+        summary.decoded_resource_blocker_summary = "no decoded resource blockers";
+    }
     summary.status = summary.packet_count == 0
         ? render_image_renderer_texture_quad_packet_summary_status::empty
         : (summary.has_blockers
@@ -673,6 +739,14 @@ void test_draw_list_texture_frame_composition_links_ready_commands_to_resources(
     require(first.frame_renderer_handoff_ready, "first entry records frame handoff readiness");
     require(first.resource_packet_present, "first entry links resource packet evidence");
     require(first.resource_packet_ready, "first entry records resource packet readiness");
+    require(first.decoded_resource_evidence_present, "first entry links decoded resource evidence");
+    require(first.decoded_resource_ready, "first entry records decoded resource readiness");
+    require(first.decoded_payload_hash != 0, "first entry records decoded payload hash");
+    require(first.decoded_byte_count == 8192, "first entry records decoded byte count");
+    require(first.upload_layout_byte_count == 8192, "first entry records upload layout byte count");
+    require(first.upload_layout_row_stride_byte_count == 256, "first entry records upload row stride");
+    require(first.staging_payload_byte_count == 8192, "first entry records staging byte count");
+    require(first.staging_row_copy_count == 32, "first entry records staging row copies");
     require(first.texture_id == 700, "first entry carries resource texture id");
     require(first.upload_request_id == 900, "first entry carries upload request id evidence");
     require(first.uploaded_byte_count == 64, "first entry carries uploaded byte count evidence");
@@ -690,6 +764,7 @@ void test_draw_list_texture_frame_composition_links_ready_commands_to_resources(
     require(second.texture_request_index == 1, "second composed entry preserves texture request index");
     require(second.node_id == "badge-image", "second composed entry preserves node id");
     require(second.resource_packet_present, "second entry links resource packet evidence");
+    require(second.decoded_resource_ready, "second entry carries decoded resource readiness");
     require(second.texture_id == 701, "second entry carries second texture id");
 }
 
@@ -853,6 +928,14 @@ void test_renderer_texture_quad_packets_preserve_ready_composed_evidence()
     require(summary.unique_texture_cache_key_count == 2, "renderer quad summary records unique texture cache keys");
     require(summary.unique_sampler_key_count == 2, "renderer quad summary records unique sampler keys");
     require(summary.uploaded_byte_count == 128, "renderer quad summary records uploaded byte evidence");
+    require(summary.decoded_resource_ready_count == 2, "renderer quad summary records decoded resource count");
+    require(summary.decoded_payload_hash_count == 2, "renderer quad summary records decoded payload hashes");
+    require(summary.decoded_payload_byte_count == 16512, "renderer quad summary records decoded byte evidence");
+    require(summary.staging_payload_byte_count == 16512, "renderer quad summary records staging byte evidence");
+    require(
+        summary.decoded_resource_summary
+            == "decoded_resources=2; payload_hashes=2; decoded_bytes=16512; staging_bytes=16512",
+        "renderer quad summary decoded resource summary is stable");
     require(summary.renderer_quad_packets_ready, "renderer quad summary records renderer readiness");
     require(
         summary.skipped_command_summary == "skipped non-image draw commands=1",
@@ -901,6 +984,14 @@ void test_renderer_texture_quad_packets_preserve_ready_composed_evidence()
     require(first.upload_request_id == 900, "first renderer quad packet carries upload request id");
     require(first.upload_generation_id == 11, "first renderer quad packet carries upload generation id");
     require(first.uploaded_byte_count == 64, "first renderer quad packet carries uploaded byte count");
+    require(first.decoded_resource_evidence_present, "first renderer quad packet carries decoded evidence");
+    require(first.decoded_resource_ready, "first renderer quad packet records decoded readiness");
+    require(first.decoded_payload_hash != 0, "first renderer quad packet carries decoded payload hash");
+    require(first.decoded_byte_count == 8192, "first renderer quad packet carries decoded byte count");
+    require(first.upload_layout_byte_count == 8192, "first renderer quad packet carries upload layout bytes");
+    require(first.upload_layout_row_stride_byte_count == 256, "first renderer quad packet carries row stride");
+    require(first.staging_payload_byte_count == 8192, "first renderer quad packet carries staging bytes");
+    require(first.staging_row_copy_count == 32, "first renderer quad packet carries staging row copies");
     require(
         first.status == render_image_renderer_texture_quad_packet_status::ready,
         "first renderer quad packet status is ready");
@@ -1143,6 +1234,14 @@ void test_renderer_texture_quad_packet_diff_counts_layout_texture_sampler_cache_
     after_packet.upload_request_id += 20;
     after_packet.upload_generation_id += 2;
     after_packet.uploaded_byte_count += 32;
+    after_packet.decoded_payload_hash += 1;
+    after_packet.decoded_byte_count += 4;
+    after_packet.upload_layout_byte_count += 4;
+    after_packet.staging_payload_byte_count += 8;
+    after_packet.decoded_resource_summary =
+        "decoded_bytes=" + std::to_string(after_packet.decoded_byte_count)
+        + "; staging_bytes=" + std::to_string(after_packet.staging_payload_byte_count)
+        + "; payload_hash=" + std::to_string(after_packet.decoded_payload_hash);
     finalize_render_image_renderer_texture_quad_packet(after_packet);
 
     const render_image_renderer_texture_quad_packet_summary before =
@@ -1167,6 +1266,11 @@ void test_renderer_texture_quad_packet_diff_counts_layout_texture_sampler_cache_
     require(diff.upload_request_changed_count == 1, "renderer texture quad mutation diff counts upload request change");
     require(diff.upload_generation_changed_count == 1, "renderer texture quad mutation diff counts upload generation change");
     require(diff.uploaded_byte_count_changed_count == 1, "renderer texture quad mutation diff counts uploaded bytes change");
+    require(diff.decoded_payload_hash_changed_count == 1, "renderer texture quad mutation diff counts decoded payload hash change");
+    require(diff.decoded_byte_count_changed_count == 1, "renderer texture quad mutation diff counts decoded byte change");
+    require(diff.upload_layout_byte_count_changed_count == 1, "renderer texture quad mutation diff counts upload layout byte change");
+    require(diff.staging_payload_byte_count_changed_count == 1, "renderer texture quad mutation diff counts staging byte change");
+    require(diff.has_decoded_resource_changes, "renderer texture quad mutation diff flags decoded resource changes");
     require(diff.has_identity_changes, "renderer texture quad mutation diff flags identity changes");
     require(diff.has_layout_changes, "renderer texture quad mutation diff flags layout changes");
     require(diff.has_texture_changes, "renderer texture quad mutation diff flags texture changes");
@@ -1179,6 +1283,8 @@ void test_renderer_texture_quad_packet_diff_counts_layout_texture_sampler_cache_
     require(entry->changed(), "renderer texture quad mutation diff entry reports changed");
     require(entry->classification_name == "churn", "renderer texture quad mutation diff entry is churn");
     require(entry->uploaded_byte_delta == 32, "renderer texture quad mutation diff entry records byte delta");
+    require(entry->decoded_byte_delta == 4, "renderer texture quad mutation diff entry records decoded byte delta");
+    require(entry->staging_payload_byte_delta == 8, "renderer texture quad mutation diff entry records staging byte delta");
     require(
         entry->diagnostic == "image renderer texture quad packet changed",
         "renderer texture quad mutation diff diagnostic is stable");
@@ -1284,6 +1390,14 @@ void test_renderer_texture_quad_draw_payloads_preserve_ready_packet_data()
     require(frame.draw_ready_payload_count == 2, "ready renderer texture quad payload frame counts draw-ready payloads");
     require(frame.placeholder_payload_count == 0, "ready renderer texture quad payload frame has no placeholders");
     require(frame.blocked_payload_count == 0, "ready renderer texture quad payload frame has no blockers");
+    require(frame.decoded_resource_ready_payload_count == 2, "ready renderer texture quad payload frame counts decoded resources");
+    require(frame.decoded_payload_hash_count == 2, "ready renderer texture quad payload frame counts decoded hashes");
+    require(frame.decoded_payload_byte_count == 513, "ready renderer texture quad payload frame sums decoded bytes");
+    require(frame.staging_payload_byte_count == 513, "ready renderer texture quad payload frame sums staging bytes");
+    require(
+        frame.decoded_resource_summary
+            == "decoded_payloads=2; payload_hashes=2; decoded_bytes=513; staging_bytes=513",
+        "ready renderer texture quad payload frame decoded summary is stable");
     require(frame.draw_payloads_ready, "ready renderer texture quad payload frame marks payloads ready");
     require(
         frame.diagnostic == "image renderer texture quad draw payload frame is ready",
@@ -1314,6 +1428,12 @@ void test_renderer_texture_quad_draw_payloads_preserve_ready_packet_data()
     require(first.upload_request_id == 1200, "ready renderer texture quad payload preserves upload request");
     require(first.upload_generation_id == 8, "ready renderer texture quad payload preserves upload generation");
     require(first.uploaded_byte_count == 128, "ready renderer texture quad payload preserves uploaded byte count");
+    require(first.decoded_resource_evidence_present, "ready renderer texture quad payload preserves decoded evidence flag");
+    require(first.decoded_resource_ready, "ready renderer texture quad payload preserves decoded readiness");
+    require(first.decoded_payload_hash != 0, "ready renderer texture quad payload preserves decoded hash");
+    require(first.decoded_byte_count == 256, "ready renderer texture quad payload preserves decoded bytes");
+    require(first.upload_layout_byte_count == 256, "ready renderer texture quad payload preserves layout bytes");
+    require(first.staging_payload_byte_count == 256, "ready renderer texture quad payload preserves staging bytes");
     require(first.sampler_key.find("min=linear") != std::string::npos, "ready renderer texture quad payload preserves sampler key");
     require(first.stable_texture_cache_key.find("card.ppm") != std::string::npos, "ready renderer texture quad payload preserves cache key");
     require(
@@ -1349,6 +1469,8 @@ void test_renderer_texture_quad_draw_payloads_use_policy_placeholder_for_blocked
     require(frame.placeholder_payload_count == 1, "placeholder renderer texture quad payload frame counts placeholder");
     require(frame.fallback_placeholder_payload_count == 1, "placeholder renderer texture quad payload frame counts fallback placeholder");
     require(frame.blocked_payload_count == 0, "placeholder renderer texture quad payload frame has no blockers");
+    require(frame.decoded_resource_blocked_payload_count == 1, "placeholder renderer texture quad payload frame records decoded blocker");
+    require(frame.has_decoded_resource_blockers, "placeholder renderer texture quad payload frame preserves decoded blocker flag");
     require(frame.has_fallback_placeholders, "placeholder renderer texture quad payload frame flags fallback placeholders");
     require(
         frame.diagnostic == "image renderer texture quad draw payload frame is placeholder-backed",
@@ -1366,6 +1488,11 @@ void test_renderer_texture_quad_draw_payloads_use_policy_placeholder_for_blocked
     require(payload.texture_id == 0, "fallback placeholder renderer texture quad payload does not invent texture id");
     require(payload.texture_width == 3, "fallback placeholder renderer texture quad payload uses policy width");
     require(payload.texture_height == 5, "fallback placeholder renderer texture quad payload uses policy height");
+    require(payload.decoded_resource_evidence_present, "fallback placeholder renderer texture quad payload keeps decoded evidence");
+    require(payload.decoded_resource_blocked, "fallback placeholder renderer texture quad payload keeps decoded blocker flag");
+    require(
+        payload.decoded_resource_blocker_summary == "resource packet blocked renderer texture quad packet",
+        "fallback placeholder renderer texture quad payload preserves decoded blocker summary");
     require(
         payload.placeholder_key.source_key.find("placeholder://quad/upload_failed/asset://textures/blocked.ppm")
             == 0,
@@ -1414,9 +1541,13 @@ void test_renderer_texture_quad_draw_payloads_keep_blocked_packets_blocked_witho
     require(!payload.draw_ready, "blocked renderer texture quad payload is not draw ready");
     require(!payload.placeholder_backed, "blocked renderer texture quad payload is not placeholder-backed");
     require(payload.blocked, "blocked renderer texture quad payload records blocked flag");
+    require(payload.decoded_resource_blocked, "blocked renderer texture quad payload preserves decoded blocker flag");
     require(
         payload.blocker_summary == "resource packet blocked renderer texture quad packet",
         "blocked renderer texture quad payload preserves blocker summary");
+    require(
+        payload.decoded_resource_blocker_summary == "resource packet blocked renderer texture quad packet",
+        "blocked renderer texture quad payload preserves decoded blocker summary");
     require(
         payload.stable_payload_identity.find("payload=blocked:blocked_resource_packet") != std::string::npos,
         "blocked renderer texture quad payload identity records blocked reason");

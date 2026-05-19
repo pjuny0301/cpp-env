@@ -2038,6 +2038,12 @@ static_assert(requires(
     { render::render_image_texture_frame_resource_packet_consumption_entry_for_request_index(
         texture_frame_resource_packet_consumption_summary, std::size_t{}) }
         -> std::same_as<const render::render_image_texture_frame_resource_packet_consumption_entry*>;
+    { render::apply_render_image_texture_frame_resource_packet_consumption_to_renderer_texture_quad_packet(
+        renderer_texture_quad_packet, texture_frame_resource_packet_consumption_entry) }
+        -> std::same_as<void>;
+    { render::make_render_image_renderer_texture_quad_packet_summary_with_resource_consumption(
+        renderer_texture_quad_packet_summary, texture_frame_resource_packet_consumption_summary) }
+        -> std::same_as<render::render_image_renderer_texture_quad_packet_summary>;
     { render::append_render_image_texture_frame_resource_packet_consumption_request_indexes(
         std::declval<std::map<std::size_t, bool>&>(), texture_frame_resource_packet_consumption_summary) }
         -> std::same_as<void>;
@@ -3201,6 +3207,13 @@ static_assert(requires(
     { draw_list_texture_frame_composition_entry.upload_request_id } -> std::same_as<std::uint64_t&>;
     { draw_list_texture_frame_composition_entry.upload_generation_id } -> std::same_as<std::uint64_t&>;
     { draw_list_texture_frame_composition_entry.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition_entry.decoded_payload_hash } -> std::same_as<std::uint64_t&>;
+    { draw_list_texture_frame_composition_entry.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition_entry.upload_layout_byte_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition_entry.upload_layout_row_stride_byte_count }
+        -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition_entry.staging_payload_byte_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition_entry.staging_row_copy_count } -> std::same_as<std::size_t&>;
     { draw_list_texture_frame_composition_entry.handoff_blocked } -> std::same_as<bool&>;
     { draw_list_texture_frame_composition_entry.batch_entry_present } -> std::same_as<bool&>;
     { draw_list_texture_frame_composition_entry.batch_request_planned } -> std::same_as<bool&>;
@@ -3210,11 +3223,20 @@ static_assert(requires(
     { draw_list_texture_frame_composition_entry.resource_packet_ready } -> std::same_as<bool&>;
     { draw_list_texture_frame_composition_entry.resource_packet_blocked } -> std::same_as<bool&>;
     { draw_list_texture_frame_composition_entry.entered_texture_batch } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition_entry.decoded_resource_evidence_present } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition_entry.decoded_payload_valid } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition_entry.upload_payload_layout_ready } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition_entry.staging_payload_ready } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition_entry.decoded_resource_ready } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition_entry.decoded_resource_blocked } -> std::same_as<bool&>;
     { draw_list_texture_frame_composition_entry.ready } -> std::same_as<bool&>;
     { draw_list_texture_frame_composition_entry.blocked } -> std::same_as<bool&>;
     { draw_list_texture_frame_composition_entry.status }
         -> std::same_as<render::render_image_draw_list_texture_frame_composition_entry_status&>;
     { draw_list_texture_frame_composition_entry.status_name } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition_entry.decoded_resource_summary } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition_entry.decoded_resource_blocker_summary }
+        -> std::same_as<std::string&>;
     { draw_list_texture_frame_composition_entry.diagnostic } -> std::same_as<std::string&>;
     { draw_list_texture_frame_composition_entry.ok() } -> std::same_as<bool>;
     { draw_list_texture_frame_composition.status }
@@ -3238,13 +3260,21 @@ static_assert(requires(
     { draw_list_texture_frame_composition.frame_blocked_count } -> std::same_as<std::size_t&>;
     { draw_list_texture_frame_composition.missing_resource_packet_count } -> std::same_as<std::size_t&>;
     { draw_list_texture_frame_composition.resource_packet_blocked_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.decoded_resource_ready_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.decoded_resource_blocked_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.decoded_payload_hash_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.decoded_payload_byte_count } -> std::same_as<std::size_t&>;
+    { draw_list_texture_frame_composition.staging_payload_byte_count } -> std::same_as<std::size_t&>;
     { draw_list_texture_frame_composition.has_non_image_commands } -> std::same_as<bool&>;
     { draw_list_texture_frame_composition.has_blockers } -> std::same_as<bool&>;
+    { draw_list_texture_frame_composition.has_decoded_resource_blockers } -> std::same_as<bool&>;
     { draw_list_texture_frame_composition.renderer_handoff_ready } -> std::same_as<bool&>;
     { draw_list_texture_frame_composition.resource_packet_ready } -> std::same_as<bool&>;
     { draw_list_texture_frame_composition.entries }
         -> std::same_as<std::vector<render::render_image_draw_list_texture_frame_composition_entry>&>;
     { draw_list_texture_frame_composition.skipped_command_summary } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition.decoded_resource_summary } -> std::same_as<std::string&>;
+    { draw_list_texture_frame_composition.decoded_resource_blocker_summary } -> std::same_as<std::string&>;
     { draw_list_texture_frame_composition.diagnostic } -> std::same_as<std::string&>;
     { draw_list_texture_frame_composition.ok() } -> std::same_as<bool>;
     { renderer_texture_quad_packet.packet_index } -> std::same_as<std::size_t&>;
@@ -3286,6 +3316,12 @@ static_assert(requires(
     { renderer_texture_quad_packet.upload_request_id } -> std::same_as<std::uint64_t&>;
     { renderer_texture_quad_packet.upload_generation_id } -> std::same_as<std::uint64_t&>;
     { renderer_texture_quad_packet.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet.decoded_payload_hash } -> std::same_as<std::uint64_t&>;
+    { renderer_texture_quad_packet.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet.upload_layout_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet.upload_layout_row_stride_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet.staging_payload_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet.staging_row_copy_count } -> std::same_as<std::size_t&>;
     { renderer_texture_quad_packet.entered_texture_batch } -> std::same_as<bool&>;
     { renderer_texture_quad_packet.frame_entry_present } -> std::same_as<bool&>;
     { renderer_texture_quad_packet.resource_packet_present } -> std::same_as<bool&>;
@@ -3293,12 +3329,20 @@ static_assert(requires(
     { renderer_texture_quad_packet.renderer_handoff_ready } -> std::same_as<bool&>;
     { renderer_texture_quad_packet.missing_stable_identity } -> std::same_as<bool&>;
     { renderer_texture_quad_packet.duplicate_stable_identity } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet.decoded_resource_evidence_present } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet.decoded_payload_valid } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet.upload_payload_layout_ready } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet.staging_payload_ready } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet.decoded_resource_ready } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet.decoded_resource_blocked } -> std::same_as<bool&>;
     { renderer_texture_quad_packet.ready } -> std::same_as<bool&>;
     { renderer_texture_quad_packet.blocked } -> std::same_as<bool&>;
     { renderer_texture_quad_packet.status }
         -> std::same_as<render::render_image_renderer_texture_quad_packet_status&>;
     { renderer_texture_quad_packet.status_name } -> std::same_as<std::string&>;
     { renderer_texture_quad_packet.blocker_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet.decoded_resource_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet.decoded_resource_blocker_summary } -> std::same_as<std::string&>;
     { renderer_texture_quad_packet.diagnostic } -> std::same_as<std::string&>;
     { renderer_texture_quad_packet.ok() } -> std::same_as<bool>;
     { renderer_texture_quad_packet_summary.status }
@@ -3326,8 +3370,16 @@ static_assert(requires(
     { renderer_texture_quad_packet_summary.unique_texture_cache_key_count } -> std::same_as<std::size_t&>;
     { renderer_texture_quad_packet_summary.unique_sampler_key_count } -> std::same_as<std::size_t&>;
     { renderer_texture_quad_packet_summary.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.decoded_resource_evidence_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.decoded_resource_ready_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.decoded_resource_blocked_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.decoded_payload_hash_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.decoded_payload_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.upload_layout_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary.staging_payload_byte_count } -> std::same_as<std::size_t&>;
     { renderer_texture_quad_packet_summary.has_non_image_commands } -> std::same_as<bool&>;
     { renderer_texture_quad_packet_summary.has_blockers } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet_summary.has_decoded_resource_blockers } -> std::same_as<bool&>;
     { renderer_texture_quad_packet_summary.renderer_quad_packets_ready } -> std::same_as<bool&>;
     { renderer_texture_quad_packet_summary.has_missing_stable_identities } -> std::same_as<bool&>;
     { renderer_texture_quad_packet_summary.has_duplicate_stable_identities } -> std::same_as<bool&>;
@@ -3338,6 +3390,8 @@ static_assert(requires(
     { renderer_texture_quad_packet_summary.texture_cache_key_summary } -> std::same_as<std::string&>;
     { renderer_texture_quad_packet_summary.sampler_summary } -> std::same_as<std::string&>;
     { renderer_texture_quad_packet_summary.blocker_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet_summary.decoded_resource_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet_summary.decoded_resource_blocker_summary } -> std::same_as<std::string&>;
     { renderer_texture_quad_packet_summary.diagnostic } -> std::same_as<std::string&>;
     { renderer_texture_quad_packet_summary.ok() } -> std::same_as<bool>;
     { renderer_texture_quad_packet_diff_entry.stable_diff_identity } -> std::same_as<std::string&>;
@@ -3388,6 +3442,21 @@ static_assert(requires(
     { renderer_texture_quad_packet_diff_entry.before_uploaded_byte_count } -> std::same_as<std::size_t&>;
     { renderer_texture_quad_packet_diff_entry.after_uploaded_byte_count } -> std::same_as<std::size_t&>;
     { renderer_texture_quad_packet_diff_entry.uploaded_byte_delta } -> std::same_as<std::int64_t&>;
+    { renderer_texture_quad_packet_diff_entry.before_decoded_payload_hash } -> std::same_as<std::uint64_t&>;
+    { renderer_texture_quad_packet_diff_entry.after_decoded_payload_hash } -> std::same_as<std::uint64_t&>;
+    { renderer_texture_quad_packet_diff_entry.before_decoded_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_diff_entry.after_decoded_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_diff_entry.decoded_byte_delta } -> std::same_as<std::int64_t&>;
+    { renderer_texture_quad_packet_diff_entry.before_upload_layout_byte_count }
+        -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_diff_entry.after_upload_layout_byte_count }
+        -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_diff_entry.upload_layout_byte_delta } -> std::same_as<std::int64_t&>;
+    { renderer_texture_quad_packet_diff_entry.before_staging_payload_byte_count }
+        -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_diff_entry.after_staging_payload_byte_count }
+        -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_diff_entry.staging_payload_byte_delta } -> std::same_as<std::int64_t&>;
     { renderer_texture_quad_packet_diff_entry.before_quad_status }
         -> std::same_as<render::render_image_renderer_texture_quad_packet_status&>;
     { renderer_texture_quad_packet_diff_entry.after_quad_status }
@@ -3402,6 +3471,10 @@ static_assert(requires(
     { renderer_texture_quad_packet_diff_entry.after_missing_stable_identity } -> std::same_as<bool&>;
     { renderer_texture_quad_packet_diff_entry.before_duplicate_stable_identity } -> std::same_as<bool&>;
     { renderer_texture_quad_packet_diff_entry.after_duplicate_stable_identity } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet_diff_entry.before_decoded_resource_ready } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet_diff_entry.after_decoded_resource_ready } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet_diff_entry.before_decoded_resource_blocked } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet_diff_entry.after_decoded_resource_blocked } -> std::same_as<bool&>;
     { renderer_texture_quad_packet_diff_entry.stable_quad_packet_identity_changed } -> std::same_as<bool&>;
     { renderer_texture_quad_packet_diff_entry.bounds_changed } -> std::same_as<bool&>;
     { renderer_texture_quad_packet_diff_entry.content_bounds_changed } -> std::same_as<bool&>;
@@ -3413,6 +3486,12 @@ static_assert(requires(
     { renderer_texture_quad_packet_diff_entry.upload_request_changed } -> std::same_as<bool&>;
     { renderer_texture_quad_packet_diff_entry.upload_generation_changed } -> std::same_as<bool&>;
     { renderer_texture_quad_packet_diff_entry.uploaded_byte_count_changed } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet_diff_entry.decoded_payload_hash_changed } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet_diff_entry.decoded_byte_count_changed } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet_diff_entry.upload_layout_byte_count_changed } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet_diff_entry.staging_payload_byte_count_changed } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet_diff_entry.decoded_resource_readiness_changed } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet_diff_entry.decoded_resource_blocker_changed } -> std::same_as<bool&>;
     { renderer_texture_quad_packet_diff_entry.readiness_changed } -> std::same_as<bool&>;
     { renderer_texture_quad_packet_diff_entry.blocker_changed } -> std::same_as<bool&>;
     { renderer_texture_quad_packet_diff_entry.missing_stable_identity_changed } -> std::same_as<bool&>;
@@ -3422,6 +3501,10 @@ static_assert(requires(
     { renderer_texture_quad_packet_diff_entry.churn } -> std::same_as<bool&>;
     { renderer_texture_quad_packet_diff_entry.before_blocker_summary } -> std::same_as<std::string&>;
     { renderer_texture_quad_packet_diff_entry.after_blocker_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet_diff_entry.before_decoded_resource_blocker_summary }
+        -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet_diff_entry.after_decoded_resource_blocker_summary }
+        -> std::same_as<std::string&>;
     { renderer_texture_quad_packet_diff_entry.diagnostic } -> std::same_as<std::string&>;
     { renderer_texture_quad_packet_diff_entry.changed() } -> std::same_as<bool>;
     { renderer_texture_quad_packet_diff_entry.ok() } -> std::same_as<bool>;
@@ -3448,6 +3531,18 @@ static_assert(requires(
     { renderer_texture_quad_packet_summary_diff.upload_generation_changed_count } -> std::same_as<std::size_t&>;
     { renderer_texture_quad_packet_summary_diff.uploaded_byte_count_changed_count }
         -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary_diff.decoded_payload_hash_changed_count }
+        -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary_diff.decoded_byte_count_changed_count }
+        -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary_diff.upload_layout_byte_count_changed_count }
+        -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary_diff.staging_payload_byte_count_changed_count }
+        -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary_diff.decoded_resource_readiness_changed_count }
+        -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_packet_summary_diff.decoded_resource_blocker_changed_count }
+        -> std::same_as<std::size_t&>;
     { renderer_texture_quad_packet_summary_diff.readiness_changed_count } -> std::same_as<std::size_t&>;
     { renderer_texture_quad_packet_summary_diff.blocker_changed_count } -> std::same_as<std::size_t&>;
     { renderer_texture_quad_packet_summary_diff.missing_stable_identity_changed_count }
@@ -3465,10 +3560,12 @@ static_assert(requires(
     { renderer_texture_quad_packet_summary_diff.has_texture_changes } -> std::same_as<bool&>;
     { renderer_texture_quad_packet_summary_diff.has_sampler_or_cache_changes } -> std::same_as<bool&>;
     { renderer_texture_quad_packet_summary_diff.has_upload_changes } -> std::same_as<bool&>;
+    { renderer_texture_quad_packet_summary_diff.has_decoded_resource_changes } -> std::same_as<bool&>;
     { renderer_texture_quad_packet_summary_diff.entries }
         -> std::same_as<std::vector<render::render_image_renderer_texture_quad_packet_diff_entry>&>;
     { renderer_texture_quad_packet_summary_diff.changed_identity_summary } -> std::same_as<std::string&>;
     { renderer_texture_quad_packet_summary_diff.blocker_transition_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_packet_summary_diff.decoded_resource_change_summary } -> std::same_as<std::string&>;
     { renderer_texture_quad_packet_summary_diff.diagnostic } -> std::same_as<std::string&>;
     { renderer_texture_quad_packet_summary_diff.ok() } -> std::same_as<bool>;
     { renderer_texture_quad_draw_payload_options.placeholder_policy }
@@ -3502,6 +3599,12 @@ static_assert(requires(
     { renderer_texture_quad_draw_payload.upload_request_id } -> std::same_as<std::uint64_t&>;
     { renderer_texture_quad_draw_payload.upload_generation_id } -> std::same_as<std::uint64_t&>;
     { renderer_texture_quad_draw_payload.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload.decoded_payload_hash } -> std::same_as<std::uint64_t&>;
+    { renderer_texture_quad_draw_payload.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload.upload_layout_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload.upload_layout_row_stride_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload.staging_payload_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload.staging_row_copy_count } -> std::same_as<std::size_t&>;
     { renderer_texture_quad_draw_payload.source_packet_status }
         -> std::same_as<render::render_image_renderer_texture_quad_packet_status&>;
     { renderer_texture_quad_draw_payload.source_packet_status_name } -> std::same_as<std::string&>;
@@ -3515,8 +3618,16 @@ static_assert(requires(
     { renderer_texture_quad_draw_payload.placeholder_backed } -> std::same_as<bool&>;
     { renderer_texture_quad_draw_payload.placeholder_policy_enabled } -> std::same_as<bool&>;
     { renderer_texture_quad_draw_payload.fallback_placeholder } -> std::same_as<bool&>;
+    { renderer_texture_quad_draw_payload.decoded_resource_evidence_present } -> std::same_as<bool&>;
+    { renderer_texture_quad_draw_payload.decoded_payload_valid } -> std::same_as<bool&>;
+    { renderer_texture_quad_draw_payload.upload_payload_layout_ready } -> std::same_as<bool&>;
+    { renderer_texture_quad_draw_payload.staging_payload_ready } -> std::same_as<bool&>;
+    { renderer_texture_quad_draw_payload.decoded_resource_ready } -> std::same_as<bool&>;
+    { renderer_texture_quad_draw_payload.decoded_resource_blocked } -> std::same_as<bool&>;
     { renderer_texture_quad_draw_payload.blocked } -> std::same_as<bool&>;
     { renderer_texture_quad_draw_payload.blocker_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload.decoded_resource_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload.decoded_resource_blocker_summary } -> std::same_as<std::string&>;
     { renderer_texture_quad_draw_payload.diagnostic } -> std::same_as<std::string&>;
     { renderer_texture_quad_draw_payload.ok() } -> std::same_as<bool>;
     { renderer_texture_quad_draw_payload_frame.status }
@@ -3530,15 +3641,28 @@ static_assert(requires(
     { renderer_texture_quad_draw_payload_frame.fallback_placeholder_payload_count }
         -> std::same_as<std::size_t&>;
     { renderer_texture_quad_draw_payload_frame.blocked_payload_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload_frame.decoded_resource_evidence_payload_count }
+        -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload_frame.decoded_resource_ready_payload_count }
+        -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload_frame.decoded_resource_blocked_payload_count }
+        -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload_frame.decoded_payload_hash_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload_frame.decoded_payload_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload_frame.upload_layout_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_texture_quad_draw_payload_frame.staging_payload_byte_count } -> std::same_as<std::size_t&>;
     { renderer_texture_quad_draw_payload_frame.placeholder_policy_enabled } -> std::same_as<bool&>;
     { renderer_texture_quad_draw_payload_frame.draw_payloads_ready } -> std::same_as<bool&>;
     { renderer_texture_quad_draw_payload_frame.has_placeholders } -> std::same_as<bool&>;
     { renderer_texture_quad_draw_payload_frame.has_fallback_placeholders } -> std::same_as<bool&>;
     { renderer_texture_quad_draw_payload_frame.has_blockers } -> std::same_as<bool&>;
+    { renderer_texture_quad_draw_payload_frame.has_decoded_resource_blockers } -> std::same_as<bool&>;
     { renderer_texture_quad_draw_payload_frame.payloads }
         -> std::same_as<std::vector<render::render_image_renderer_texture_quad_draw_payload>&>;
     { renderer_texture_quad_draw_payload_frame.payload_identity_summary } -> std::same_as<std::string&>;
     { renderer_texture_quad_draw_payload_frame.blocker_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload_frame.decoded_resource_summary } -> std::same_as<std::string&>;
+    { renderer_texture_quad_draw_payload_frame.decoded_resource_blocker_summary } -> std::same_as<std::string&>;
     { renderer_texture_quad_draw_payload_frame.diagnostic } -> std::same_as<std::string&>;
     { renderer_texture_quad_draw_payload_frame.ok() } -> std::same_as<bool>;
     { texture_frame_resource_cache_handoff.materialization_index } -> std::same_as<std::size_t&>;

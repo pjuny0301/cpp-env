@@ -471,6 +471,12 @@ struct render_image_draw_list_texture_frame_composition_entry {
     std::uint64_t upload_request_id = 0;
     std::uint64_t upload_generation_id = 0;
     std::size_t uploaded_byte_count = 0;
+    std::uint64_t decoded_payload_hash = 0;
+    std::size_t decoded_byte_count = 0;
+    std::size_t upload_layout_byte_count = 0;
+    std::size_t upload_layout_row_stride_byte_count = 0;
+    std::size_t staging_payload_byte_count = 0;
+    std::size_t staging_row_copy_count = 0;
     bool handoff_blocked = true;
     bool batch_entry_present = false;
     bool batch_request_planned = false;
@@ -480,12 +486,20 @@ struct render_image_draw_list_texture_frame_composition_entry {
     bool resource_packet_ready = false;
     bool resource_packet_blocked = false;
     bool entered_texture_batch = false;
+    bool decoded_resource_evidence_present = false;
+    bool decoded_payload_valid = false;
+    bool upload_payload_layout_ready = false;
+    bool staging_payload_ready = false;
+    bool decoded_resource_ready = false;
+    bool decoded_resource_blocked = false;
     bool ready = false;
     bool blocked = true;
     render_image_draw_list_texture_frame_composition_entry_status status =
         render_image_draw_list_texture_frame_composition_entry_status::handoff_blocked;
     std::string status_name = render_image_draw_list_texture_frame_composition_entry_status_name(
         render_image_draw_list_texture_frame_composition_entry_status::handoff_blocked);
+    std::string decoded_resource_summary;
+    std::string decoded_resource_blocker_summary;
     std::string diagnostic;
 
     bool ok() const
@@ -517,12 +531,20 @@ struct render_image_draw_list_texture_frame_composition {
     std::size_t frame_blocked_count = 0;
     std::size_t missing_resource_packet_count = 0;
     std::size_t resource_packet_blocked_count = 0;
+    std::size_t decoded_resource_ready_count = 0;
+    std::size_t decoded_resource_blocked_count = 0;
+    std::size_t decoded_payload_hash_count = 0;
+    std::size_t decoded_payload_byte_count = 0;
+    std::size_t staging_payload_byte_count = 0;
     bool has_non_image_commands = false;
     bool has_blockers = false;
+    bool has_decoded_resource_blockers = false;
     bool renderer_handoff_ready = false;
     bool resource_packet_ready = false;
     std::vector<render_image_draw_list_texture_frame_composition_entry> entries;
     std::string skipped_command_summary;
+    std::string decoded_resource_summary;
+    std::string decoded_resource_blocker_summary;
     std::string diagnostic;
 
     bool ok() const
@@ -572,6 +594,12 @@ struct render_image_renderer_texture_quad_packet {
     std::uint64_t upload_request_id = 0;
     std::uint64_t upload_generation_id = 0;
     std::size_t uploaded_byte_count = 0;
+    std::uint64_t decoded_payload_hash = 0;
+    std::size_t decoded_byte_count = 0;
+    std::size_t upload_layout_byte_count = 0;
+    std::size_t upload_layout_row_stride_byte_count = 0;
+    std::size_t staging_payload_byte_count = 0;
+    std::size_t staging_row_copy_count = 0;
     bool entered_texture_batch = false;
     bool frame_entry_present = false;
     bool resource_packet_present = false;
@@ -579,6 +607,12 @@ struct render_image_renderer_texture_quad_packet {
     bool renderer_handoff_ready = false;
     bool missing_stable_identity = false;
     bool duplicate_stable_identity = false;
+    bool decoded_resource_evidence_present = false;
+    bool decoded_payload_valid = false;
+    bool upload_payload_layout_ready = false;
+    bool staging_payload_ready = false;
+    bool decoded_resource_ready = false;
+    bool decoded_resource_blocked = false;
     bool ready = false;
     bool blocked = true;
     render_image_renderer_texture_quad_packet_status status =
@@ -586,6 +620,8 @@ struct render_image_renderer_texture_quad_packet {
     std::string status_name = render_image_renderer_texture_quad_packet_status_name(
         render_image_renderer_texture_quad_packet_status::blocked_handoff);
     std::string blocker_summary;
+    std::string decoded_resource_summary;
+    std::string decoded_resource_blocker_summary;
     std::string diagnostic;
 
     bool ok() const
@@ -620,8 +656,16 @@ struct render_image_renderer_texture_quad_packet_summary {
     std::size_t unique_texture_cache_key_count = 0;
     std::size_t unique_sampler_key_count = 0;
     std::size_t uploaded_byte_count = 0;
+    std::size_t decoded_resource_evidence_count = 0;
+    std::size_t decoded_resource_ready_count = 0;
+    std::size_t decoded_resource_blocked_count = 0;
+    std::size_t decoded_payload_hash_count = 0;
+    std::size_t decoded_payload_byte_count = 0;
+    std::size_t upload_layout_byte_count = 0;
+    std::size_t staging_payload_byte_count = 0;
     bool has_non_image_commands = false;
     bool has_blockers = false;
+    bool has_decoded_resource_blockers = false;
     bool renderer_quad_packets_ready = false;
     bool has_missing_stable_identities = false;
     bool has_duplicate_stable_identities = false;
@@ -631,6 +675,8 @@ struct render_image_renderer_texture_quad_packet_summary {
     std::string texture_cache_key_summary;
     std::string sampler_summary;
     std::string blocker_summary;
+    std::string decoded_resource_summary;
+    std::string decoded_resource_blocker_summary;
     std::string diagnostic;
 
     bool ok() const
@@ -686,6 +732,17 @@ struct render_image_renderer_texture_quad_packet_diff_entry {
     std::size_t before_uploaded_byte_count = 0;
     std::size_t after_uploaded_byte_count = 0;
     std::int64_t uploaded_byte_delta = 0;
+    std::uint64_t before_decoded_payload_hash = 0;
+    std::uint64_t after_decoded_payload_hash = 0;
+    std::size_t before_decoded_byte_count = 0;
+    std::size_t after_decoded_byte_count = 0;
+    std::int64_t decoded_byte_delta = 0;
+    std::size_t before_upload_layout_byte_count = 0;
+    std::size_t after_upload_layout_byte_count = 0;
+    std::int64_t upload_layout_byte_delta = 0;
+    std::size_t before_staging_payload_byte_count = 0;
+    std::size_t after_staging_payload_byte_count = 0;
+    std::int64_t staging_payload_byte_delta = 0;
     render_image_renderer_texture_quad_packet_status before_quad_status =
         render_image_renderer_texture_quad_packet_status::blocked_handoff;
     render_image_renderer_texture_quad_packet_status after_quad_status =
@@ -700,6 +757,10 @@ struct render_image_renderer_texture_quad_packet_diff_entry {
     bool after_missing_stable_identity = false;
     bool before_duplicate_stable_identity = false;
     bool after_duplicate_stable_identity = false;
+    bool before_decoded_resource_ready = false;
+    bool after_decoded_resource_ready = false;
+    bool before_decoded_resource_blocked = false;
+    bool after_decoded_resource_blocked = false;
     bool stable_quad_packet_identity_changed = false;
     bool bounds_changed = false;
     bool content_bounds_changed = false;
@@ -711,6 +772,12 @@ struct render_image_renderer_texture_quad_packet_diff_entry {
     bool upload_request_changed = false;
     bool upload_generation_changed = false;
     bool uploaded_byte_count_changed = false;
+    bool decoded_payload_hash_changed = false;
+    bool decoded_byte_count_changed = false;
+    bool upload_layout_byte_count_changed = false;
+    bool staging_payload_byte_count_changed = false;
+    bool decoded_resource_readiness_changed = false;
+    bool decoded_resource_blocker_changed = false;
     bool readiness_changed = false;
     bool blocker_changed = false;
     bool missing_stable_identity_changed = false;
@@ -720,6 +787,8 @@ struct render_image_renderer_texture_quad_packet_diff_entry {
     bool churn = false;
     std::string before_blocker_summary;
     std::string after_blocker_summary;
+    std::string before_decoded_resource_blocker_summary;
+    std::string after_decoded_resource_blocker_summary;
     std::string diagnostic;
 
     bool changed() const
@@ -756,6 +825,12 @@ struct render_image_renderer_texture_quad_packet_summary_diff {
     std::size_t upload_request_changed_count = 0;
     std::size_t upload_generation_changed_count = 0;
     std::size_t uploaded_byte_count_changed_count = 0;
+    std::size_t decoded_payload_hash_changed_count = 0;
+    std::size_t decoded_byte_count_changed_count = 0;
+    std::size_t upload_layout_byte_count_changed_count = 0;
+    std::size_t staging_payload_byte_count_changed_count = 0;
+    std::size_t decoded_resource_readiness_changed_count = 0;
+    std::size_t decoded_resource_blocker_changed_count = 0;
     std::size_t readiness_changed_count = 0;
     std::size_t blocker_changed_count = 0;
     std::size_t missing_stable_identity_changed_count = 0;
@@ -771,9 +846,11 @@ struct render_image_renderer_texture_quad_packet_summary_diff {
     bool has_texture_changes = false;
     bool has_sampler_or_cache_changes = false;
     bool has_upload_changes = false;
+    bool has_decoded_resource_changes = false;
     std::vector<render_image_renderer_texture_quad_packet_diff_entry> entries;
     std::string changed_identity_summary;
     std::string blocker_transition_summary;
+    std::string decoded_resource_change_summary;
     std::string diagnostic;
 
     bool ok() const
@@ -816,6 +893,12 @@ struct render_image_renderer_texture_quad_draw_payload {
     std::uint64_t upload_request_id = 0;
     std::uint64_t upload_generation_id = 0;
     std::size_t uploaded_byte_count = 0;
+    std::uint64_t decoded_payload_hash = 0;
+    std::size_t decoded_byte_count = 0;
+    std::size_t upload_layout_byte_count = 0;
+    std::size_t upload_layout_row_stride_byte_count = 0;
+    std::size_t staging_payload_byte_count = 0;
+    std::size_t staging_row_copy_count = 0;
     render_image_renderer_texture_quad_packet_status source_packet_status =
         render_image_renderer_texture_quad_packet_status::blocked_handoff;
     std::string source_packet_status_name;
@@ -830,8 +913,16 @@ struct render_image_renderer_texture_quad_draw_payload {
     bool placeholder_backed = false;
     bool placeholder_policy_enabled = false;
     bool fallback_placeholder = false;
+    bool decoded_resource_evidence_present = false;
+    bool decoded_payload_valid = false;
+    bool upload_payload_layout_ready = false;
+    bool staging_payload_ready = false;
+    bool decoded_resource_ready = false;
+    bool decoded_resource_blocked = false;
     bool blocked = true;
     std::string blocker_summary;
+    std::string decoded_resource_summary;
+    std::string decoded_resource_blocker_summary;
     std::string diagnostic;
 
     bool ok() const
@@ -852,14 +943,24 @@ struct render_image_renderer_texture_quad_draw_payload_frame {
     std::size_t placeholder_payload_count = 0;
     std::size_t fallback_placeholder_payload_count = 0;
     std::size_t blocked_payload_count = 0;
+    std::size_t decoded_resource_evidence_payload_count = 0;
+    std::size_t decoded_resource_ready_payload_count = 0;
+    std::size_t decoded_resource_blocked_payload_count = 0;
+    std::size_t decoded_payload_hash_count = 0;
+    std::size_t decoded_payload_byte_count = 0;
+    std::size_t upload_layout_byte_count = 0;
+    std::size_t staging_payload_byte_count = 0;
     bool placeholder_policy_enabled = false;
     bool draw_payloads_ready = false;
     bool has_placeholders = false;
     bool has_fallback_placeholders = false;
     bool has_blockers = false;
+    bool has_decoded_resource_blockers = false;
     std::vector<render_image_renderer_texture_quad_draw_payload> payloads;
     std::string payload_identity_summary;
     std::string blocker_summary;
+    std::string decoded_resource_summary;
+    std::string decoded_resource_blocker_summary;
     std::string diagnostic;
 
     bool ok() const
@@ -1155,6 +1256,9 @@ render_image_draw_list_texture_frame_composition_entry_status_for(
     if (!entry.resource_packet_ready) {
         return render_image_draw_list_texture_frame_composition_entry_status::resource_packet_blocked;
     }
+    if (entry.decoded_resource_evidence_present && entry.decoded_resource_blocked) {
+        return render_image_draw_list_texture_frame_composition_entry_status::resource_packet_blocked;
+    }
     return render_image_draw_list_texture_frame_composition_entry_status::ready;
 }
 
@@ -1191,6 +1295,9 @@ inline void finalize_render_image_draw_list_texture_frame_composition_entry(
         break;
     case render_image_draw_list_texture_frame_composition_entry_status::resource_packet_blocked:
         entry.diagnostic = "image draw command texture frame composition blocked by resource packet";
+        if (!entry.decoded_resource_blocker_summary.empty()) {
+            entry.diagnostic += ": " + entry.decoded_resource_blocker_summary;
+        }
         break;
     }
 }
@@ -1230,6 +1337,20 @@ inline void count_render_image_draw_list_texture_frame_composition_entry(
     case render_image_draw_list_texture_frame_composition_entry_status::resource_packet_blocked:
         ++composition.resource_packet_blocked_count;
         break;
+    }
+
+    if (entry.decoded_resource_evidence_present) {
+        if (entry.decoded_resource_ready) {
+            ++composition.decoded_resource_ready_count;
+            composition.decoded_payload_byte_count += entry.decoded_byte_count;
+            composition.staging_payload_byte_count += entry.staging_payload_byte_count;
+        } else {
+            ++composition.decoded_resource_blocked_count;
+            composition.has_decoded_resource_blockers = true;
+            append_render_image_texture_frame_upload_handoff_summary_fragment(
+                composition.decoded_resource_blocker_summary,
+                entry.decoded_resource_blocker_summary);
+        }
     }
 }
 
@@ -1325,6 +1446,59 @@ make_render_image_draw_list_texture_frame_composition_entry(
             entry.upload_request_id = resource_packet->upload_request_id;
             entry.upload_generation_id = resource_packet->upload_generation_id;
             entry.uploaded_byte_count = resource_packet->uploaded_byte_count;
+            entry.decoded_payload_hash = resource_packet->decoded_payload.stable_byte_hash;
+            entry.decoded_byte_count = resource_packet->decoded_payload.decoded_byte_count;
+            entry.upload_layout_byte_count = resource_packet->payload_layout.decoded_byte_count;
+            entry.upload_layout_row_stride_byte_count =
+                resource_packet->payload_layout.row_stride_byte_count;
+            entry.staging_payload_byte_count =
+                resource_packet->staging_payload_plan.total_staging_byte_count;
+            entry.staging_row_copy_count = resource_packet->staging_payload_plan.row_copy_count;
+            entry.decoded_payload_valid = resource_packet->decoded_payload.payload_valid;
+            entry.upload_payload_layout_ready = resource_packet->payload_layout.ok();
+            entry.staging_payload_ready = resource_packet->staging_payload_plan.ok();
+            entry.decoded_resource_evidence_present =
+                entry.decoded_payload_valid
+                || entry.decoded_payload_hash != 0
+                || entry.decoded_byte_count != 0
+                || !resource_packet->decoded_payload.diagnostic.empty()
+                || entry.upload_layout_byte_count != 0
+                || entry.upload_layout_row_stride_byte_count != 0
+                || !resource_packet->payload_layout.diagnostic.empty()
+                || entry.staging_payload_byte_count != 0
+                || entry.staging_row_copy_count != 0
+                || !resource_packet->staging_payload_plan.blocker_summary.empty()
+                || !resource_packet->staging_payload_plan.diagnostic.empty();
+            entry.decoded_resource_ready =
+                entry.decoded_resource_evidence_present
+                && resource_packet->bindable
+                && entry.decoded_payload_valid
+                && entry.upload_payload_layout_ready
+                && entry.staging_payload_ready;
+            entry.decoded_resource_blocked =
+                entry.decoded_resource_evidence_present && !entry.decoded_resource_ready;
+            if (entry.decoded_resource_evidence_present && !entry.decoded_payload_valid) {
+                entry.decoded_resource_blocker_summary = resource_packet->decoded_payload.diagnostic.empty()
+                    ? "decoded payload bytes are missing or invalid"
+                    : resource_packet->decoded_payload.diagnostic;
+            } else if (entry.decoded_resource_evidence_present && !entry.upload_payload_layout_ready) {
+                entry.decoded_resource_blocker_summary = resource_packet->payload_layout.diagnostic.empty()
+                    ? "upload payload layout is not ready"
+                    : resource_packet->payload_layout.diagnostic;
+            } else if (entry.decoded_resource_evidence_present && !entry.staging_payload_ready) {
+                entry.decoded_resource_blocker_summary =
+                    resource_packet->staging_payload_plan.blocker_summary.empty()
+                    ? resource_packet->staging_payload_plan.diagnostic
+                    : resource_packet->staging_payload_plan.blocker_summary;
+            } else if (entry.decoded_resource_evidence_present && entry.resource_packet_blocked) {
+                entry.decoded_resource_blocker_summary = resource_packet->blocker_summary;
+            }
+            if (entry.decoded_resource_evidence_present) {
+                entry.decoded_resource_summary =
+                    "decoded_bytes=" + std::to_string(entry.decoded_byte_count)
+                    + "; staging_bytes=" + std::to_string(entry.staging_payload_byte_count)
+                    + "; payload_hash=" + std::to_string(entry.decoded_payload_hash);
+            }
         }
     }
 
@@ -1355,6 +1529,7 @@ make_render_image_draw_list_texture_frame_composition(
         .skipped_command_summary = handoff.skipped_command_summary,
     };
 
+    std::map<std::uint64_t, bool> decoded_payload_hashes;
     for (const render_image_draw_list_frame_handoff_entry& handoff_entry : handoff.entries) {
         render_image_draw_list_texture_frame_composition_entry entry =
             make_render_image_draw_list_texture_frame_composition_entry(
@@ -1363,6 +1538,9 @@ make_render_image_draw_list_texture_frame_composition(
                 frame,
                 resource_packets);
         count_render_image_draw_list_texture_frame_composition_entry(composition, entry);
+        if (entry.decoded_resource_evidence_present && entry.decoded_payload_hash != 0) {
+            decoded_payload_hashes.emplace(entry.decoded_payload_hash, true);
+        }
         composition.entries.push_back(std::move(entry));
     }
 
@@ -1372,6 +1550,15 @@ make_render_image_draw_list_texture_frame_composition(
             ? render_image_draw_list_texture_frame_composition_status::blocked
             : render_image_draw_list_texture_frame_composition_status::ready);
     composition.status_name = render_image_draw_list_texture_frame_composition_status_name(composition.status);
+    composition.decoded_payload_hash_count = decoded_payload_hashes.size();
+    composition.decoded_resource_summary =
+        "decoded_resources=" + std::to_string(composition.decoded_resource_ready_count)
+        + "; payload_hashes=" + std::to_string(composition.decoded_payload_hash_count)
+        + "; decoded_bytes=" + std::to_string(composition.decoded_payload_byte_count)
+        + "; staging_bytes=" + std::to_string(composition.staging_payload_byte_count);
+    if (composition.decoded_resource_blocker_summary.empty()) {
+        composition.decoded_resource_blocker_summary = "no decoded resource blockers";
+    }
 
     switch (composition.status) {
     case render_image_draw_list_texture_frame_composition_status::empty:
@@ -1408,6 +1595,9 @@ render_image_renderer_texture_quad_packet_status_for(
     }
     if (packet.duplicate_stable_identity) {
         return render_image_renderer_texture_quad_packet_status::blocked_duplicate_stable_identity;
+    }
+    if (packet.decoded_resource_evidence_present && packet.decoded_resource_blocked) {
+        return render_image_renderer_texture_quad_packet_status::blocked_resource_packet;
     }
 
     switch (packet.composition_status) {
@@ -1480,7 +1670,9 @@ inline void finalize_render_image_renderer_texture_quad_packet(
         packet.diagnostic = "image renderer texture quad packet is blocked by missing resource packet";
         break;
     case render_image_renderer_texture_quad_packet_status::blocked_resource_packet:
-        packet.blocker_summary = "resource packet blocked renderer texture quad packet";
+        if (packet.blocker_summary.empty()) {
+            packet.blocker_summary = "resource packet blocked renderer texture quad packet";
+        }
         packet.diagnostic = "image renderer texture quad packet is blocked by resource packet";
         break;
     }
@@ -1492,6 +1684,9 @@ inline render_image_renderer_texture_quad_packet make_render_image_renderer_text
 {
     const std::string sampler_key =
         render_image_sampler_policy_stable_fragment(composition_entry.sampler);
+    const std::string blocker_summary = composition_entry.decoded_resource_blocker_summary.empty()
+        ? composition_entry.handoff_blocker_summary
+        : composition_entry.decoded_resource_blocker_summary;
     render_image_renderer_texture_quad_packet packet{
         .packet_index = packet_index,
         .frame_label = composition_entry.frame_label,
@@ -1528,6 +1723,12 @@ inline render_image_renderer_texture_quad_packet make_render_image_renderer_text
         .upload_request_id = composition_entry.upload_request_id,
         .upload_generation_id = composition_entry.upload_generation_id,
         .uploaded_byte_count = composition_entry.uploaded_byte_count,
+        .decoded_payload_hash = composition_entry.decoded_payload_hash,
+        .decoded_byte_count = composition_entry.decoded_byte_count,
+        .upload_layout_byte_count = composition_entry.upload_layout_byte_count,
+        .upload_layout_row_stride_byte_count = composition_entry.upload_layout_row_stride_byte_count,
+        .staging_payload_byte_count = composition_entry.staging_payload_byte_count,
+        .staging_row_copy_count = composition_entry.staging_row_copy_count,
         .entered_texture_batch = composition_entry.entered_texture_batch,
         .frame_entry_present = composition_entry.frame_entry_present,
         .resource_packet_present = composition_entry.resource_packet_present,
@@ -1541,7 +1742,15 @@ inline render_image_renderer_texture_quad_packet make_render_image_renderer_text
         .duplicate_stable_identity =
             composition_entry.handoff_status
             == render_image_draw_list_frame_handoff_entry_status::blocked_duplicate_stable_identity,
-        .blocker_summary = composition_entry.handoff_blocker_summary,
+        .decoded_resource_evidence_present = composition_entry.decoded_resource_evidence_present,
+        .decoded_payload_valid = composition_entry.decoded_payload_valid,
+        .upload_payload_layout_ready = composition_entry.upload_payload_layout_ready,
+        .staging_payload_ready = composition_entry.staging_payload_ready,
+        .decoded_resource_ready = composition_entry.decoded_resource_ready,
+        .decoded_resource_blocked = composition_entry.decoded_resource_blocked,
+        .blocker_summary = blocker_summary,
+        .decoded_resource_summary = composition_entry.decoded_resource_summary,
+        .decoded_resource_blocker_summary = composition_entry.decoded_resource_blocker_summary,
     };
 
     finalize_render_image_renderer_texture_quad_packet(packet);
@@ -1560,6 +1769,23 @@ inline void count_render_image_renderer_texture_quad_packet(
     }
 
     summary.uploaded_byte_count += packet.uploaded_byte_count;
+    if (packet.decoded_resource_evidence_present) {
+        ++summary.decoded_resource_evidence_count;
+        if (packet.decoded_resource_ready) {
+            ++summary.decoded_resource_ready_count;
+            summary.decoded_payload_byte_count += packet.decoded_byte_count;
+            summary.upload_layout_byte_count += packet.upload_layout_byte_count;
+            summary.staging_payload_byte_count += packet.staging_payload_byte_count;
+        } else {
+            ++summary.decoded_resource_blocked_count;
+            summary.has_decoded_resource_blockers = true;
+            append_render_image_texture_frame_upload_handoff_summary_fragment(
+                summary.decoded_resource_blocker_summary,
+                packet.decoded_resource_blocker_summary.empty()
+                    ? packet.blocker_summary
+                    : packet.decoded_resource_blocker_summary);
+        }
+    }
     if (packet.missing_stable_identity) {
         ++summary.missing_stable_identity_count;
         summary.has_missing_stable_identities = true;
@@ -1636,6 +1862,7 @@ make_render_image_renderer_texture_quad_packet_summary(
     std::map<std::string, bool> unique_quad_packet_identities;
     std::map<std::string, bool> unique_texture_cache_keys;
     std::map<std::string, bool> unique_sampler_keys;
+    std::map<std::uint64_t, bool> decoded_payload_hashes;
     for (const render_image_draw_list_texture_frame_composition_entry& entry : composition.entries) {
         render_image_renderer_texture_quad_packet packet =
             make_render_image_renderer_texture_quad_packet(entry, summary.packets.size());
@@ -1661,6 +1888,9 @@ make_render_image_renderer_texture_quad_packet_summary(
             unique_sampler_keys,
             summary.sampler_summary,
             packet.sampler_key);
+        if (packet.decoded_resource_evidence_present && packet.decoded_payload_hash != 0) {
+            decoded_payload_hashes.emplace(packet.decoded_payload_hash, true);
+        }
 
         count_render_image_renderer_texture_quad_packet(summary, packet);
         summary.packets.push_back(std::move(packet));
@@ -1670,6 +1900,7 @@ make_render_image_renderer_texture_quad_packet_summary(
     summary.unique_stable_quad_packet_identity_count = unique_quad_packet_identities.size();
     summary.unique_texture_cache_key_count = unique_texture_cache_keys.size();
     summary.unique_sampler_key_count = unique_sampler_keys.size();
+    summary.decoded_payload_hash_count = decoded_payload_hashes.size();
     summary.renderer_quad_packets_ready = summary.packet_count != 0 && !summary.has_blockers;
 
     if (summary.stable_identity_summary.empty()) {
@@ -1683,6 +1914,14 @@ make_render_image_renderer_texture_quad_packet_summary(
     }
     if (summary.blocker_summary.empty()) {
         summary.blocker_summary = "no renderer texture quad packet blockers";
+    }
+    summary.decoded_resource_summary =
+        "decoded_resources=" + std::to_string(summary.decoded_resource_ready_count)
+        + "; payload_hashes=" + std::to_string(summary.decoded_payload_hash_count)
+        + "; decoded_bytes=" + std::to_string(summary.decoded_payload_byte_count)
+        + "; staging_bytes=" + std::to_string(summary.staging_payload_byte_count);
+    if (summary.decoded_resource_blocker_summary.empty()) {
+        summary.decoded_resource_blocker_summary = "no decoded resource blockers";
     }
 
     summary.status = summary.packet_count == 0
@@ -1771,6 +2010,12 @@ render_image_renderer_texture_quad_packet_diff_entry_status_for(
         || entry.upload_request_changed
         || entry.upload_generation_changed
         || entry.uploaded_byte_count_changed
+        || entry.decoded_payload_hash_changed
+        || entry.decoded_byte_count_changed
+        || entry.upload_layout_byte_count_changed
+        || entry.staging_payload_byte_count_changed
+        || entry.decoded_resource_readiness_changed
+        || entry.decoded_resource_blocker_changed
         || entry.readiness_changed
         || entry.blocker_changed
         || entry.missing_stable_identity_changed
@@ -1863,13 +2108,20 @@ make_render_image_renderer_texture_quad_packet_diff_entry(
         entry.before_upload_request_id = before->upload_request_id;
         entry.before_upload_generation_id = before->upload_generation_id;
         entry.before_uploaded_byte_count = before->uploaded_byte_count;
+        entry.before_decoded_payload_hash = before->decoded_payload_hash;
+        entry.before_decoded_byte_count = before->decoded_byte_count;
+        entry.before_upload_layout_byte_count = before->upload_layout_byte_count;
+        entry.before_staging_payload_byte_count = before->staging_payload_byte_count;
         entry.before_quad_status = before->status;
         entry.before_quad_status_name = before->status_name;
         entry.before_ready = before->ready;
         entry.before_blocked = before->blocked;
         entry.before_missing_stable_identity = before->missing_stable_identity;
         entry.before_duplicate_stable_identity = before->duplicate_stable_identity;
+        entry.before_decoded_resource_ready = before->decoded_resource_ready;
+        entry.before_decoded_resource_blocked = before->decoded_resource_blocked;
         entry.before_blocker_summary = before->blocker_summary;
+        entry.before_decoded_resource_blocker_summary = before->decoded_resource_blocker_summary;
     }
 
     if (after != nullptr) {
@@ -1890,17 +2142,30 @@ make_render_image_renderer_texture_quad_packet_diff_entry(
         entry.after_upload_request_id = after->upload_request_id;
         entry.after_upload_generation_id = after->upload_generation_id;
         entry.after_uploaded_byte_count = after->uploaded_byte_count;
+        entry.after_decoded_payload_hash = after->decoded_payload_hash;
+        entry.after_decoded_byte_count = after->decoded_byte_count;
+        entry.after_upload_layout_byte_count = after->upload_layout_byte_count;
+        entry.after_staging_payload_byte_count = after->staging_payload_byte_count;
         entry.after_quad_status = after->status;
         entry.after_quad_status_name = after->status_name;
         entry.after_ready = after->ready;
         entry.after_blocked = after->blocked;
         entry.after_missing_stable_identity = after->missing_stable_identity;
         entry.after_duplicate_stable_identity = after->duplicate_stable_identity;
+        entry.after_decoded_resource_ready = after->decoded_resource_ready;
+        entry.after_decoded_resource_blocked = after->decoded_resource_blocked;
         entry.after_blocker_summary = after->blocker_summary;
+        entry.after_decoded_resource_blocker_summary = after->decoded_resource_blocker_summary;
     }
 
     entry.uploaded_byte_delta = static_cast<std::int64_t>(entry.after_uploaded_byte_count)
         - static_cast<std::int64_t>(entry.before_uploaded_byte_count);
+    entry.decoded_byte_delta = static_cast<std::int64_t>(entry.after_decoded_byte_count)
+        - static_cast<std::int64_t>(entry.before_decoded_byte_count);
+    entry.upload_layout_byte_delta = static_cast<std::int64_t>(entry.after_upload_layout_byte_count)
+        - static_cast<std::int64_t>(entry.before_upload_layout_byte_count);
+    entry.staging_payload_byte_delta = static_cast<std::int64_t>(entry.after_staging_payload_byte_count)
+        - static_cast<std::int64_t>(entry.before_staging_payload_byte_count);
 
     if (entry.before_present && entry.after_present) {
         entry.stable_quad_packet_identity_changed =
@@ -1921,6 +2186,20 @@ make_render_image_renderer_texture_quad_packet_diff_entry(
         entry.upload_generation_changed = entry.before_upload_generation_id != entry.after_upload_generation_id;
         entry.uploaded_byte_count_changed =
             entry.before_uploaded_byte_count != entry.after_uploaded_byte_count;
+        entry.decoded_payload_hash_changed =
+            entry.before_decoded_payload_hash != entry.after_decoded_payload_hash;
+        entry.decoded_byte_count_changed =
+            entry.before_decoded_byte_count != entry.after_decoded_byte_count;
+        entry.upload_layout_byte_count_changed =
+            entry.before_upload_layout_byte_count != entry.after_upload_layout_byte_count;
+        entry.staging_payload_byte_count_changed =
+            entry.before_staging_payload_byte_count != entry.after_staging_payload_byte_count;
+        entry.decoded_resource_readiness_changed =
+            entry.before_decoded_resource_ready != entry.after_decoded_resource_ready
+            || entry.before_decoded_resource_blocked != entry.after_decoded_resource_blocked;
+        entry.decoded_resource_blocker_changed =
+            entry.before_decoded_resource_blocker_summary
+            != entry.after_decoded_resource_blocker_summary;
         entry.readiness_changed = entry.before_ready != entry.after_ready
             || entry.before_blocked != entry.after_blocked
             || entry.before_quad_status != entry.after_quad_status;
@@ -2004,6 +2283,33 @@ inline void count_render_image_renderer_texture_quad_packet_diff_entry(
         ++diff.uploaded_byte_count_changed_count;
         diff.has_upload_changes = true;
     }
+    if (entry.decoded_payload_hash_changed) {
+        ++diff.decoded_payload_hash_changed_count;
+        diff.has_decoded_resource_changes = true;
+    }
+    if (entry.decoded_byte_count_changed) {
+        ++diff.decoded_byte_count_changed_count;
+        diff.has_decoded_resource_changes = true;
+    }
+    if (entry.upload_layout_byte_count_changed) {
+        ++diff.upload_layout_byte_count_changed_count;
+        diff.has_decoded_resource_changes = true;
+    }
+    if (entry.staging_payload_byte_count_changed) {
+        ++diff.staging_payload_byte_count_changed_count;
+        diff.has_decoded_resource_changes = true;
+    }
+    if (entry.decoded_resource_readiness_changed) {
+        ++diff.decoded_resource_readiness_changed_count;
+        diff.has_decoded_resource_changes = true;
+    }
+    if (entry.decoded_resource_blocker_changed) {
+        ++diff.decoded_resource_blocker_changed_count;
+        diff.has_decoded_resource_changes = true;
+        append_render_image_texture_frame_upload_handoff_summary_fragment(
+            diff.decoded_resource_change_summary,
+            entry.stable_diff_identity);
+    }
     if (entry.readiness_changed) {
         ++diff.readiness_changed_count;
     }
@@ -2083,6 +2389,9 @@ diff_render_image_renderer_texture_quad_packet_summaries(
     }
     if (diff.blocker_transition_summary.empty()) {
         diff.blocker_transition_summary = "no renderer texture quad packet blocker transitions";
+    }
+    if (diff.decoded_resource_change_summary.empty()) {
+        diff.decoded_resource_change_summary = "no renderer texture quad decoded resource changes";
     }
 
     diff.status = diff.has_changes
@@ -2213,6 +2522,12 @@ inline render_image_renderer_texture_quad_draw_payload make_render_image_rendere
         .upload_request_id = fallback_placeholder ? 0 : packet.upload_request_id,
         .upload_generation_id = fallback_placeholder ? 0 : packet.upload_generation_id,
         .uploaded_byte_count = fallback_placeholder ? 0 : packet.uploaded_byte_count,
+        .decoded_payload_hash = packet.decoded_payload_hash,
+        .decoded_byte_count = packet.decoded_byte_count,
+        .upload_layout_byte_count = packet.upload_layout_byte_count,
+        .upload_layout_row_stride_byte_count = packet.upload_layout_row_stride_byte_count,
+        .staging_payload_byte_count = packet.staging_payload_byte_count,
+        .staging_row_copy_count = packet.staging_row_copy_count,
         .source_packet_status = packet.status,
         .source_packet_status_name = packet.status_name,
         .resource_packet_status = packet.resource_packet_status,
@@ -2224,8 +2539,16 @@ inline render_image_renderer_texture_quad_draw_payload make_render_image_rendere
             status == render_image_renderer_texture_quad_draw_payload_status::placeholder_backed,
         .placeholder_policy_enabled = options.placeholder_policy.enabled,
         .fallback_placeholder = fallback_placeholder,
+        .decoded_resource_evidence_present = packet.decoded_resource_evidence_present,
+        .decoded_payload_valid = packet.decoded_payload_valid,
+        .upload_payload_layout_ready = packet.upload_payload_layout_ready,
+        .staging_payload_ready = packet.staging_payload_ready,
+        .decoded_resource_ready = packet.decoded_resource_ready,
+        .decoded_resource_blocked = packet.decoded_resource_blocked,
         .blocked = status == render_image_renderer_texture_quad_draw_payload_status::blocked,
         .blocker_summary = packet.blocker_summary,
+        .decoded_resource_summary = packet.decoded_resource_summary,
+        .decoded_resource_blocker_summary = packet.decoded_resource_blocker_summary,
     };
     payload.stable_payload_identity =
         render_image_renderer_texture_quad_draw_payload_identity_for(packet, status, payload_key);
@@ -2257,6 +2580,16 @@ inline render_image_renderer_texture_quad_draw_payload make_render_image_rendere
         break;
     }
 
+    if (payload.decoded_resource_blocked && payload.decoded_resource_blocker_summary.empty()) {
+        payload.decoded_resource_blocker_summary = payload.blocker_summary;
+    }
+    if (payload.decoded_resource_evidence_present && payload.decoded_resource_summary.empty()) {
+        payload.decoded_resource_summary =
+            "decoded_bytes=" + std::to_string(payload.decoded_byte_count)
+            + "; staging_bytes=" + std::to_string(payload.staging_payload_byte_count)
+            + "; payload_hash=" + std::to_string(payload.decoded_payload_hash);
+    }
+
     return payload;
 }
 
@@ -2284,6 +2617,24 @@ inline void count_render_image_renderer_texture_quad_draw_payload(
             payload.blocker_summary);
         break;
     }
+
+    if (payload.decoded_resource_evidence_present) {
+        ++frame.decoded_resource_evidence_payload_count;
+        if (payload.decoded_resource_ready) {
+            ++frame.decoded_resource_ready_payload_count;
+            frame.decoded_payload_byte_count += payload.decoded_byte_count;
+            frame.upload_layout_byte_count += payload.upload_layout_byte_count;
+            frame.staging_payload_byte_count += payload.staging_payload_byte_count;
+        } else {
+            ++frame.decoded_resource_blocked_payload_count;
+            frame.has_decoded_resource_blockers = true;
+            append_render_image_texture_frame_upload_handoff_summary_fragment(
+                frame.decoded_resource_blocker_summary,
+                payload.decoded_resource_blocker_summary.empty()
+                    ? payload.blocker_summary
+                    : payload.decoded_resource_blocker_summary);
+        }
+    }
 }
 
 inline render_image_renderer_texture_quad_draw_payload_frame
@@ -2299,6 +2650,7 @@ make_render_image_renderer_texture_quad_draw_payload_frame(
     };
 
     std::map<std::string, bool> unique_payload_identities;
+    std::map<std::uint64_t, bool> decoded_payload_hashes;
     for (const render_image_renderer_texture_quad_packet& packet : summary.packets) {
         render_image_renderer_texture_quad_draw_payload payload =
             make_render_image_renderer_texture_quad_draw_payload(
@@ -2306,6 +2658,9 @@ make_render_image_renderer_texture_quad_draw_payload_frame(
                 options,
                 frame.payloads.size());
         count_render_image_renderer_texture_quad_draw_payload(frame, payload);
+        if (payload.decoded_resource_evidence_present && payload.decoded_payload_hash != 0) {
+            decoded_payload_hashes.emplace(payload.decoded_payload_hash, true);
+        }
         append_unique_render_image_texture_frame_upload_handoff_summary_fragment(
             unique_payload_identities,
             frame.payload_identity_summary,
@@ -2314,12 +2669,21 @@ make_render_image_renderer_texture_quad_draw_payload_frame(
     }
 
     frame.payload_count = frame.payloads.size();
+    frame.decoded_payload_hash_count = decoded_payload_hashes.size();
     frame.draw_payloads_ready = frame.payload_count != 0 && !frame.has_blockers;
     if (frame.payload_identity_summary.empty()) {
         frame.payload_identity_summary = "no renderer texture quad draw payload identities";
     }
     if (frame.blocker_summary.empty()) {
         frame.blocker_summary = "no renderer texture quad draw payload blockers";
+    }
+    frame.decoded_resource_summary =
+        "decoded_payloads=" + std::to_string(frame.decoded_resource_ready_payload_count)
+        + "; payload_hashes=" + std::to_string(frame.decoded_payload_hash_count)
+        + "; decoded_bytes=" + std::to_string(frame.decoded_payload_byte_count)
+        + "; staging_bytes=" + std::to_string(frame.staging_payload_byte_count);
+    if (frame.decoded_resource_blocker_summary.empty()) {
+        frame.decoded_resource_blocker_summary = "no decoded resource blockers";
     }
 
     frame.status = frame.payload_count == 0

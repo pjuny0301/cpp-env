@@ -989,6 +989,129 @@ render_image_texture_frame_resource_packet_consumption_entry_for_request_index(
     return nullptr;
 }
 
+inline void apply_render_image_texture_frame_resource_packet_consumption_to_renderer_texture_quad_packet(
+    render_image_renderer_texture_quad_packet& packet,
+    const render_image_texture_frame_resource_packet_consumption_entry& consumption)
+{
+    packet.decoded_resource_evidence_present = true;
+    packet.decoded_payload_hash = consumption.decoded_payload_hash;
+    packet.decoded_byte_count = consumption.decoded_byte_count;
+    packet.upload_layout_byte_count = consumption.upload_layout_byte_count;
+    packet.upload_layout_row_stride_byte_count = consumption.upload_layout_row_stride_byte_count;
+    packet.staging_payload_byte_count = consumption.staging_payload_byte_count;
+    packet.staging_row_copy_count = consumption.staging_row_copy_count;
+    packet.decoded_payload_valid = consumption.decoded_payload_valid;
+    packet.upload_payload_layout_ready = consumption.upload_payload_layout_ready;
+    packet.staging_payload_ready = consumption.staging_payload_ready;
+    packet.decoded_resource_ready = consumption.decoded_resource_ready;
+    packet.decoded_resource_blocked = consumption.decoded_resource_blocked || consumption.blocked;
+    packet.decoded_resource_summary = consumption.decoded_resource_summary;
+    packet.decoded_resource_blocker_summary = consumption.decoded_resource_blocker_summary;
+    if (packet.decoded_resource_blocked && !packet.decoded_resource_blocker_summary.empty()) {
+        packet.blocker_summary = packet.decoded_resource_blocker_summary;
+    }
+    finalize_render_image_renderer_texture_quad_packet(packet);
+}
+
+inline render_image_renderer_texture_quad_packet_summary
+make_render_image_renderer_texture_quad_packet_summary_with_resource_consumption(
+    const render_image_renderer_texture_quad_packet_summary& summary,
+    const render_image_texture_frame_resource_packet_consumption_summary& consumption)
+{
+    render_image_renderer_texture_quad_packet_summary enriched{
+        .frame_label = summary.frame_label,
+        .draw_command_count = summary.draw_command_count,
+        .non_image_command_count = summary.non_image_command_count,
+        .image_command_count = summary.image_command_count,
+        .composition_entry_count = summary.composition_entry_count,
+        .has_non_image_commands = summary.has_non_image_commands,
+        .skipped_command_summary = summary.skipped_command_summary,
+    };
+
+    std::map<std::string, bool> unique_quad_packet_identities;
+    std::map<std::string, bool> unique_texture_cache_keys;
+    std::map<std::string, bool> unique_sampler_keys;
+    std::map<std::uint64_t, bool> decoded_payload_hashes;
+    for (const render_image_renderer_texture_quad_packet& source_packet : summary.packets) {
+        render_image_renderer_texture_quad_packet packet = source_packet;
+        packet.packet_index = enriched.packets.size();
+        if (const render_image_texture_frame_resource_packet_consumption_entry* consumption_entry =
+                render_image_texture_frame_resource_packet_consumption_entry_for_request_index(
+                    consumption,
+                    packet.texture_request_index);
+            consumption_entry != nullptr) {
+            apply_render_image_texture_frame_resource_packet_consumption_to_renderer_texture_quad_packet(
+                packet,
+                *consumption_entry);
+        }
+
+        append_unique_render_image_texture_frame_upload_handoff_summary_fragment(
+            unique_quad_packet_identities,
+            enriched.stable_identity_summary,
+            packet.stable_quad_packet_identity);
+        append_unique_render_image_texture_frame_upload_handoff_summary_fragment(
+            unique_texture_cache_keys,
+            enriched.texture_cache_key_summary,
+            packet.stable_texture_cache_key);
+        append_unique_render_image_texture_frame_upload_handoff_summary_fragment(
+            unique_sampler_keys,
+            enriched.sampler_summary,
+            packet.sampler_key);
+        if (packet.decoded_resource_evidence_present && packet.decoded_payload_hash != 0) {
+            decoded_payload_hashes.emplace(packet.decoded_payload_hash, true);
+        }
+
+        count_render_image_renderer_texture_quad_packet(enriched, packet);
+        enriched.packets.push_back(std::move(packet));
+    }
+
+    enriched.packet_count = enriched.packets.size();
+    enriched.unique_stable_quad_packet_identity_count = unique_quad_packet_identities.size();
+    enriched.unique_texture_cache_key_count = unique_texture_cache_keys.size();
+    enriched.unique_sampler_key_count = unique_sampler_keys.size();
+    enriched.decoded_payload_hash_count = decoded_payload_hashes.size();
+    enriched.renderer_quad_packets_ready = enriched.packet_count != 0 && !enriched.has_blockers;
+    if (enriched.stable_identity_summary.empty()) {
+        enriched.stable_identity_summary = "no renderer texture quad packet stable identities";
+    }
+    if (enriched.texture_cache_key_summary.empty()) {
+        enriched.texture_cache_key_summary = "no renderer texture quad packet cache keys";
+    }
+    if (enriched.sampler_summary.empty()) {
+        enriched.sampler_summary = "no renderer texture quad packet sampler keys";
+    }
+    if (enriched.blocker_summary.empty()) {
+        enriched.blocker_summary = "no renderer texture quad packet blockers";
+    }
+    enriched.decoded_resource_summary =
+        "decoded_resources=" + std::to_string(enriched.decoded_resource_ready_count)
+        + "; payload_hashes=" + std::to_string(enriched.decoded_payload_hash_count)
+        + "; decoded_bytes=" + std::to_string(enriched.decoded_payload_byte_count)
+        + "; staging_bytes=" + std::to_string(enriched.staging_payload_byte_count);
+    if (enriched.decoded_resource_blocker_summary.empty()) {
+        enriched.decoded_resource_blocker_summary = "no decoded resource blockers";
+    }
+
+    enriched.status = enriched.packet_count == 0
+        ? render_image_renderer_texture_quad_packet_summary_status::empty
+        : (enriched.has_blockers
+            ? render_image_renderer_texture_quad_packet_summary_status::blocked
+            : render_image_renderer_texture_quad_packet_summary_status::ready);
+    enriched.status_name = render_image_renderer_texture_quad_packet_summary_status_name(enriched.status);
+    switch (enriched.status) {
+    case render_image_renderer_texture_quad_packet_summary_status::empty:
+        enriched.diagnostic = "image renderer texture quad packet summary has no image packets";
+        break;
+    case render_image_renderer_texture_quad_packet_summary_status::ready:
+        enriched.diagnostic = "image renderer texture quad packet summary is ready";
+        break;
+    case render_image_renderer_texture_quad_packet_summary_status::blocked:
+        enriched.diagnostic = "image renderer texture quad packet summary has blocked image packets";
+        break;
+    }
+    return enriched;
+}
+
 inline void append_render_image_texture_frame_resource_packet_consumption_request_indexes(
     std::map<std::size_t, bool>& request_indexes,
     const render_image_texture_frame_resource_packet_consumption_summary& summary)

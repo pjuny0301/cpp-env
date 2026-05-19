@@ -901,6 +901,23 @@ void test_vulkan_command_packet_execution_names_are_stable()
             == std::string_view{"image_materialization_mismatch"},
         "native descriptor set allocation image mismatch name is stable");
     require(
+        vulkan_backend::native_vertex_buffer_binding_status_name(
+            vulkan_backend::vulkan_native_vertex_buffer_binding_status::ready)
+            == std::string_view{"ready"},
+        "native vertex buffer binding ready name is stable");
+    require(
+        vulkan_backend::native_vertex_buffer_binding_status_name(
+            vulkan_backend::vulkan_native_vertex_buffer_binding_status::
+                native_command_symbol_unavailable)
+            == std::string_view{"native_command_symbol_unavailable"},
+        "native vertex buffer binding missing symbol name is stable");
+    require(
+        vulkan_backend::native_vertex_buffer_binding_status_name(
+            vulkan_backend::vulkan_native_vertex_buffer_binding_status::
+                duplicate_packet_binding)
+            == std::string_view{"duplicate_packet_binding"},
+        "native vertex buffer binding duplicate packet name is stable");
+    require(
         vulkan_backend::native_descriptor_write_payload_status_name(
             vulkan_backend::vulkan_native_descriptor_write_payload_status::ready)
             == std::string_view{"ready"},
@@ -1349,6 +1366,101 @@ void test_vulkan_native_descriptor_set_allocation_builds_fake_handles()
          allocation.descriptor_sets) {
         require(descriptor_set.completed(), "each allocated descriptor set is complete");
     }
+}
+
+void test_vulkan_native_vertex_buffer_binding_builds_fake_operations()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge = make_ready_bridge();
+    const vulkan_backend::vulkan_native_vertex_buffer_binding_result vertex_buffers =
+        vulkan_backend::build_fake_vulkan_native_vertex_buffer_binding_result(
+            bridge,
+            make_native_functions(),
+            vulkan_backend::vulkan_native_vertex_buffer_fake_allocator_options{
+                .first_vertex_buffer_handle = 25000,
+                .binding = 1,
+                .offset = 16,
+            });
+
+    require(vertex_buffers.checked, "vertex buffer binding result is checked");
+    require(vertex_buffers.completed(), "vertex buffer binding completes");
+    require(
+        vertex_buffers.status == vulkan_backend::vulkan_native_vertex_buffer_binding_status::ready,
+        "vertex buffer binding status is ready");
+    require(
+        vertex_buffers.fallback_reason == vulkan_backend::vulkan_backend_fallback_reason::none,
+        "vertex buffer binding has no fallback");
+    require(vertex_buffers.packet_bridge_ready, "vertex buffer binding consumes ready packets");
+    require(
+        vertex_buffers.native_bind_symbol_ready,
+        "vertex buffer binding consumes ready native bind symbol");
+    require(
+        vertex_buffers.operation_count == 4,
+        "vertex buffer binding records one operation per packet");
+    require(
+        vertex_buffers.allocated_vertex_buffer_count == 4,
+        "vertex buffer binding records allocated buffers");
+    require(
+        vertex_buffers.bound_vertex_buffer_count == 4,
+        "vertex buffer binding records bound buffers");
+    require(
+        vertex_buffers.operations.size() == 4 && vertex_buffers.vertex_buffer_binds.size() == 4,
+        "vertex buffer binding stores operations and bind evidence");
+    const vulkan_backend::vulkan_native_vertex_buffer_binding_operation& operation =
+        vertex_buffers.operations.front();
+    require(operation.completed(), "vertex buffer binding operation completes");
+    require(
+        operation.symbol_name == "vkCmdBindVertexBuffers",
+        "vertex buffer binding operation records native bind symbol");
+    require(
+        operation.vertex_buffer_bind.vertex_buffer.value == 25000,
+        "vertex buffer binding operation starts from fake allocator base handle");
+    require(
+        operation.vertex_buffer_bind.binding == 1 && operation.vertex_buffer_bind.offset == 16,
+        "vertex buffer binding operation records binding and offset");
+    require(
+        operation.vertex_buffer_bind.packet_identity
+            == "packet:0:command:10:category:rect:batch:quad:vertex_buffer:vertices:4",
+        "vertex buffer binding operation preserves packet identity");
+    for (const vulkan_backend::vulkan_native_command_packet_vertex_buffer_bind& bind :
+         vertex_buffers.vertex_buffer_binds) {
+        require(bind.completed(), "each vertex buffer bind is complete");
+    }
+}
+
+void test_vulkan_native_vertex_buffer_binding_blocks_missing_bind_symbol()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge = make_ready_bridge();
+    const vulkan_backend::vulkan_native_vertex_buffer_binding_result vertex_buffers =
+        vulkan_backend::build_fake_vulkan_native_vertex_buffer_binding_result(
+            bridge,
+            make_native_functions({"vkCmdBindVertexBuffers"}));
+
+    require(vertex_buffers.checked, "missing vertex buffer bind symbol result is checked");
+    require(
+        !vertex_buffers.completed(),
+        "missing vertex buffer bind symbol does not complete binding result");
+    require(
+        vertex_buffers.status
+            == vulkan_backend::vulkan_native_vertex_buffer_binding_status::
+                native_command_symbol_unavailable,
+        "missing vertex buffer bind symbol records exact status");
+    require(
+        vertex_buffers.fallback_reason
+            == vulkan_backend::vulkan_backend_fallback_reason::record_commands_failed,
+        "missing vertex buffer bind symbol records fallback");
+    require(
+        vertex_buffers.missing_native_symbol_name == "vkCmdBindVertexBuffers",
+        "missing vertex buffer bind symbol records symbol name");
+    require(
+        vertex_buffers.operations.empty() && vertex_buffers.vertex_buffer_binds.empty(),
+        "missing vertex buffer bind symbol does not fabricate bind evidence");
+    require(
+        vertex_buffers.diagnostic.find("vkCmdBindVertexBuffers") != std::string::npos,
+        "missing vertex buffer bind symbol diagnostic names blocker");
 }
 
 void test_vulkan_native_command_packet_executor_completes_with_allocated_descriptor_handles()
@@ -3285,6 +3397,8 @@ int main()
     test_vulkan_command_packet_execution_records_successful_empty_lifecycle();
     test_vulkan_native_command_packet_executor_translates_packets_to_native_calls();
     test_vulkan_native_descriptor_set_allocation_builds_fake_handles();
+    test_vulkan_native_vertex_buffer_binding_builds_fake_operations();
+    test_vulkan_native_vertex_buffer_binding_blocks_missing_bind_symbol();
     test_vulkan_native_command_packet_executor_completes_with_allocated_descriptor_handles();
     test_vulkan_native_descriptor_set_allocation_blocks_image_without_materialization();
     test_vulkan_native_descriptor_set_allocation_blocks_blocked_image_materialization();

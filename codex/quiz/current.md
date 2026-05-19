@@ -84,6 +84,7 @@ Historical integration notes are kept in git history, not repeated here.
 - Last full Windows MinGW CTest batch should be treated as stale. Run focused
   tests during normal integration; run full CTest after the next meaningful
   engine batch.
+- After `a09ce6d`, full Windows MinGW CTest passed 108/108.
 - After `51e6a40`, Windows MinGW built
   `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_architecture_boundary_tests`,
   `quiz_vulkan_renderer_tests`, and `quiz_vulkan_app_demo_tests`; focused CTest

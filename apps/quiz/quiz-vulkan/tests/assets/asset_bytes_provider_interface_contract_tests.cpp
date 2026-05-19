@@ -1,5 +1,6 @@
 #include "assets/asset_bytes_contract.h"
 #include "assets/asset_bytes_provider.h"
+#include "assets/asset_render_resource_payload_bridge.h"
 #include "assets/asset_shader_byte_pipeline_source_summary.h"
 #include "assets/asset_typed_materialized_bytes.h"
 
@@ -639,6 +640,44 @@ static_assert(requires(
     { const_summary.find_entry(id) } -> std::same_as<const asset_shader_byte_pipeline_source_entry*>;
 });
 
+static_assert(std::is_enum_v<asset_render_resource_payload_bridge_status>);
+
+static_assert(requires(
+    asset_render_resource_payload_bridge_entry entry,
+    const asset_render_resource_payload_bridge_entry& const_entry) {
+    { entry.status } -> std::same_as<asset_render_resource_payload_bridge_status&>;
+    { entry.address } -> std::same_as<asset_render_resource_address_entry&>;
+    { entry.selection } -> std::same_as<asset_materialized_byte_payload_selection_result&>;
+    { entry.selected_snapshot } -> std::same_as<std::optional<asset_materialized_byte_payload_snapshot>&>;
+    { entry.related_id } -> std::same_as<std::string&>;
+    { entry.diagnostic } -> std::same_as<std::string&>;
+    { const_entry.ok() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_render_resource_payload_bridge_summary summary,
+    const asset_render_resource_payload_bridge_summary& const_summary,
+    std::string_view id,
+    std::string_view canonical_identity) {
+    { summary.accepted } -> std::same_as<std::vector<asset_render_resource_payload_bridge_entry>&>;
+    { summary.blocked } -> std::same_as<std::vector<asset_render_resource_payload_bridge_entry>&>;
+    { summary.requested_address_count } -> std::same_as<std::size_t&>;
+    { summary.accepted_count } -> std::same_as<std::size_t&>;
+    { summary.missing_materialized_bytes_count } -> std::same_as<std::size_t&>;
+    { summary.type_mismatch_count } -> std::same_as<std::size_t&>;
+    { summary.cache_key_mismatch_count } -> std::same_as<std::size_t&>;
+    { summary.duplicate_canonical_identity_count } -> std::same_as<std::size_t&>;
+    { summary.duplicate_materialized_payload_id_count } -> std::same_as<std::size_t&>;
+    { const_summary.ok() } -> std::same_as<bool>;
+    { const_summary.entry_count() } -> std::same_as<std::size_t>;
+    { const_summary.blocked_count() } -> std::same_as<std::size_t>;
+    { const_summary.find_accepted(id) } -> std::same_as<const asset_render_resource_payload_bridge_entry*>;
+    { const_summary.find_blocked(id) } -> std::same_as<const asset_render_resource_payload_bridge_entry*>;
+    { const_summary.find_entry(id) } -> std::same_as<const asset_render_resource_payload_bridge_entry*>;
+    { const_summary.find_canonical_identity(canonical_identity) } ->
+        std::same_as<const asset_render_resource_payload_bridge_entry*>;
+});
+
 static_assert(std::has_virtual_destructor_v<asset_bytes_provider_interface>);
 static_assert(std::derived_from<fake_asset_bytes_provider, asset_bytes_provider_interface>);
 static_assert(std::derived_from<local_file_asset_bytes_provider, asset_bytes_provider_interface>);
@@ -688,6 +727,10 @@ static_assert(requires(
     const asset_runtime_resolver_policy_summary& resolver_policy,
     const asset_pack_index_root_selection_summary& root_selection,
     const std::vector<std::string>& expected_shader_ids,
+    const asset_render_resource_address_entry& render_resource_address,
+    const asset_render_resource_address_summary& render_resource_addresses,
+    asset_materialized_byte_payload_selection_status payload_selection_status,
+    asset_render_resource_payload_bridge_status bridge_status,
     const std::vector<asset_bytes_catalog_request>& requests,
     const asset_bytes_catalog_request& request) {
     { make_asset_bytes_content_hash(bytes) } -> std::same_as<std::string>;
@@ -742,6 +785,15 @@ static_assert(requires(
         std::same_as<asset_shader_byte_pipeline_source_summary>;
     { summarize_shader_byte_pipeline_sources(shader_pipeline, resolver_policy) } ->
         std::same_as<asset_shader_byte_pipeline_source_summary>;
+    { asset_render_resource_payload_bridge_status_from_selection(payload_selection_status) } ->
+        std::same_as<asset_render_resource_payload_bridge_status>;
+    { make_asset_render_resource_payload_selection_request(render_resource_address) } ->
+        std::same_as<asset_materialized_byte_payload_selection_request>;
+    { make_asset_render_resource_payload_bridge_entry(render_resource_address, payload_bundle) } ->
+        std::same_as<asset_render_resource_payload_bridge_entry>;
+    { bridge_asset_render_resource_addresses_to_payloads(render_resource_addresses, payload_bundle) } ->
+        std::same_as<asset_render_resource_payload_bridge_summary>;
+    { asset_render_resource_payload_bridge_status_name(bridge_status) } -> std::same_as<std::string>;
     { asset_shader_materialized_byte_issue_kind_name(shader_issue_kind) } -> std::same_as<std::string>;
     { asset_shader_byte_pipeline_source_kind_name(shader_source_kind) } -> std::same_as<std::string>;
     { asset_shader_byte_pipeline_blocker_kind_name(shader_blocker_kind) } -> std::same_as<std::string>;

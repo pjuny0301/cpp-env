@@ -1,4 +1,5 @@
 #include "assets/asset_bytes_provider.h"
+#include "assets/asset_render_resource_payload_bridge.h"
 
 #include "asset_bytes_provider_interface_contract_tests.cpp"
 
@@ -2165,6 +2166,217 @@ void test_shader_byte_pipeline_source_summary_combines_manifest_fallback_and_pay
         "stale shader diagnostic is stable");
 }
 
+void test_render_resource_payload_bridge_matches_addresses_to_materialized_payloads()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .root_path = fixture_root / "packaged",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "external_shader_pack",
+        .root_path = fixture_root / "build" / "external" / "shader_pack",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "asset://cards/front.png",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "body_font",
+        .type = asset_type::font,
+        .uri = "fonts/body.ttf",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "ui_shader",
+        .type = asset_type::shader,
+        .uri = "shaders/ui.vert.spv",
+        .root_id = "external_shader_pack",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "missing_image",
+        .type = asset_type::image,
+        .uri = "asset://cards/missing.png",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "wrong_type",
+        .type = asset_type::image,
+        .uri = "asset://cards/wrong-type.png",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "stale_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/stale.vert.spv",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "duplicate_a",
+        .type = asset_type::image,
+        .uri = "asset://cards/shared.png",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "duplicate_b",
+        .type = asset_type::image,
+        .uri = "ASSET:///cards/./shared.png",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_render_resource_address_summary addresses =
+        summarize_asset_render_resource_addresses(manifest, resolver);
+    require(addresses.ok(), "render resource bridge fixture starts from accepted addresses");
+    require(addresses.entry_count() == 8U, "render resource bridge fixture contains all addresses");
+
+    asset_materialized_byte_payload_bundle bundle;
+    bundle.images.ready.push_back(make_payload_bundle_entry(
+        "card_front",
+        asset_type::image,
+        "asset://cards/front.png",
+        "/assets/cards/front.png",
+        "image bytes",
+        ""));
+    bundle.fonts.ready.push_back(make_payload_bundle_entry(
+        "body_font",
+        asset_type::font,
+        "fonts/body.ttf",
+        "/assets/fonts/body.ttf",
+        "font bytes",
+        ""));
+    bundle.shaders.ready.push_back(make_shader_payload_bundle_entry(
+        "ui_shader",
+        "shaders/ui.vert.spv",
+        "/assets/shaders/ui.vert.spv",
+        make_spirv_fixture_bytes()));
+    bundle.sounds.ready.push_back(make_payload_bundle_entry(
+        "wrong_type",
+        asset_type::sound,
+        "asset://sounds/wrong-type.ogg",
+        "/assets/sounds/wrong-type.ogg",
+        "sound bytes",
+        ""));
+    bundle.shaders.ready.push_back(make_shader_payload_bundle_entry(
+        "stale_shader",
+        "asset://shaders/stale-old.vert.spv",
+        "/assets/shaders/stale-old.vert.spv",
+        make_spirv_fixture_bytes()));
+    bundle.images.ready.push_back(make_payload_bundle_entry(
+        "duplicate_a",
+        asset_type::image,
+        "asset://cards/shared.png",
+        "/assets/cards/shared-a.png",
+        "shared image a",
+        ""));
+    bundle.images.ready.push_back(make_payload_bundle_entry(
+        "duplicate_b",
+        asset_type::image,
+        "asset://cards/shared.png",
+        "/assets/cards/shared-b.png",
+        "shared image b",
+        ""));
+
+    const asset_render_resource_payload_bridge_summary bridge =
+        bridge_asset_render_resource_addresses_to_payloads(addresses, bundle);
+
+    require(!bridge.ok(), "render resource payload bridge reports blocked handoff evidence");
+    require(bridge.requested_address_count == 8U, "render resource payload bridge records requested addresses");
+    require(bridge.entry_count() == 8U, "render resource payload bridge emits one result per address");
+    require(bridge.accepted_count == 4U, "render resource payload bridge counts accepted matches");
+    require(bridge.blocked_count() == 4U, "render resource payload bridge counts blocked matches");
+    require(
+        bridge.missing_materialized_bytes_count == 1U,
+        "render resource payload bridge counts missing materialized bytes");
+    require(bridge.type_mismatch_count == 1U, "render resource payload bridge counts type mismatches");
+    require(bridge.cache_key_mismatch_count == 1U, "render resource payload bridge counts cache-key mismatches");
+    require(
+        bridge.duplicate_canonical_identity_count == 1U,
+        "render resource payload bridge counts duplicate canonical identities");
+    require(
+        bridge.duplicate_materialized_payload_id_count == 0U,
+        "render resource payload bridge does not report duplicate payload ids in this fixture");
+
+    const asset_render_resource_payload_bridge_entry* image = bridge.find_accepted("card_front");
+    require(image != nullptr, "render resource payload bridge finds accepted image payload");
+    require(image->ok(), "accepted image bridge entry is ok");
+    require(image->selection.selected(), "accepted image bridge entry keeps selection result");
+    require(image->selected_snapshot.has_value(), "accepted image bridge entry keeps compact payload snapshot");
+    require(image->selection.payload != nullptr, "accepted image bridge entry keeps payload pointer");
+    require(
+        image->selection.payload->bytes.size() == image->selected_snapshot->payload_byte_count,
+        "accepted image bridge entry points to bytes without copying them into the snapshot");
+    require(
+        image->address.canonical_identity == "asset://cards/front.png",
+        "accepted image bridge entry keeps canonical render identity");
+    require(
+        image->selected_snapshot->cache_key == "image|asset://cards/front.png",
+        "accepted image bridge entry keeps payload cache key");
+    require(
+        image->selected_snapshot->content_hash
+            == make_asset_bytes_content_hash(detail::make_asset_byte_vector("image bytes")),
+        "accepted image bridge entry keeps content hash evidence");
+
+    const asset_render_resource_payload_bridge_entry* font = bridge.find_accepted("body_font");
+    require(font != nullptr, "render resource payload bridge finds accepted font payload");
+    require(font->selected_snapshot->type == asset_type::font, "accepted font bridge entry keeps font type");
+    require(
+        font->address.canonical_identity == "local-fixture://packaged/fonts/body.ttf",
+        "accepted font bridge entry keeps stable fixture identity");
+
+    const asset_render_resource_payload_bridge_entry* shader = bridge.find_accepted("ui_shader");
+    require(shader != nullptr, "render resource payload bridge finds accepted shader payload");
+    require(shader->selected_snapshot->type == asset_type::shader, "accepted shader bridge entry keeps shader type");
+    require(
+        shader->address.canonical_identity
+            == "build-external://external_shader_pack/shaders/ui.vert.spv",
+        "accepted shader bridge entry keeps stable build-external identity");
+
+    const asset_render_resource_payload_bridge_entry* missing = bridge.find_blocked("missing_image");
+    require(missing != nullptr, "render resource payload bridge finds missing materialized bytes");
+    require(
+        missing->status == asset_render_resource_payload_bridge_status::missing_materialized_bytes,
+        "missing image bridge entry reports missing materialized bytes");
+    require(!missing->selected_snapshot.has_value(), "missing image bridge entry has no selected snapshot");
+
+    const asset_render_resource_payload_bridge_entry* wrong_type = bridge.find_blocked("wrong_type");
+    require(wrong_type != nullptr, "render resource payload bridge finds type mismatches");
+    require(
+        wrong_type->status == asset_render_resource_payload_bridge_status::type_mismatch,
+        "wrong type bridge entry reports type mismatch");
+    require(wrong_type->selection.actual_type == asset_type::sound, "wrong type bridge entry records actual type");
+    require(wrong_type->selection.expected_type == asset_type::image, "wrong type bridge entry records expected type");
+
+    const asset_render_resource_payload_bridge_entry* stale = bridge.find_blocked("stale_shader");
+    require(stale != nullptr, "render resource payload bridge finds cache-key mismatches");
+    require(
+        stale->status == asset_render_resource_payload_bridge_status::cache_key_mismatch,
+        "stale shader bridge entry reports cache-key mismatch");
+    require(
+        stale->selection.actual_cache_key == "shader|asset://shaders/stale-old.vert.spv",
+        "stale shader bridge entry records actual payload cache key");
+    require(
+        stale->selection.expected_cache_key == asset_cache_key{"shader|asset://shaders/stale.vert.spv"},
+        "stale shader bridge entry records expected address cache key");
+
+    const asset_render_resource_payload_bridge_entry* duplicate_a = bridge.find_accepted("duplicate_a");
+    require(duplicate_a != nullptr, "render resource payload bridge accepts first canonical identity owner");
+    require(
+        bridge.find_canonical_identity("asset://cards/shared.png") == duplicate_a,
+        "render resource payload bridge finds first canonical identity owner deterministically");
+
+    const asset_render_resource_payload_bridge_entry* duplicate_b = bridge.find_blocked("duplicate_b");
+    require(duplicate_b != nullptr, "render resource payload bridge finds duplicate canonical identities");
+    require(
+        duplicate_b->status == asset_render_resource_payload_bridge_status::duplicate_canonical_identity,
+        "duplicate canonical bridge entry reports duplicate identity");
+    require(duplicate_b->related_id == "duplicate_a", "duplicate canonical bridge entry records first owner");
+    require(!duplicate_b->selected_snapshot.has_value(), "duplicate canonical bridge entry does not select payload");
+    require(
+        asset_render_resource_payload_bridge_status_name(duplicate_b->status)
+            == "duplicate_canonical_identity",
+        "render resource payload bridge status names are stable");
+}
+
 void test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics()
 {
     using namespace quiz_vulkan::assets;
@@ -2977,6 +3189,7 @@ int main()
     test_materialized_asset_byte_payload_bundle_diff_tracks_snapshot_changes();
     test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads();
     test_shader_byte_pipeline_source_summary_combines_manifest_fallback_and_payload_evidence();
+    test_render_resource_payload_bridge_matches_addresses_to_materialized_payloads();
     test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics();
     test_materialized_asset_byte_payload_request_transaction_preserves_order_and_counts();
     test_materialized_asset_byte_payload_request_transaction_review_summary_groups_by_expected_type();

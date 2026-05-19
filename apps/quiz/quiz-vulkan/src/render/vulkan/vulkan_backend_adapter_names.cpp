@@ -558,6 +558,36 @@ std::string_view command_recorder_operation_kind_name(
     return "unknown";
 }
 
+std::string_view native_image_payload_descriptor_binding_status_name(
+    vulkan_native_image_payload_descriptor_binding_status status)
+{
+    switch (status) {
+    case vulkan_native_image_payload_descriptor_binding_status::not_checked:
+        return "not_checked";
+    case vulkan_native_image_payload_descriptor_binding_status::ready:
+        return "ready";
+    case vulkan_native_image_payload_descriptor_binding_status::packet_bridge_unavailable:
+        return "packet_bridge_unavailable";
+    case vulkan_native_image_payload_descriptor_binding_status::
+        descriptor_payload_recording_unavailable:
+        return "descriptor_payload_recording_unavailable";
+    case vulkan_native_image_payload_descriptor_binding_status::native_function_table_unavailable:
+        return "native_function_table_unavailable";
+    case vulkan_native_image_payload_descriptor_binding_status::native_command_symbol_unavailable:
+        return "native_command_symbol_unavailable";
+    case vulkan_native_image_payload_descriptor_binding_status::pipeline_layout_unavailable:
+        return "pipeline_layout_unavailable";
+    case vulkan_native_image_payload_descriptor_binding_status::missing_image_payload:
+        return "missing_image_payload";
+    case vulkan_native_image_payload_descriptor_binding_status::invalid_image_payload:
+        return "invalid_image_payload";
+    case vulkan_native_image_payload_descriptor_binding_status::stale_image_payload:
+        return "stale_image_payload";
+    }
+
+    return "unknown";
+}
+
 std::string_view command_buffer_record_result_status_name(
     vulkan_command_buffer_record_result_status status)
 {

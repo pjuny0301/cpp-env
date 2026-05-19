@@ -619,6 +619,7 @@ target_link_libraries(
         quiz_vulkan_app_presentation
         quiz_vulkan_text_engine
         quiz_vulkan_text_scene_bridge
+        quiz_vulkan_image_engine
         quiz_vulkan_domain
         quiz_vulkan_deck_source_asset_adapter
         quiz_vulkan_input
@@ -766,6 +767,7 @@ if(BUILD_TESTING)
             quiz_vulkan_app_presentation
             quiz_vulkan_text_engine
             quiz_vulkan_text_scene_bridge
+            quiz_vulkan_image_engine
             quiz_vulkan_domain
     )
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_app_demo_tests)

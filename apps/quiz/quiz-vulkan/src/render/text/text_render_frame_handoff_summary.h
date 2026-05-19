@@ -1,6 +1,11 @@
 #pragma once
 
-#include "render/text/text_frame_upload_handoff.h"
+#include "render/text/text_renderer_glyph_quad_packet.h"
+
+#include <algorithm>
+#include <cstddef>
+#include <string>
+#include <vector>
 
 namespace quiz_vulkan::render {
 

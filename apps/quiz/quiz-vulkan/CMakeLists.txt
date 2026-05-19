@@ -355,11 +355,16 @@ target_sources(
             src/render/text/font_unicode_coverage.h
             src/render/text/glyph_run.h
             src/render/text/text_frame_draw_plan.h
+            src/render/text/text_frame_resource_packet_consumption_diff.h
+            src/render/text/text_frame_resource_packet_materialization.h
             src/render/text/text_render_frame_handoff_summary.h
             src/render/text/text_frame_snapshot.h
             src/render/text/text_frame_upload_handoff.h
+            src/render/text/text_frame_upload_handoff_core.h
+            src/render/text/text_frame_upload_handoff_diff.h
             src/render/text/text_engine.h
             src/render/text/text_atlas_packet_consumption_evidence.h
+            src/render/text/text_renderer_glyph_quad_packet.h
             src/render/text/utf8_line_break.h
             src/render/text/utf8_text_run.h
 )

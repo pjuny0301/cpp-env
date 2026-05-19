@@ -19,14 +19,13 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Active Bottlenecks
 
-- Vulkan: present image execution evidence and descriptor allocation merge
-  guard tests are integrated. Active worker work is descriptor payload bind
-  recording before real queue submission is widened.
+- Vulkan: present image execution evidence, descriptor allocation merge guard
+  tests, and descriptor payload bind recording are integrated.
 - Text: atlas packet consumption, HarfBuzz shaping handoff diagnostics, and real
-  font atlas draw evidence are integrated. Active worker work is real font draw
-  packet consumption.
+  font atlas draw evidence and draw packet consumption diffs are integrated.
 - Image: staging payload blocker coverage, staging payload diff summaries, and
-  decoded-byte resource materialization are integrated. Image worker is idle.
+  decoded-byte resource materialization are integrated. Active worker work is
+  decoded draw payload evidence.
 - Asset: materialized byte payload request/review evidence and shader byte
   pipeline summary are integrated.
 - Input/IME: wheel modifier diagnostics are integrated; input is idle unless
@@ -34,14 +33,14 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Active Workers
 
-- `codex-vulkan-native-command-packet-executor-20260516`: busy on
-  `codex/vulkan-descriptor-payload-bind-recording-20260518`.
-- `codex-text-freetype-prototype-20260514`: busy on
-  `codex/text-real-font-draw-packet-consumption-20260518`.
+- `codex-vulkan-native-command-packet-executor-20260516`: idle after descriptor
+  payload bind recording integration.
+- `codex-text-freetype-prototype-20260514`: idle after real font draw packet
+  consumption diff integration.
 - `codex-asset-unified-cache-key-20260514`: idle after shader byte source
   pipeline summary and focused-header split.
-- `codex-image-texture-next-20260514`: idle after decoded-byte resource
-  materialization integration.
+- `codex-image-texture-next-20260514`: busy on
+  `codex/image-decoded-draw-payload-evidence-20260518`.
 - `codex-input-ime`: idle after wheel/drag/touch-like diagnostics work.
 - Idle sessions are intentionally kept alive. Give them fresh baseline branches
   before new work; do not re-merge historical ahead commits.
@@ -74,11 +73,12 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `86640cd` after
+- Main branch `codex/quiz-vulkan-remake-baseline` is at `7165401` after
   HarfBuzz shaping handoff diagnostics, image staging payload diff summaries,
   Vulkan descriptor allocation merge guard integration, next engine worker
   prompts, real font atlas draw evidence, and decoded-byte image resource
-  materialization.
+  materialization, descriptor payload bind recording, and text draw packet
+  consumption diffs.
 - Last full Windows MinGW CTest batch should be treated as stale. Run focused
   tests during normal integration; run full CTest after the next meaningful
   engine batch.
@@ -166,6 +166,20 @@ Historical integration notes are kept in git history, not repeated here.
   `quiz_vulkan_image_texture_pipeline_tests`; focused CTest passed 8/8 for the
   image texture filtered suite, including the standard decoder pipeline and
   resource packet materialization.
+- After `9a7bc2f`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests`,
+  `quiz_vulkan_vulkan_command_packet_execution_tests`,
+  `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`;
+  focused CTest passed 3/3 for Vulkan command packet execution, renderer, and
+  architecture boundary.
+- After `7165401`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests`,
+  `quiz_vulkan_font_shaped_atlas_update_tests`,
+  `quiz_vulkan_text_renderer_glyph_quad_packet_tests`,
+  `quiz_vulkan_text_frame_resource_packet_materialization_tests`, and
+  `quiz_vulkan_fake_text_engine_freetype_raster_payload_tests`; focused CTest
+  passed 4/4 for shaped atlas update, glyph quad packet, text frame resource
+  packet materialization, and FreeType raster payload.
 
 ## Useful Commands
 

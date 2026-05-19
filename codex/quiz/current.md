@@ -19,49 +19,63 @@ details belong in git history.
 
 ## Integrated Baseline
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `d65cca5`.
+- Main branch `codex/quiz-vulkan-remake-baseline` includes engine work through
+  `5734bd8`; this handoff note may be one documentation commit newer.
 - Integrated since the previous remote baseline:
+  - default app rendering now uses the standard image texture pipeline instead
+    of the fake image pipeline;
   - app image payload extraction now works for the standard image pipeline, not
     only the fake pipeline;
+  - app image payload extraction now consumes the image-owned upload/cache
+    diagnostics side interface instead of concrete fake/standard pipeline casts;
   - asset render resource materialized byte cache summaries preserve stable
     identities for renderer-facing payloads;
+  - asset render resource materialized cache diffs track reuse, replacement,
+    content-hash invalidation, revision invalidation, and host-path movement;
   - standard image decode/upload cache behavior is covered through repeated URI
     reuse and malformed image placeholder paths;
+  - image pipelines expose a common upload/cache diagnostics side interface for
+    fake and standard pipelines;
   - input/IME fixture coverage now includes IME preedit commit/cancel, Hangul
     backspace, wheel routing, and pointer capture arbitration;
+  - input routing diagnostics now carry text focus/caret route state for app
+    routers to consume later without domain dispatch from input;
   - Vulkan command packet execution records native vertex buffer bind evidence;
+  - Vulkan native command packet execution records image payload descriptor bind
+    evidence, including missing/stale/invalid payload blocker paths;
   - FreeType-backed text atlas raster payloads now expose cache-hit reuse
     evidence behind the text engine contract.
+  - HarfBuzz-shaped glyph ids now drive FreeType atlas residency fixture
+    coverage and repeated glyph atlas reuse evidence.
 - Full Windows MinGW CTest passed 108/108 in
   `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
 
 ## Active Bottlenecks
 
-- Vulkan: native vertex buffer bind evidence is tracked; keep moving toward
-  descriptor/buffer allocation and command packet execution while preserving
-  renderer-only inputs.
-- Text: FreeType atlas payload reuse is tracked; keep replacing fake handoff
-  behavior with font/shaping/atlas evidence behind the text engine contract.
-- Image: standard decode cache/upload residency is covered; expose a stable
-  image-owned upload snapshot/diagnostic contract so app wiring does not need
-  concrete fake/standard pipeline casts.
-- Asset: render resources can bridge to materialized bytes with stable cache
-  identities; keep cache invalidation based on content/revision, not absolute
-  file paths.
-- Input/IME: gesture route diagnostics are integrated; only resume when a
-  user-visible input route or IME contract becomes the active blocker.
+- Vulkan: descriptor payload bind evidence is tracked; keep moving from fake
+  evidence toward real descriptor allocation/write/bind calls and then
+  swapchain/pipeline execution while preserving renderer-only inputs.
+- Text: HarfBuzz glyph ids and FreeType atlas residency are tracked in tests;
+  keep moving real shaped atlas packets toward renderer draw consumption.
+- Image: fake and standard pipelines now expose common upload/cache diagnostics;
+  keep expanding real decode/cache/upload behavior without letting app or
+  renderer code inspect concrete image pipeline types.
+- Asset: render resources can diff materialized cache invalidation by content
+  and revision; keep runtime cache keys stable and host-path-free.
+- Input/IME: input owns text focus/caret route state; only resume when
+  app-owned routing needs a new normalized input contract.
 
 ## Active Workers
 
 - `codex-vulkan-native-command-packet-executor-20260516`: latest commit
-  `5855938` integrated as `88c721c`; session remains alive.
-- `codex-text-freetype-prototype-20260514`: latest commit `417bcd3`
-  integrated as `d65cca5`; session remains alive.
-- `codex-asset-unified-cache-key-20260514`: latest commit `06a9859`
-  integrated as `e499fe3`; session remains alive.
-- `codex-image-texture-next-20260514`: latest commit `117bc0c`
-  integrated as `34f80b8`; session remains alive.
-- `codex-input-ime`: latest commit `3eb456d` integrated as `47884d0`;
+  `3f709f7` integrated as `5734bd8`; session remains alive.
+- `codex-text-freetype-prototype-20260514`: latest commit `55a2568`
+  integrated as `93b2969`; session remains alive.
+- `codex-asset-unified-cache-key-20260514`: latest commit `ca5c6f6`
+  integrated as `b67ee89`; session remains alive.
+- `codex-image-texture-next-20260514`: latest commit `1d5f113`
+  integrated as `e85a4e4`; session remains alive.
+- `codex-input-ime`: latest commit `874ad57` integrated as `6a9fbe2`;
   session remains alive.
 - Idle sessions are intentionally kept alive. Give them fresh baseline branches
   before new work; do not re-merge historical ahead commits.

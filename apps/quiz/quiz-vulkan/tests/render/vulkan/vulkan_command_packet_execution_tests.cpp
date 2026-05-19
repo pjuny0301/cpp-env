@@ -1242,6 +1242,15 @@ void test_vulkan_native_command_packet_executor_translates_packets_to_native_cal
     require(native_result.draw_calls_ready, "native packet translation records draw readiness");
     require(native_result.draw_call_count == 4, "native packet translation records draw call count");
     require(native_result.vertex_buffer_bind_count == 4, "native packet translation records vertex binds");
+    require(
+        native_result.draw_packet_resource_execution_count == 4,
+        "native packet translation records one draw resource execution per packet");
+    require(
+        native_result.completed_draw_packet_resource_execution_count == 4,
+        "native packet translation records completed draw resource executions");
+    require(
+        native_result.draw_packet_resource_executions.size() == 4,
+        "native packet translation stores draw resource execution records");
     require(native_result.calls[11].pipeline_bind_ready, "text packet draw sees pipeline bind");
     require(native_result.calls[11].descriptor_bind_required, "text packet draw requires descriptor bind");
     require(native_result.calls[11].descriptor_bind_ready, "text packet draw sees descriptor bind");
@@ -1255,6 +1264,34 @@ void test_vulkan_native_command_packet_executor_translates_packets_to_native_cal
         native_result.calls[11].vertex_buffer_packet_identity
             == "packet:1:command:11:category:text:batch:text:vertex_buffer:vertices:4",
         "text packet draw records stable vertex buffer identity");
+    const vulkan_backend::vulkan_native_draw_packet_resource_execution_record&
+        text_resource_execution = native_result.draw_packet_resource_executions[1];
+    require(text_resource_execution.completed(), "text packet draw resource execution completes");
+    require(
+        text_resource_execution.packet_identity
+            == "packet:1:command:11:category:text:batch:text:vertices:4:instances:1",
+        "text packet draw resource execution preserves packet identity");
+    require(
+        text_resource_execution.pipeline_bind_completed,
+        "text packet draw resource execution records pipeline bind result");
+    require(
+        text_resource_execution.descriptor_bind_required,
+        "text packet draw resource execution records descriptor requirement");
+    require(
+        text_resource_execution.descriptor_bind_completed,
+        "text packet draw resource execution records descriptor bind result");
+    require(
+        text_resource_execution.vertex_buffer_bind_completed,
+        "text packet draw resource execution records vertex buffer bind result");
+    require(
+        text_resource_execution.draw_call_completed,
+        "text packet draw resource execution records draw call result");
+    require(
+        text_resource_execution.vertex_count == 4 && text_resource_execution.instance_count == 1,
+        "text packet draw resource execution records draw counts");
+    require(
+        text_resource_execution.fallback_blocker.empty(),
+        "text packet draw resource execution has no fallback blocker");
     for (const vulkan_backend::vulkan_native_command_packet_call_evidence& call :
          native_result.calls) {
         require(call.successful(), "each native command packet call reports success");
@@ -2808,6 +2845,41 @@ void test_vulkan_native_command_packet_executor_blocks_missing_vertex_buffer_bin
         "missing vertex buffer bind evidence keeps bind readiness false");
     require(!native_result.draw_calls_ready, "missing vertex buffer bind keeps draw readiness false");
     require(native_result.calls.empty(), "missing vertex buffer bind records no native calls");
+    require(
+        native_result.draw_packet_resource_execution_count == 1,
+        "missing vertex buffer bind records a blocked draw resource execution");
+    require(
+        native_result.completed_draw_packet_resource_execution_count == 0,
+        "missing vertex buffer bind records no completed draw resource execution");
+    require(
+        native_result.draw_packet_resource_executions.size() == 1,
+        "missing vertex buffer bind stores blocked draw resource execution");
+    const vulkan_backend::vulkan_native_draw_packet_resource_execution_record&
+        blocked_execution = native_result.draw_packet_resource_executions.front();
+    require(blocked_execution.blocked(), "missing vertex buffer bind marks resource execution blocked");
+    require(
+        blocked_execution.packet_identity
+            == "packet:0:command:10:category:rect:batch:quad:vertices:4:instances:1",
+        "missing vertex buffer bind preserves blocked packet identity");
+    require(
+        !blocked_execution.vertex_buffer_bind_completed,
+        "missing vertex buffer bind records incomplete vertex bind result");
+    require(
+        !blocked_execution.draw_call_completed,
+        "missing vertex buffer bind does not report draw call completion");
+    require(
+        blocked_execution.blocker_status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::
+                vertex_buffer_unavailable,
+        "missing vertex buffer bind records exact blocker status");
+    require(
+        blocked_execution.fallback_reason
+            == vulkan_backend::vulkan_backend_fallback_reason::record_commands_failed,
+        "missing vertex buffer bind records exact fallback reason");
+    require(
+        blocked_execution.fallback_blocker.find("missing vertex buffer bind evidence")
+            != std::string::npos,
+        "missing vertex buffer bind records exact fallback blocker");
     require(
         native_result.diagnostic.find("vertex buffer") != std::string::npos,
         "missing vertex buffer bind diagnostic names vertex buffer evidence");

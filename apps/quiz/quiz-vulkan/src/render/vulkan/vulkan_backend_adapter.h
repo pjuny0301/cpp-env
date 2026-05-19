@@ -1918,6 +1918,58 @@ struct vulkan_native_command_packet_call_evidence {
     }
 };
 
+struct vulkan_native_draw_packet_resource_execution_record {
+    std::size_t packet_index = 0;
+    std::size_t command_index = 0;
+    vulkan_command_packet_category category = vulkan_command_packet_category::rect;
+    vulkan_batch_kind batch_kind = vulkan_batch_kind::quad;
+    std::string packet_identity;
+    bool pipeline_bind_required = true;
+    bool pipeline_bind_ready = false;
+    bool pipeline_bind_completed = false;
+    bool descriptor_bind_required = false;
+    bool descriptor_bind_ready = false;
+    bool descriptor_bind_completed = false;
+    bool vertex_buffer_bind_required = true;
+    bool vertex_buffer_bind_ready = false;
+    bool vertex_buffer_bind_completed = false;
+    bool draw_call_required = true;
+    bool draw_call_ready = false;
+    bool draw_call_completed = false;
+    std::size_t vertex_count = 0;
+    std::size_t instance_count = 0;
+    vulkan_native_command_packet_call_evidence pipeline_bind_call;
+    vulkan_native_command_packet_call_evidence descriptor_bind_call;
+    vulkan_native_command_packet_call_evidence vertex_buffer_bind_call;
+    vulkan_native_command_packet_call_evidence draw_call;
+    vulkan_native_command_packet_execution_status blocker_status =
+        vulkan_native_command_packet_execution_status::not_checked;
+    vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::not_requested;
+    std::string fallback_blocker;
+
+    bool completed() const
+    {
+        return !packet_identity.empty()
+            && pipeline_bind_required && pipeline_bind_ready && pipeline_bind_completed
+            && (!descriptor_bind_required
+                || (descriptor_bind_ready && descriptor_bind_completed))
+            && vertex_buffer_bind_required && vertex_buffer_bind_ready
+            && vertex_buffer_bind_completed
+            && draw_call_required && draw_call_ready && draw_call_completed
+            && vertex_count > 0 && instance_count > 0
+            && blocker_status == vulkan_native_command_packet_execution_status::completed
+            && fallback_reason == vulkan_backend_fallback_reason::none
+            && fallback_blocker.empty();
+    }
+
+    bool blocked() const
+    {
+        return !completed()
+            && blocker_status != vulkan_native_command_packet_execution_status::not_checked
+            && blocker_status != vulkan_native_command_packet_execution_status::completed;
+    }
+};
+
 struct vulkan_native_command_packet_execution_result {
     bool checked = false;
     vulkan_native_command_packet_execution_status status =
@@ -1944,6 +1996,8 @@ struct vulkan_native_command_packet_execution_result {
     std::size_t vertex_buffer_bind_count = 0;
     std::size_t draw_call_count = 0;
     std::size_t draw_payload_identity_count = 0;
+    std::size_t draw_packet_resource_execution_count = 0;
+    std::size_t completed_draw_packet_resource_execution_count = 0;
     bool has_failed_packet = false;
     vulkan_command_packet_category first_failed_category = vulkan_command_packet_category::rect;
     vulkan_batch_kind first_failed_batch_kind = vulkan_batch_kind::quad;
@@ -1956,6 +2010,8 @@ struct vulkan_native_command_packet_execution_result {
     std::size_t completed_native_call_count = 0;
     std::string diagnostic;
     std::vector<vulkan_native_command_packet_call_evidence> calls;
+    std::vector<vulkan_native_draw_packet_resource_execution_record>
+        draw_packet_resource_executions;
 
     bool completed() const
     {
@@ -1970,7 +2026,10 @@ struct vulkan_native_command_packet_execution_result {
             && attempted_packet_count == planned_packet_count
             && translated_packet_count == planned_packet_count
             && attempted_native_call_count == completed_native_call_count
-            && attempted_native_call_count == calls.size();
+            && attempted_native_call_count == calls.size()
+            && draw_packet_resource_execution_count == planned_packet_count
+            && completed_draw_packet_resource_execution_count == planned_packet_count
+            && draw_packet_resource_executions.size() == planned_packet_count;
     }
 
     bool failed() const

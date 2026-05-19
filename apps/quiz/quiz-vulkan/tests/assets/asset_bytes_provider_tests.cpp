@@ -2377,6 +2377,201 @@ void test_render_resource_payload_bridge_matches_addresses_to_materialized_paylo
         "render resource payload bridge status names are stable");
 }
 
+void test_render_resource_manifest_to_payload_bridge_e2e_uses_materialized_bytes()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    write_fixture_file(fixture_root / "packaged" / "cards" / "front.png", "image bytes");
+    write_fixture_file(fixture_root / "packaged" / "fonts" / "body.ttf", "font bytes");
+    write_fixture_file(fixture_root / "build" / "external" / "shader_pack" / "shaders" / "ui.vert.spv", "shader bytes");
+
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .root_path = fixture_root / "packaged",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "external_shader_pack",
+        .root_path = fixture_root / "build" / "external" / "shader_pack",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "ASSET:///cards/./front.png",
+        .root_id = "packaged",
+        .cache_revision = "image-rev1",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "body_font",
+        .type = asset_type::font,
+        .uri = "asset://fonts/body.ttf",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "ui_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/ui.vert.spv",
+        .root_id = "external_shader_pack",
+        .cache_revision = "shader-rev2",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "bad_traversal",
+        .type = asset_type::image,
+        .uri = "asset://cards/%2e%2e/secret.png",
+        .root_id = "packaged",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const runtime_asset_catalog catalog = build_runtime_asset_catalog(manifest, resolver);
+    const local_file_asset_bytes_provider provider;
+    const asset_typed_materialized_bytes_summary typed =
+        summarize_typed_materialized_asset_bytes(provider, catalog);
+    const asset_materialized_byte_payload_bundle bundle =
+        make_materialized_asset_byte_payload_bundle(provider, catalog);
+    const asset_render_resource_address_summary addresses =
+        summarize_asset_render_resource_addresses(manifest, resolver);
+    const asset_render_resource_payload_bridge_summary bridge =
+        bridge_asset_render_resource_addresses_to_payloads(addresses, bundle);
+
+    require(!catalog.ok(), "runtime catalog preserves traversal diagnostics alongside valid entries");
+    require(catalog.assets.size() == 3U, "runtime catalog keeps only valid materializable render resources");
+    require(catalog.find("bad_traversal") == nullptr, "runtime catalog omits traversal entries");
+    require(catalog.find_diagnostic("bad_traversal") != nullptr, "runtime catalog records traversal diagnostic");
+
+    require(typed.ok(), "typed materialized bytes summary accepts valid manifest entries");
+    require(typed.entry_count() == 3U, "typed materialized bytes summary groups image font and shader entries");
+    require(typed.cache_policy.loaded_count == 3U, "typed materialized bytes summary loads all valid entries");
+    require(typed.cache_policy.failed_count == 0U, "typed materialized bytes summary has no valid-entry failures");
+    require(typed.images.size() == 1U, "typed materialized bytes summary keeps image group");
+    require(typed.fonts.size() == 1U, "typed materialized bytes summary keeps font group");
+    require(typed.shaders.size() == 1U, "typed materialized bytes summary keeps shader group");
+
+    require(bundle.ok(), "materialized byte payload bundle is ready for valid entries");
+    require(bundle.ready_count() == 3U, "payload bundle keeps ready image font and shader bytes");
+    require(bundle.blocked_count() == 0U, "payload bundle has no blocked valid entries");
+    require(bundle.images.find_ready("card_front") != nullptr, "payload bundle exposes ready image bytes");
+    require(bundle.fonts.find_ready("body_font") != nullptr, "payload bundle exposes ready font bytes");
+    require(bundle.shaders.find_ready("ui_shader") != nullptr, "payload bundle exposes ready shader bytes");
+
+    require(!addresses.ok(), "render resource address summary preserves traversal diagnostics");
+    require(addresses.entry_count() == 3U, "render resource address summary emits valid addresses only");
+    require(addresses.path_traversal_rejection_count == 1U, "render addresses count traversal rejection");
+    require(addresses.find_entry("bad_traversal") == nullptr, "render addresses omit traversal entries");
+
+    require(bridge.ok(), "render resource payload bridge accepts valid materialized manifest entries");
+    require(bridge.requested_address_count == 3U, "bridge considers every valid render resource address");
+    require(bridge.accepted_count == 3U, "bridge accepts image font and shader payloads");
+    require(bridge.blocked_count() == 0U, "bridge has no blocked valid payloads");
+
+    const asset_render_resource_payload_bridge_entry* image = bridge.find_accepted("card_front");
+    require(image != nullptr, "bridge finds accepted image from manifest address");
+    require(image->selected_snapshot.has_value(), "accepted image keeps compact selected payload snapshot");
+    require(image->selection.payload != nullptr, "accepted image keeps pointer to materialized payload bytes");
+    require(bytes_to_string(image->selection.payload->bytes) == "image bytes", "image bytes come from materialized payload");
+    require(image->address.canonical_identity == "asset://cards/front.png", "image keeps canonical asset uri identity");
+    require(
+        image->selected_snapshot->cache_key == "image|asset://cards/front.png|rev=image-rev1",
+        "image bridge keeps stable revised cache key");
+    require(
+        image->selected_snapshot->cache_key.find(fixture_root.string()) == std::string::npos,
+        "image cache key does not leak absolute fixture paths");
+    require(
+        image->selected_snapshot->materialized_path
+            == std::filesystem::absolute(fixture_root / "packaged" / "cards" / "front.png").lexically_normal(),
+        "image bridge keeps materialized path separately from cache identity");
+    require(
+        image->selected_snapshot->content_hash
+            == make_asset_bytes_content_hash(detail::make_asset_byte_vector("image bytes")),
+        "image bridge keeps loaded byte content hash");
+
+    const asset_render_resource_payload_bridge_entry* font = bridge.find_accepted("body_font");
+    require(font != nullptr, "bridge finds accepted font from manifest address");
+    require(bytes_to_string(font->selection.payload->bytes) == "font bytes", "font bytes come from materialized payload");
+    require(font->address.canonical_identity == "asset://fonts/body.ttf", "font keeps canonical asset uri identity");
+    require(font->selected_snapshot->cache_key == "font|asset://fonts/body.ttf", "font bridge keeps cache key");
+    require(
+        font->selected_snapshot->cache_key.find(fixture_root.string()) == std::string::npos,
+        "font cache key does not leak absolute fixture paths");
+
+    const asset_render_resource_payload_bridge_entry* shader = bridge.find_accepted("ui_shader");
+    require(shader != nullptr, "bridge finds accepted shader from manifest address");
+    require(
+        bytes_to_string(shader->selection.payload->bytes) == "shader bytes",
+        "shader bytes come from materialized payload");
+    require(
+        shader->address.canonical_identity == "asset://shaders/ui.vert.spv",
+        "shader keeps canonical asset uri identity");
+    require(
+        shader->selected_snapshot->cache_key == "shader|asset://shaders/ui.vert.spv|rev=shader-rev2",
+        "shader bridge keeps stable revised cache key");
+    require(
+        shader->selected_snapshot->cache_key.find(fixture_root.string()) == std::string::npos,
+        "shader cache key does not leak build-external fixture paths");
+    require(
+        shader->selected_snapshot->materialized_path
+            == std::filesystem::absolute(
+                   fixture_root / "build" / "external" / "shader_pack" / "shaders" / "ui.vert.spv")
+                   .lexically_normal(),
+        "shader bridge keeps build-external materialized path as payload evidence");
+
+    const runtime_materialized_asset_lookup_result missing_lookup =
+        lookup_runtime_materialized_asset(catalog, runtime_materialized_asset_lookup_request{
+            .id = "missing_card",
+            .expected_type = asset_type::image,
+        });
+    require(
+        missing_lookup.status == runtime_materialized_asset_lookup_status::missing_id,
+        "runtime materialized lookup reports missing manifest ids");
+    require(addresses.find_entry("missing_card") == nullptr, "missing manifest id has no render address");
+    require(bridge.find_entry("missing_card") == nullptr, "missing manifest id has no bridge entry");
+
+    const asset_materialized_byte_payload_selection_result missing_payload =
+        select_materialized_asset_byte_payload(bundle, asset_materialized_byte_payload_selection_request{
+            .id = "missing_card",
+            .expected_type = asset_type::image,
+        });
+    require(
+        missing_payload.status == asset_materialized_byte_payload_selection_status::missing_id,
+        "payload selection reports missing manifest-derived payload ids");
+
+    const runtime_materialized_asset_lookup_result wrong_lookup =
+        lookup_runtime_materialized_asset(catalog, runtime_materialized_asset_lookup_request{
+            .id = "card_front",
+            .expected_type = asset_type::font,
+        });
+    require(
+        wrong_lookup.status == runtime_materialized_asset_lookup_status::type_mismatch,
+        "runtime materialized lookup reports mismatched typed resource kinds");
+
+    const asset_materialized_byte_payload_selection_result wrong_selection =
+        select_materialized_asset_byte_payload(bundle, asset_materialized_byte_payload_selection_request{
+            .id = "card_front",
+            .expected_type = asset_type::font,
+        });
+    require(
+        wrong_selection.status == asset_materialized_byte_payload_selection_status::wrong_type,
+        "payload selection reports mismatched typed resource kinds");
+    require(wrong_selection.actual_type == asset_type::image, "wrong-kind payload selection keeps actual type evidence");
+
+    asset_materialized_byte_payload_bundle mismatched_bundle = bundle;
+    asset_materialized_byte_payload mismatched_payload = mismatched_bundle.images.ready.front();
+    mismatched_bundle.images.ready.clear();
+    mismatched_payload.type = asset_type::font;
+    mismatched_bundle.fonts.ready.push_back(std::move(mismatched_payload));
+
+    const asset_render_resource_payload_bridge_summary mismatched_bridge =
+        bridge_asset_render_resource_addresses_to_payloads(addresses, mismatched_bundle);
+    const asset_render_resource_payload_bridge_entry* wrong_bridge =
+        mismatched_bridge.find_blocked("card_front");
+    require(wrong_bridge != nullptr, "bridge reports mismatched typed resource kinds");
+    require(
+        wrong_bridge->status == asset_render_resource_payload_bridge_status::type_mismatch,
+        "bridge maps mismatched typed payloads to type mismatch status");
+    require(wrong_bridge->selection.actual_type == asset_type::font, "bridge keeps mismatched actual payload type");
+    require(wrong_bridge->selection.expected_type == asset_type::image, "bridge keeps expected render address type");
+}
+
 void test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics()
 {
     using namespace quiz_vulkan::assets;
@@ -3190,6 +3385,7 @@ int main()
     test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads();
     test_shader_byte_pipeline_source_summary_combines_manifest_fallback_and_payload_evidence();
     test_render_resource_payload_bridge_matches_addresses_to_materialized_payloads();
+    test_render_resource_manifest_to_payload_bridge_e2e_uses_materialized_bytes();
     test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics();
     test_materialized_asset_byte_payload_request_transaction_preserves_order_and_counts();
     test_materialized_asset_byte_payload_request_transaction_review_summary_groups_by_expected_type();

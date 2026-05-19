@@ -1,5 +1,6 @@
 #include "render/image/image_decoder.h"
 #include "render/image/third_party_image_decoder_adapter.h"
+#include "standard_image_jpeg_fixture.inl"
 
 #include <cassert>
 #include <cstddef>
@@ -61,6 +62,11 @@ std::vector<std::byte> make_bytes(std::initializer_list<unsigned char> values)
         append_byte(bytes, value);
     }
     return bytes;
+}
+
+std::vector<std::byte> make_jpeg_bytes()
+{
+    return quiz_vulkan::render::test_fixtures::make_standard_jpeg_bytes();
 }
 
 std::uint32_t adler32(const std::vector<std::byte>& bytes)
@@ -243,7 +249,9 @@ void test_standard_chain_decodes_bmp_first()
     const render_image_decode_result result =
         decoder.decode(make_decode_request("textures/card.bmp", make_bmp_bytes()));
 
-    require(decoder.decoder_count() == 3, "standard decoder chain registers three decoders");
+    require(
+        decoder.decoder_count() == 4,
+        "standard decoder chain registers STB JPEG route plus three internal fallback decoders");
     require(result.ok(), "standard decoder chain decodes BMP");
     require(result.metadata.decoder_id == "bmp_image_decoder", "standard decoder chain selects BMP decoder");
     require(result.decoder_diagnostics.size() == 1, "BMP decode stops at first standard candidate");
@@ -370,6 +378,74 @@ void test_standard_chain_decodes_zlib_stored_png()
     require(manifest.terminal_kind == render_image_decoder_capability_candidate_kind::png, "PNG manifest terminal kind is PNG");
 }
 
+void test_standard_chain_decodes_jpeg_through_stb_when_available()
+{
+    using namespace quiz_vulkan::render;
+
+    const standard_image_decoder_chain decoder;
+    const render_image_decode_request request =
+        make_decode_request("textures/card.jpg", make_jpeg_bytes());
+    const render_image_decode_result result = decoder.decode(request);
+
+    require(
+        result.external_decoder_selection.diagnostics_available,
+        "JPEG decode records external decoder selection diagnostics");
+    require(
+        result.external_decoder_selection.detected_format == render_image_encoded_format::jpeg,
+        "JPEG decode selection records detected JPEG format");
+    require(
+        result.decoder_diagnostics.size() >= 1,
+        "JPEG decode records at least the STB adapter candidate");
+    require(
+        result.decoder_diagnostics.front().decoder_id == "stb_image_decoder",
+        "JPEG decode records STB adapter candidate first");
+
+    if (!result.external_decoder_selection.ready_for_external_decode) {
+        require(!result.ok(), "JPEG decode falls back to failure when STB is unavailable");
+        require(
+            result.external_decoder_selection.fallback_to_standard_decoder_chain,
+            "JPEG decode records fallback to internal standard chain");
+        require(
+            result.decoder_diagnostics.size() >= 4,
+            "JPEG fallback records STB candidate plus internal fallback candidates");
+        return;
+    }
+
+    require(result.ok(), "standard decoder chain decodes JPEG through STB when available");
+    require(result.metadata.decoder_id == "stb_image_decoder", "JPEG decode selects STB decoder");
+    require(result.metadata.width == 1, "JPEG decode preserves decoded width");
+    require(result.metadata.height == 1, "JPEG decode preserves decoded height");
+    require(result.metadata.decoded_byte_count == 4, "JPEG decode produces RGBA8 byte count");
+    require(result.metadata.size_validation.valid, "JPEG decode validates RGBA8 decoded size");
+    require(
+        result.external_decoder_selection.used_third_party_adapter,
+        "JPEG decode records third-party adapter route");
+    require(
+        result.external_decoder_selection.ready_for_external_decode,
+        "JPEG decode records external-ready selection");
+    require(result.decoder_diagnostics.size() == 1, "JPEG STB route records one terminal candidate");
+    require(result.decoder_diagnostics[0].supported, "JPEG STB diagnostic records support");
+    require(result.decoder_diagnostics[0].decode_attempted, "JPEG STB diagnostic records decode attempt");
+    require(result.decoder_diagnostics[0].terminal_candidate, "JPEG STB diagnostic is terminal");
+
+    const render_image_decoder_capability_manifest manifest =
+        make_render_image_decoder_capability_manifest(request, result);
+    require(manifest.used_third_party_adapter, "JPEG manifest records third-party adapter use");
+    require(!manifest.fallback_used, "JPEG manifest records no internal fallback after successful STB decode");
+    require(manifest.decoded, "JPEG manifest records decoded result");
+    require_candidate(
+        manifest,
+        0,
+        render_image_decoder_capability_candidate_kind::third_party_adapter,
+        render_image_decoder_capability_candidate_status::decoded,
+        "stb_image_decoder",
+        true);
+    require(
+        manifest.terminal_kind == render_image_decoder_capability_candidate_kind::third_party_adapter,
+        "JPEG manifest terminal kind is third-party adapter");
+    require(manifest.terminal_decoder_id == "stb_image_decoder", "JPEG manifest terminal decoder is STB");
+}
+
 void test_standard_chain_reports_png_inflate_failure_without_placeholder_pixels()
 {
     using namespace quiz_vulkan::render;
@@ -405,41 +481,53 @@ void test_standard_chain_reports_unsupported_source_without_placeholder_pixels()
         result.status == render_image_decode_status::unsupported_format,
         "unsupported standard source reports unsupported format");
     require(result.image.empty(), "unsupported standard source returns no placeholder image");
-    require(result.decoder_diagnostics.size() == 3, "unsupported source records all standard candidates");
-    require(result.decoder_diagnostics[2].terminal_candidate, "unsupported source terminates on final candidate");
+    require(result.decoder_diagnostics.size() == 4, "unsupported JPEG records STB plus all standard candidates");
+    require(result.decoder_diagnostics[0].decoder_id == "stb_image_decoder", "unsupported JPEG records STB first");
+    require(result.decoder_diagnostics[3].terminal_candidate, "unsupported source terminates on final candidate");
     require(
-        result.decoder_diagnostics[2].diagnostic == "decoder chain exhausted all candidates",
+        result.decoder_diagnostics[3].diagnostic == "decoder chain exhausted all candidates",
         "unsupported source diagnostic is deterministic");
 
     const render_image_decoder_capability_manifest manifest =
         make_render_image_decoder_capability_manifest(
             make_decode_request("textures/card.jpg", make_bytes({0xff, 0xd8, 0xff, 0xd9})),
             result);
-    require(manifest.candidates.size() == 4, "unsupported manifest records standard candidates plus terminal");
+    require(manifest.candidates.size() == 5, "unsupported manifest records STB and standard candidates plus terminal");
+    const render_image_decoder_capability_candidate_status expected_stb_status =
+        result.decoder_diagnostics[0].decode_attempted
+        ? render_image_decoder_capability_candidate_status::decode_failed
+        : render_image_decoder_capability_candidate_status::unsupported_format;
     require_candidate(
         manifest,
         0,
+        render_image_decoder_capability_candidate_kind::third_party_adapter,
+        expected_stb_status,
+        "stb_image_decoder",
+        false);
+    require_candidate(
+        manifest,
+        1,
         render_image_decoder_capability_candidate_kind::bmp,
         render_image_decoder_capability_candidate_status::unsupported_format,
         "bmp_image_decoder",
         false);
     require_candidate(
         manifest,
-        1,
+        2,
         render_image_decoder_capability_candidate_kind::ppm,
         render_image_decoder_capability_candidate_status::unsupported_format,
         "ppm_image_decoder",
         false);
     require_candidate(
         manifest,
-        2,
+        3,
         render_image_decoder_capability_candidate_kind::png,
         render_image_decoder_capability_candidate_status::unsupported_format,
         "png_image_decoder",
         false);
     require_candidate(
         manifest,
-        3,
+        4,
         render_image_decoder_capability_candidate_kind::unsupported_terminal,
         render_image_decoder_capability_candidate_status::unsupported_terminal,
         "unsupported_terminal",
@@ -457,6 +545,7 @@ int main()
     test_standard_chain_decodes_bmp_first();
     test_standard_chain_decodes_ppm_after_bmp_candidate();
     test_standard_chain_decodes_zlib_stored_png();
+    test_standard_chain_decodes_jpeg_through_stb_when_available();
     test_standard_chain_reports_png_inflate_failure_without_placeholder_pixels();
     test_standard_chain_reports_unsupported_source_without_placeholder_pixels();
     return 0;

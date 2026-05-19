@@ -11,6 +11,11 @@
 
 namespace {
 
+std::string utf8(const char8_t* text)
+{
+    return reinterpret_cast<const char*>(text);
+}
+
 void require(bool condition, const char* message)
 {
     if (condition) {
@@ -39,6 +44,16 @@ const quiz_vulkan::input::action_route_policy_diagnostic& require_policy(
     const quiz_vulkan::input::action_route_policy_diagnostic& policy = diagnostics.action_routes[index];
     require(policy.kind == kind, message);
     return policy;
+}
+
+void require_range(
+    quiz_vulkan::input::text_range range,
+    std::size_t start_byte,
+    std::size_t end_byte,
+    const char* message)
+{
+    require(range.start_byte == start_byte, message);
+    require(range.end_byte == end_byte, message);
 }
 
 void require_capture_snapshot(
@@ -79,7 +94,11 @@ quiz_vulkan::raw_platform_input_event platform_scroll(
     float y,
     float delta_x,
     float delta_y,
-    quiz_vulkan::raw_platform_scroll_delta_unit unit)
+    quiz_vulkan::raw_platform_scroll_delta_unit unit,
+    bool alt = false,
+    bool ctrl = false,
+    bool shift = false,
+    bool meta = false)
 {
     return quiz_vulkan::raw_platform_scroll_event{
         .timestamp_ms = timestamp_ms,
@@ -88,6 +107,10 @@ quiz_vulkan::raw_platform_input_event platform_scroll(
         .delta_x = delta_x,
         .delta_y = delta_y,
         .unit = unit,
+        .alt = alt,
+        .ctrl = ctrl,
+        .shift = shift,
+        .meta = meta,
     };
 }
 
@@ -127,6 +150,16 @@ quiz_vulkan::raw_platform_input_event ime(
         .timestamp_ms = timestamp_ms,
         .phase = phase,
         .utf8_text = std::move(value),
+    };
+}
+
+quiz_vulkan::raw_platform_input_event focus(
+    quiz_vulkan::raw_platform_focus_phase phase,
+    std::int64_t timestamp_ms)
+{
+    return quiz_vulkan::raw_platform_focus_event{
+        .timestamp_ms = timestamp_ms,
+        .phase = phase,
     };
 }
 
@@ -922,6 +955,23 @@ void test_long_press_timing_and_policy_order_are_deterministic()
         1,
         2,
         "first threshold route records deterministic capture snapshot after");
+    const input_diagnostic_summary& high_summary = engine.routing_diagnostics().summary;
+    require(high_summary.normalized_event_count == 1,
+        "first threshold summary counts one normalized long press");
+    require(high_summary.normalized_events.long_press == 1,
+        "first threshold summary records long press candidate");
+    require(high_summary.routes.pointer == 1,
+        "first threshold summary keeps long press as pointer route evidence");
+    require(high_summary.routes.text == 0,
+        "first threshold summary emits no text route");
+    require(high_summary.routes.ime == 0,
+        "first threshold summary emits no ime route");
+    require(high_summary.routes.focus == 0,
+        "first threshold summary emits no focus route");
+    require(high_summary.routes.wheel == 0,
+        "first threshold summary emits no wheel route");
+    require(!engine.text_model().has_submit_text(),
+        "first threshold long press does not submit text or domain action");
 
     require(engine.update_time(749).empty(), "second pointer emits nothing one millisecond before threshold");
     events = engine.update_time(750);
@@ -1066,6 +1116,387 @@ void test_wheel_delta_normalization_updates_summaries_and_action_routes()
         "raw zero wheel clears previous normalized summary");
     require(engine.routing_diagnostics().action_routes.empty(),
         "raw zero wheel emits no stale action route");
+}
+
+void test_focus_loss_resets_pointer_capture_without_stale_routes()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                100,
+                10.0f,
+                10.0f,
+                raw_platform_pointer_button::primary,
+                41))
+                .empty(),
+        "focus loss capture down tracks pointer");
+
+    std::vector<input_event> events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::move,
+        112,
+        21.0f,
+        10.0f,
+        raw_platform_pointer_button::primary,
+        41));
+    require(events.size() == 1, "focus loss setup emits drag start");
+    const gesture_event& start = require_event<gesture_event>(events, 0);
+    require(start.kind == gesture_kind::drag_start, "focus loss setup captures through drag start");
+    const action_route_policy_diagnostic& start_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "focus loss setup emits drag route");
+    require(start_policy.gesture_policy.decision == gesture_policy_decision::drag_started,
+        "focus loss setup records drag started decision");
+    require_capture_snapshot(
+        start_policy.pointer_capture_before,
+        pointer_capture_lifecycle::tracking,
+        false,
+        41,
+        1,
+        "focus loss setup records tracked pointer before capture");
+    require_capture_snapshot(
+        start_policy.pointer_capture_after,
+        pointer_capture_lifecycle::captured,
+        true,
+        41,
+        1,
+        "focus loss setup records captured pointer after drag start");
+
+    events = engine.process_raw_event(focus(raw_platform_focus_phase::lost, 130));
+    require(events.size() == 1, "focus loss during drag emits only focus lost event");
+    const text_event& lost = require_event<text_event>(events, 0);
+    require(lost.kind == text_event_kind::focus_lost, "focus loss during drag emits focus lost text event");
+    require(lost.target_id == "answer", "focus loss during drag preserves target id");
+
+    const input_routing_diagnostics& diagnostics = engine.routing_diagnostics();
+    require(diagnostics.action_routes.size() == 2,
+        "focus loss during drag emits pointer reset and focus cleanup routes");
+    const action_route_policy_diagnostic& reset_policy = require_policy(
+        diagnostics,
+        0,
+        action_route_policy_kind::pointer_capture_reset,
+        "focus loss during drag emits pointer reset route");
+    require(!reset_policy.emits_input_event,
+        "focus loss pointer reset is diagnostic-only");
+    require(reset_policy.pointer_id == 41,
+        "focus loss pointer reset preserves captured pointer id");
+    require(reset_policy.pointer_event_phase == pointer_phase::cancel,
+        "focus loss pointer reset records cancel-like phase");
+    require(reset_policy.pointer_decision == pointer_arbitration_decision::canceled,
+        "focus loss pointer reset records canceled decision");
+    require(reset_policy.target_id == "answer",
+        "focus loss pointer reset records focused target");
+    require(reset_policy.text_byte_count_before == reset_policy.text_byte_count_after,
+        "focus loss pointer reset does not mutate committed text");
+    require_capture_snapshot(
+        reset_policy.pointer_capture_before,
+        pointer_capture_lifecycle::captured,
+        true,
+        41,
+        1,
+        "focus loss pointer reset records captured pointer before");
+    require_capture_snapshot(
+        reset_policy.pointer_capture_after,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "focus loss pointer reset records idle pointer after");
+
+    const action_route_policy_diagnostic& focus_policy = require_policy(
+        diagnostics,
+        1,
+        action_route_policy_kind::focus_loss,
+        "focus loss during drag emits focus route");
+    require(focus_policy.emits_input_event, "focus loss route emits normalized focus event only");
+    require(focus_policy.event_index == 0, "focus loss route points at focus event");
+    require(focus_policy.target_id == "answer", "focus loss route preserves target id");
+    require_capture_snapshot(
+        focus_policy.pointer_capture_before,
+        pointer_capture_lifecycle::captured,
+        true,
+        41,
+        1,
+        "focus loss route records captured pointer before cleanup");
+    require_capture_snapshot(
+        focus_policy.pointer_capture_after,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "focus loss route records idle pointer after cleanup");
+
+    const input_diagnostic_summary& summary = diagnostics.summary;
+    require(summary.normalized_event_count == 0,
+        "focus loss during drag emits no gesture or wheel normalized summaries");
+    require(summary.routes.pointer == 1, "focus loss during drag summary counts pointer cleanup");
+    require(summary.routes.focus == 1, "focus loss during drag summary counts focus cleanup");
+    require(summary.routes.text == 0, "focus loss during drag summary counts no text route");
+    require(summary.routes.ime == 0, "focus loss during drag summary counts no ime route");
+    require(summary.routes.wheel == 0, "focus loss during drag summary counts no wheel route");
+    require(summary.pointer_capture_ended_cleanly, "focus loss during drag clears pointer capture");
+    require(summary.focus_ended_cleanly, "focus loss during drag clears focus");
+    require(summary.preedit_ended_cleanly, "focus loss during drag keeps preedit clean");
+    require_capture_snapshot(
+        diagnostics.pointer_capture,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "focus loss during drag leaves engine capture idle");
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::move,
+        140,
+        28.0f,
+        10.0f,
+        raw_platform_pointer_button::primary,
+        41));
+    require(events.empty(), "post-focus-loss stale pointer move emits no gesture");
+    require(engine.routing_diagnostics().action_routes.empty(),
+        "post-focus-loss stale pointer move emits no stale route");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "post-focus-loss stale pointer move keeps capture idle");
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        150,
+        28.0f,
+        10.0f,
+        raw_platform_pointer_button::primary,
+        41));
+    require(events.empty(), "post-focus-loss stale pointer release emits no gesture");
+    require(engine.routing_diagnostics().action_routes.empty(),
+        "post-focus-loss stale pointer release emits no stale route");
+}
+
+void test_drag_and_swipe_route_evidence_remain_distinguishable()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine drag_engine;
+    require(drag_engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                200,
+                0.0f,
+                0.0f,
+                raw_platform_pointer_button::primary,
+                51))
+                .empty(),
+        "drag threshold down starts tracking");
+    require(drag_engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::move,
+                210,
+                7.5f,
+                0.0f,
+                raw_platform_pointer_button::primary,
+                51))
+                .empty(),
+        "drag threshold move inside slop emits no gesture");
+    require(drag_engine.routing_diagnostics().action_routes.empty(),
+        "drag threshold move inside slop emits no route candidate");
+
+    std::vector<input_event> events = drag_engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::move,
+        225,
+        9.0f,
+        0.0f,
+        raw_platform_pointer_button::primary,
+        51));
+    require(events.size() == 1, "drag threshold move outside slop emits drag start");
+    const gesture_event& drag_start = require_event<gesture_event>(events, 0);
+    require(drag_start.kind == gesture_kind::drag_start,
+        "drag threshold emits drag start rather than swipe");
+    const action_route_policy_diagnostic& drag_policy = require_policy(
+        drag_engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "drag threshold emits gesture route");
+    require(drag_policy.normalized_event.kind == input_event_summary_kind::drag_start,
+        "drag threshold route carries drag start summary");
+    require(drag_policy.gesture_policy.decision == gesture_policy_decision::drag_started,
+        "drag threshold route records drag-start policy decision");
+    require(drag_policy.gesture_policy.drag_start_slop == 8.0f,
+        "drag threshold route records drag slop");
+    require(drag_policy.gesture_policy.swipe_min_dx == 60.0f,
+        "drag threshold route records distinct swipe threshold");
+    require(drag_policy.gesture_policy.duration_ms == 25,
+        "drag threshold route records deterministic duration");
+    require(drag_policy.pointer_decision == pointer_arbitration_decision::captured,
+        "drag threshold route records pointer capture");
+
+    input_engine swipe_engine;
+    require(swipe_engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                300,
+                0.0f,
+                0.0f,
+                raw_platform_pointer_button::primary,
+                52))
+                .empty(),
+        "swipe threshold down starts tracking");
+    events = swipe_engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        420,
+        70.0f,
+        4.0f,
+        raw_platform_pointer_button::primary,
+        52));
+    require(events.size() == 1, "swipe threshold release emits swipe");
+    const gesture_event& swipe = require_event<gesture_event>(events, 0);
+    require(swipe.kind == gesture_kind::swipe_right,
+        "swipe threshold emits swipe rather than drag");
+    const action_route_policy_diagnostic& swipe_policy = require_policy(
+        swipe_engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "swipe threshold emits gesture route");
+    require(swipe_policy.normalized_event.kind == input_event_summary_kind::swipe_right,
+        "swipe threshold route carries swipe summary");
+    require(swipe_policy.gesture_policy.decision == gesture_policy_decision::swipe_accepted,
+        "swipe threshold route records swipe policy decision");
+    require(swipe_policy.gesture_policy.duration_ms == 120,
+        "swipe threshold route records deterministic duration");
+    require(swipe_policy.gesture_policy.delta_x == 70.0f,
+        "swipe threshold route records horizontal distance");
+    require(swipe_policy.gesture_policy.swipe_max_duration_ms == 800,
+        "swipe threshold route records swipe time policy");
+    require(swipe_engine.routing_diagnostics().summary.routes.text == 0,
+        "swipe threshold summary emits no text route");
+    require(swipe_engine.routing_diagnostics().summary.routes.ime == 0,
+        "swipe threshold summary emits no ime route");
+}
+
+void test_wheel_route_preserves_active_ime_preedit_context()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+    const std::string initial = std::string("A") + utf8(u8"한");
+    const std::string preedit = utf8(u8"ㄱ");
+    require(engine.process_raw_event(text(100, initial)).size() == 1,
+        "wheel ime setup commits utf8 text");
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 110, preedit)).size() == 1,
+        "wheel ime setup starts preedit");
+    require(engine.text_model().text() == initial, "wheel ime setup preserves committed text");
+    require(engine.text_model().preedit_text() == preedit, "wheel ime setup has active preedit");
+
+    std::vector<input_event> events = engine.process_raw_event(platform_scroll(
+        120,
+        12.0f,
+        14.0f,
+        0.0f,
+        -24.0f,
+        raw_platform_scroll_delta_unit::pixels,
+        false,
+        true,
+        true));
+    require(events.size() == 1, "wheel during ime emits one wheel event");
+    const scroll_event& wheel = require_event<scroll_event>(events, 0);
+    require(wheel.pixel_delta_y == -24.0f, "wheel during ime preserves pixel delta");
+    require(wheel.modifiers.ctrl, "wheel during ime preserves ctrl modifier");
+    require(wheel.modifiers.shift, "wheel during ime preserves shift modifier");
+    require(engine.text_model().text() == initial,
+        "wheel during ime does not mutate committed text");
+    require(engine.text_model().preedit_text() == preedit,
+        "wheel during ime preserves active preedit text");
+    require(engine.text_model().display_text() == initial + preedit,
+        "wheel during ime preserves display text with preedit");
+    require(!engine.text_model().has_submit_text(),
+        "wheel during ime does not submit text or app action");
+
+    const input_routing_diagnostics& diagnostics = engine.routing_diagnostics();
+    require(diagnostics.action_routes.size() == 1,
+        "wheel during ime emits one wheel route");
+    const action_route_policy_diagnostic& wheel_policy = require_policy(
+        diagnostics,
+        0,
+        action_route_policy_kind::wheel_summary,
+        "wheel during ime emits wheel summary route");
+    require(wheel_policy.emits_input_event, "wheel during ime route emits normalized input");
+    require(wheel_policy.event_index == 0, "wheel during ime route points at wheel event");
+    require(wheel_policy.target_id == "answer",
+        "wheel during ime route records focused text target");
+    require(wheel_policy.normalized_event.kind == input_event_summary_kind::wheel,
+        "wheel during ime route carries wheel summary");
+    require(wheel_policy.normalized_event.modifiers.ctrl,
+        "wheel during ime normalized route preserves ctrl modifier");
+    require(wheel_policy.normalized_event.modifiers.shift,
+        "wheel during ime normalized route preserves shift modifier");
+    require(wheel_policy.composition.active,
+        "wheel during ime route carries active composition");
+    require(wheel_policy.composition.preedit_text == preedit,
+        "wheel during ime route carries preedit text");
+    require(wheel_policy.composition_before.active,
+        "wheel during ime route records active composition before");
+    require(wheel_policy.composition_after.active,
+        "wheel during ime route records active composition after");
+    require(wheel_policy.composition_before.preedit_text == preedit,
+        "wheel during ime route records preedit before");
+    require(wheel_policy.composition_after.preedit_text == preedit,
+        "wheel during ime route records preedit after");
+    require(wheel_policy.text_byte_count_before == initial.size(),
+        "wheel during ime route records committed bytes before");
+    require(wheel_policy.text_byte_count_after == initial.size(),
+        "wheel during ime route records committed bytes after");
+    const std::size_t display_caret = initial.size() + preedit.size();
+    require_range(wheel_policy.caret_before,
+        display_caret,
+        display_caret,
+        "wheel during ime route records utf8-safe caret before");
+    require_range(wheel_policy.caret_after,
+        display_caret,
+        display_caret,
+        "wheel during ime route records utf8-safe caret after");
+    require_capture_snapshot(
+        wheel_policy.pointer_capture_before,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "wheel during ime route records idle capture before");
+    require_capture_snapshot(
+        wheel_policy.pointer_capture_after,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "wheel during ime route records idle capture after");
+
+    const input_diagnostic_summary& summary = diagnostics.summary;
+    require(summary.normalized_event_count == 1,
+        "wheel during ime summary counts one normalized event");
+    require(summary.normalized_events.wheel == 1,
+        "wheel during ime summary counts wheel event");
+    require(summary.routes.wheel == 1,
+        "wheel during ime summary counts wheel route");
+    require(summary.routes.ime == 0,
+        "wheel during ime summary emits no ime route");
+    require(summary.routes.text == 0,
+        "wheel during ime summary emits no text route");
+    require(summary.routes.focus == 0,
+        "wheel during ime summary emits no focus route");
+    require(summary.routes.pointer == 0,
+        "wheel during ime summary emits no pointer route");
+    require(summary.pointer_capture_ended_cleanly,
+        "wheel during ime summary keeps pointer capture clean");
+    require(summary.focus_ended_cleanly,
+        "wheel during ime summary keeps focus clean");
+    require(!summary.preedit_ended_cleanly,
+        "wheel during ime summary reports active preedit remains active");
 }
 
 void test_routing_diagnostics_diff_reports_semantic_free_route_deltas()
@@ -1423,6 +1854,9 @@ int main()
     test_pointer_capture_release_and_restart_are_deterministic_for_mouse_and_touch();
     test_long_press_timing_and_policy_order_are_deterministic();
     test_wheel_delta_normalization_updates_summaries_and_action_routes();
+    test_focus_loss_resets_pointer_capture_without_stale_routes();
+    test_drag_and_swipe_route_evidence_remain_distinguishable();
+    test_wheel_route_preserves_active_ime_preedit_context();
     test_routing_diagnostics_diff_reports_semantic_free_route_deltas();
     test_gesture_policy_route_diff_counts_threshold_and_policy_changes();
 

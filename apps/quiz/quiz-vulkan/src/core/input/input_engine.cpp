@@ -174,6 +174,14 @@ action_route_policy_diagnostic make_event_policy(
     return diagnostic;
 }
 
+void apply_current_text_context(action_route_policy_diagnostic& diagnostic, const text_input_model& text)
+{
+    const auto snapshot = detail::capture_text_edit(text);
+    diagnostic.target_id = text.focus_id();
+    diagnostic.composition = snapshot.composition;
+    detail::apply_text_edit_boundary(diagnostic, snapshot, snapshot);
+}
+
 } // namespace
 
 input_engine::input_engine(gesture_thresholds thresholds)
@@ -947,11 +955,18 @@ std::vector<input_event> input_engine::process_focus_event(const raw_platform_fo
     const auto edit_after = detail::capture_text_edit(text_);
 
     if (detail::has_pointer_capture_state(pointer_capture_before)) {
-        append_policy(make_policy(
+        action_route_policy_diagnostic policy = make_policy(
             action_route_policy_kind::pointer_capture_reset,
             event.timestamp_ms,
             pointer_capture_before,
-            pointer_capture_after));
+            pointer_capture_after);
+        policy.pointer_id = pointer_capture_before.pointer_id;
+        policy.pointer_event_phase = pointer_phase::cancel;
+        policy.pointer_decision = pointer_arbitration_decision::canceled;
+        policy.target_id = target_id;
+        policy.composition = canceled_composition;
+        detail::apply_text_edit_boundary(policy, edit_before, edit_after);
+        append_policy(std::move(policy));
     }
 
     if (had_composition) {
@@ -1050,6 +1065,7 @@ void input_engine::append_scroll(std::vector<input_event>& events, const scroll_
         diagnostics_.pointer_capture,
         gestures_.capture_snapshot());
     policy.normalized_event = summary;
+    apply_current_text_context(policy, text_);
     append_policy(std::move(policy));
     events.emplace_back(scroll);
 }

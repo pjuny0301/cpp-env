@@ -20,9 +20,11 @@ Historical integration notes are kept in git history, not repeated here.
 ## Active Bottlenecks
 
 - Vulkan: present image execution evidence, descriptor allocation merge guard
-  tests, and descriptor payload bind recording are integrated.
+  tests, descriptor payload bind recording, and native descriptor bind-call
+  evidence are integrated.
 - Text: atlas packet consumption, HarfBuzz shaping handoff diagnostics, and real
-  font atlas draw evidence and draw packet consumption diffs are integrated.
+  font atlas draw evidence, draw packet consumption diffs, and render-frame
+  handoff summary are integrated.
 - Image: staging payload blocker coverage, staging payload diff summaries,
   decoded-byte resource materialization, and decoded draw payload evidence are
   integrated. The oversized resource packet plan header is split into focused
@@ -34,9 +36,9 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Active Workers
 
-- `codex-vulkan-native-command-packet-executor-20260516`: busy on native
+- `codex-vulkan-native-command-packet-executor-20260516`: integrated native
   descriptor bind-call readiness.
-- `codex-text-freetype-prototype-20260514`: busy on compact text render-frame
+- `codex-text-freetype-prototype-20260514`: integrated compact text render-frame
   handoff summary.
 - `codex-asset-unified-cache-key-20260514`: idle after shader byte source
   pipeline summary and focused-header split.
@@ -186,6 +188,18 @@ Historical integration notes are kept in git history, not repeated here.
   `quiz_vulkan_image_texture_frame_resource_packet_plan_tests`, and
   `quiz_vulkan_image_texture_frame_resource_packet_materialization_tests`;
   focused `ctest -R image_texture --output-on-failure` passed 8/8.
+- After `efb00b2`, Windows MinGW built
+  `quiz_vulkan_vulkan_command_packet_execution_tests`,
+  `quiz_vulkan_renderer_tests`, and `quiz_vulkan_architecture_boundary_tests`;
+  focused CTest passed 3/3 for Vulkan command packet execution, renderer, and
+  architecture boundary.
+- After `93c61ba`, Windows MinGW built
+  `quiz_vulkan_interface_contract_compile_tests`,
+  `quiz_vulkan_text_renderer_glyph_quad_packet_tests`,
+  `quiz_vulkan_font_shaped_atlas_update_tests`,
+  `quiz_vulkan_text_frame_resource_packet_materialization_tests`, and
+  `quiz_vulkan_fake_text_engine_freetype_raster_payload_tests`; focused
+  `ctest -R text --output-on-failure` passed 20/20.
 
 ## Useful Commands
 

@@ -6800,6 +6800,8 @@ vulkan_native_command_packet_executor_evidence build_vulkan_native_command_packe
         .descriptor_sets = {},
         .descriptor_write_payloads = {},
         .descriptor_payload_binds = {},
+        .descriptor_write_calls = {},
+        .descriptor_bind_calls = {},
         .vertex_buffer_binds = {},
     };
 

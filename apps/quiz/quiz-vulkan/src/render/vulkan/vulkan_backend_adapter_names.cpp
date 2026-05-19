@@ -588,6 +588,33 @@ std::string_view native_image_payload_descriptor_binding_status_name(
     return "unknown";
 }
 
+std::string_view native_descriptor_write_bind_call_status_name(
+    vulkan_native_descriptor_write_bind_call_status status)
+{
+    switch (status) {
+    case vulkan_native_descriptor_write_bind_call_status::not_checked:
+        return "not_checked";
+    case vulkan_native_descriptor_write_bind_call_status::ready:
+        return "ready";
+    case vulkan_native_descriptor_write_bind_call_status::image_payload_binding_unavailable:
+        return "image_payload_binding_unavailable";
+    case vulkan_native_descriptor_write_bind_call_status::native_function_table_unavailable:
+        return "native_function_table_unavailable";
+    case vulkan_native_descriptor_write_bind_call_status::
+        native_descriptor_write_symbol_unavailable:
+        return "native_descriptor_write_symbol_unavailable";
+    case vulkan_native_descriptor_write_bind_call_status::
+        native_descriptor_bind_symbol_unavailable:
+        return "native_descriptor_bind_symbol_unavailable";
+    case vulkan_native_descriptor_write_bind_call_status::invalid_descriptor_handle:
+        return "invalid_descriptor_handle";
+    case vulkan_native_descriptor_write_bind_call_status::mismatched_payload_identity:
+        return "mismatched_payload_identity";
+    }
+
+    return "unknown";
+}
+
 std::string_view command_buffer_record_result_status_name(
     vulkan_command_buffer_record_result_status status)
 {

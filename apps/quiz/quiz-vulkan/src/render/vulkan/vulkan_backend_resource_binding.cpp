@@ -10,6 +10,7 @@ namespace {
 
 constexpr std::string_view k_native_image_payload_descriptor_bind_symbol =
     "vkCmdBindDescriptorSets";
+constexpr std::string_view k_native_descriptor_write_symbol = "vkUpdateDescriptorSets";
 
 std::string resource_id(std::string prefix, const vulkan_draw_batch& batch)
 {
@@ -1523,6 +1524,242 @@ void mark_image_payload_descriptor_binding_blocker(
     result.diagnostic = std::move(diagnostic);
 }
 
+const vulkan_native_command_packet_descriptor_payload_identity*
+find_descriptor_payload_identity_for_operation(
+    const vulkan_native_image_payload_descriptor_binding_result& image_payload_binding,
+    const vulkan_native_image_payload_descriptor_binding_operation& operation)
+{
+    for (const vulkan_native_command_packet_descriptor_payload_bind& bind :
+         image_payload_binding.descriptor_payload_binds) {
+        if (bind.packet_index != operation.packet_index
+            || bind.command_index != operation.command_index) {
+            continue;
+        }
+        for (const vulkan_native_command_packet_descriptor_payload_identity& payload :
+             bind.descriptor_payloads) {
+            if (payload.set == operation.set && payload.binding == operation.binding) {
+                return &payload;
+            }
+        }
+    }
+    return nullptr;
+}
+
+std::size_t descriptor_payload_identity_count_for_operation(
+    const vulkan_native_image_payload_descriptor_binding_result& image_payload_binding,
+    const vulkan_native_image_payload_descriptor_binding_operation& operation)
+{
+    std::size_t count = 0;
+    for (const vulkan_native_command_packet_descriptor_payload_bind& bind :
+         image_payload_binding.descriptor_payload_binds) {
+        if (bind.packet_index != operation.packet_index
+            || bind.command_index != operation.command_index) {
+            continue;
+        }
+        for (const vulkan_native_command_packet_descriptor_payload_identity& payload :
+             bind.descriptor_payloads) {
+            if (payload.set == operation.set && payload.binding == operation.binding) {
+                ++count;
+            }
+        }
+    }
+    return count;
+}
+
+bool descriptor_payload_identity_matches_operation(
+    const vulkan_native_command_packet_descriptor_payload_identity& payload,
+    const vulkan_native_image_payload_descriptor_binding_operation& operation)
+{
+    return payload.completed()
+        && payload.set == operation.set
+        && payload.binding == operation.binding
+        && payload.descriptor_kind == operation.descriptor_kind
+        && payload.resource_id == operation.resource_id
+        && payload.descriptor_set.value == operation.descriptor_set.value
+        && payload.image_view.value == operation.image_view.value
+        && payload.sampler.value == operation.sampler.value
+        && payload.image_layout.value == operation.image_layout.value
+        && payload.stable_identity == operation.payload_identity;
+}
+
+bool descriptor_operation_handles_ready(
+    const vulkan_native_image_payload_descriptor_binding_operation& operation)
+{
+    if (!operation.descriptor_set.valid()) {
+        return false;
+    }
+    if (operation.descriptor_kind == vulkan_resource_binding_kind::image_texture) {
+        return operation.image_view.valid() && operation.sampler.valid()
+            && operation.image_layout.valid();
+    }
+    if (operation.descriptor_kind == vulkan_resource_binding_kind::image_sampler) {
+        return operation.sampler.valid();
+    }
+    return false;
+}
+
+vulkan_native_descriptor_write_call_evidence make_native_descriptor_write_call(
+    const vulkan_native_image_payload_descriptor_binding_operation& operation,
+    const vulkan_native_command_packet_descriptor_payload_identity& payload,
+    std::size_t call_index,
+    bool native_descriptor_write_symbol_ready,
+    bool blocked,
+    std::string diagnostic)
+{
+    const bool payload_identity_ready =
+        descriptor_payload_identity_matches_operation(payload, operation);
+    const bool descriptor_handle_ready = descriptor_operation_handles_ready(operation);
+    const bool completed = native_descriptor_write_symbol_ready
+        && payload_identity_ready && descriptor_handle_ready && !blocked;
+
+    return vulkan_native_descriptor_write_call_evidence{
+        .call_index = call_index,
+        .operation_index = operation.operation_index,
+        .packet_index = operation.packet_index,
+        .command_index = operation.command_index,
+        .category = operation.category,
+        .batch_kind = operation.batch_kind,
+        .symbol_name = std::string{k_native_descriptor_write_symbol},
+        .set = operation.set,
+        .binding = operation.binding,
+        .descriptor_kind = operation.descriptor_kind,
+        .resource_id = operation.resource_id,
+        .payload_identity = operation.payload_identity,
+        .descriptor_set = operation.descriptor_set,
+        .image_view = operation.image_view,
+        .sampler = operation.sampler,
+        .image_layout = operation.image_layout,
+        .native_symbol_ready = native_descriptor_write_symbol_ready,
+        .payload_identity_ready = payload_identity_ready,
+        .descriptor_handle_ready = descriptor_handle_ready,
+        .attempted = true,
+        .completed = completed,
+        .failed = !completed,
+        .diagnostic = std::move(diagnostic),
+    };
+}
+
+std::size_t descriptor_write_call_count_for_packet(
+    const std::vector<vulkan_native_descriptor_write_call_evidence>& calls,
+    const vulkan_native_command_packet_descriptor_payload_bind& bind)
+{
+    std::size_t count = 0;
+    for (const vulkan_native_descriptor_write_call_evidence& call : calls) {
+        if (call.packet_index == bind.packet_index
+            && call.command_index == bind.command_index
+            && call.successful()) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool descriptor_bind_handles_ready(
+    const vulkan_native_command_packet_descriptor_payload_bind& bind)
+{
+    if (!bind.pipeline_layout.valid()) {
+        return false;
+    }
+    for (const vulkan_native_command_packet_descriptor_set& descriptor_set :
+         bind.descriptor_sets) {
+        if (!descriptor_set.completed()) {
+            return false;
+        }
+    }
+    for (const vulkan_native_command_packet_descriptor_payload_identity& payload :
+         bind.descriptor_payloads) {
+        if (!payload.completed()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+vulkan_native_descriptor_bind_call_evidence make_native_descriptor_bind_call(
+    const vulkan_native_command_packet_descriptor_payload_bind& bind,
+    std::size_t call_index,
+    std::size_t descriptor_write_call_count,
+    bool native_descriptor_bind_symbol_ready,
+    bool blocked,
+    std::string diagnostic)
+{
+    const bool bind_ready = bind.completed() && descriptor_bind_handles_ready(bind)
+        && descriptor_write_call_count == bind.image_descriptor_payload_count;
+    const bool completed =
+        native_descriptor_bind_symbol_ready && bind_ready && !blocked;
+
+    return vulkan_native_descriptor_bind_call_evidence{
+        .call_index = call_index,
+        .packet_index = bind.packet_index,
+        .command_index = bind.command_index,
+        .category = bind.category,
+        .batch_kind = bind.batch_kind,
+        .symbol_name = std::string{k_native_image_payload_descriptor_bind_symbol},
+        .pipeline_layout = bind.pipeline_layout,
+        .descriptor_set_count = bind.descriptor_set_count,
+        .descriptor_payload_count = bind.descriptor_payload_count,
+        .image_descriptor_payload_count = bind.image_descriptor_payload_count,
+        .ready_image_descriptor_payload_count = bind.ready_image_descriptor_payload_count,
+        .descriptor_write_call_count = descriptor_write_call_count,
+        .native_symbol_ready = native_descriptor_bind_symbol_ready,
+        .bind_ready = bind_ready,
+        .attempted = true,
+        .completed = completed,
+        .failed = !completed,
+        .diagnostic = std::move(diagnostic),
+        .descriptor_sets = bind.descriptor_sets,
+        .descriptor_payloads = bind.descriptor_payloads,
+    };
+}
+
+void mark_descriptor_write_bind_call_blocker(
+    vulkan_native_descriptor_write_bind_call_result& result,
+    vulkan_native_descriptor_write_bind_call_status status,
+    vulkan_backend_fallback_reason fallback_reason,
+    std::string diagnostic)
+{
+    result.status = status;
+    result.fallback_reason = fallback_reason;
+    result.diagnostic = std::move(diagnostic);
+}
+
+void mark_descriptor_write_bind_call_blocker(
+    vulkan_native_descriptor_write_bind_call_result& result,
+    vulkan_native_descriptor_write_bind_call_status status,
+    const vulkan_native_image_payload_descriptor_binding_operation& operation,
+    std::string diagnostic)
+{
+    result.status = status;
+    result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+    result.failed_call_index = result.descriptor_write_calls.size();
+    result.failed_operation_index = operation.operation_index;
+    result.failed_packet_index = operation.packet_index;
+    result.failed_command_index = operation.command_index;
+    result.failed_set = operation.set;
+    result.failed_binding = operation.binding;
+    result.failed_resource_id = operation.resource_id;
+    result.failed_payload_identity = operation.payload_identity;
+    result.failed_category = operation.category;
+    result.failed_batch_kind = operation.batch_kind;
+    result.diagnostic = std::move(diagnostic);
+}
+
+void mark_descriptor_write_bind_call_blocker(
+    vulkan_native_descriptor_write_bind_call_result& result,
+    vulkan_native_descriptor_write_bind_call_status status,
+    const vulkan_native_command_packet_descriptor_payload_bind& bind,
+    std::string diagnostic)
+{
+    result.status = status;
+    result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+    result.failed_call_index = result.descriptor_bind_calls.size();
+    result.failed_packet_index = bind.packet_index;
+    result.failed_command_index = bind.command_index;
+    result.failed_category = bind.category;
+    result.failed_batch_kind = bind.batch_kind;
+    result.diagnostic = std::move(diagnostic);
+}
+
 } // namespace
 
 vulkan_backend_resource_binding_state build_vulkan_resource_binding_state(
@@ -2167,6 +2404,272 @@ merge_vulkan_native_image_payload_descriptor_binding_result(
 
     evidence.descriptor_payload_binds =
         image_payload_binding.descriptor_payload_binds;
+    return evidence;
+}
+
+vulkan_native_descriptor_write_bind_call_result
+build_vulkan_native_descriptor_write_bind_call_result(
+    const vulkan_native_image_payload_descriptor_binding_result& image_payload_binding,
+    const vulkan_native_function_table_diagnostics& native_functions)
+{
+    vulkan_native_descriptor_write_bind_call_result result{
+        .checked = true,
+        .status = vulkan_native_descriptor_write_bind_call_status::not_checked,
+        .fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .image_payload_binding_checked = image_payload_binding.checked,
+        .image_payload_binding_ready = image_payload_binding.completed(),
+        .native_function_table_checked = native_functions.checked,
+        .native_descriptor_write_symbol_ready =
+            native_function_table_has_ready_symbol(
+                native_functions,
+                k_native_descriptor_write_symbol),
+        .native_descriptor_bind_symbol_ready =
+            native_function_table_has_ready_symbol(
+                native_functions,
+                k_native_image_payload_descriptor_bind_symbol),
+        .missing_native_symbol_name = {},
+        .planned_descriptor_write_call_count = image_payload_binding.operation_count,
+        .planned_descriptor_bind_call_count =
+            image_payload_binding.descriptor_payload_bind_count,
+        .descriptor_write_call_count = 0,
+        .descriptor_bind_call_count = 0,
+        .failed_call_index = 0,
+        .failed_operation_index = 0,
+        .failed_packet_index = 0,
+        .failed_command_index = 0,
+        .failed_set = 0,
+        .failed_binding = 0,
+        .failed_resource_id = {},
+        .failed_payload_identity = {},
+        .failed_category = vulkan_command_packet_category::rect,
+        .failed_batch_kind = vulkan_batch_kind::quad,
+        .diagnostic = {},
+        .descriptor_write_calls = {},
+        .descriptor_bind_calls = {},
+        .descriptor_payload_binds = {},
+    };
+
+    if (!image_payload_binding.checked
+        || image_payload_binding.status
+            != vulkan_native_image_payload_descriptor_binding_status::ready
+        || image_payload_binding.fallback_reason
+            != vulkan_backend_fallback_reason::none) {
+        mark_descriptor_write_bind_call_blocker(
+            result,
+            vulkan_native_descriptor_write_bind_call_status::
+                image_payload_binding_unavailable,
+            image_payload_binding.fallback_reason == vulkan_backend_fallback_reason::none
+                ? vulkan_backend_fallback_reason::record_commands_failed
+                : image_payload_binding.fallback_reason,
+            "Native Vulkan descriptor write/bind calls are missing ready image payload descriptor binding evidence");
+        result.failed_operation_index = image_payload_binding.failed_operation_index;
+        result.failed_packet_index = image_payload_binding.failed_packet_index;
+        result.failed_command_index = image_payload_binding.failed_command_index;
+        result.failed_set = image_payload_binding.failed_set;
+        result.failed_binding = image_payload_binding.failed_binding;
+        result.failed_resource_id = image_payload_binding.failed_resource_id;
+        result.failed_category = image_payload_binding.failed_category;
+        result.failed_batch_kind = image_payload_binding.failed_batch_kind;
+        return result;
+    }
+
+    if (!native_functions.checked) {
+        result.missing_native_symbol_name = std::string{k_native_descriptor_write_symbol};
+        mark_descriptor_write_bind_call_blocker(
+            result,
+            vulkan_native_descriptor_write_bind_call_status::
+                native_function_table_unavailable,
+            vulkan_backend_fallback_reason::record_commands_failed,
+            "Native Vulkan descriptor write/bind calls are missing checked native function table diagnostics");
+        return result;
+    }
+
+    if (!result.native_descriptor_write_symbol_ready) {
+        result.missing_native_symbol_name = std::string{k_native_descriptor_write_symbol};
+        mark_descriptor_write_bind_call_blocker(
+            result,
+            vulkan_native_descriptor_write_bind_call_status::
+                native_descriptor_write_symbol_unavailable,
+            vulkan_backend_fallback_reason::record_commands_failed,
+            "Native Vulkan descriptor write call evidence is missing required native symbol: "
+                + result.missing_native_symbol_name);
+        return result;
+    }
+
+    if (!result.native_descriptor_bind_symbol_ready) {
+        result.missing_native_symbol_name =
+            std::string{k_native_image_payload_descriptor_bind_symbol};
+        mark_descriptor_write_bind_call_blocker(
+            result,
+            vulkan_native_descriptor_write_bind_call_status::
+                native_descriptor_bind_symbol_unavailable,
+            vulkan_backend_fallback_reason::record_commands_failed,
+            "Native Vulkan descriptor bind call evidence is missing required native symbol: "
+                + result.missing_native_symbol_name);
+        return result;
+    }
+
+    result.status = vulkan_native_descriptor_write_bind_call_status::ready;
+    result.fallback_reason = vulkan_backend_fallback_reason::none;
+    result.descriptor_write_calls.reserve(image_payload_binding.operations.size());
+    result.descriptor_bind_calls.reserve(image_payload_binding.descriptor_payload_binds.size());
+    result.descriptor_payload_binds.reserve(image_payload_binding.descriptor_payload_binds.size());
+
+    for (const vulkan_native_image_payload_descriptor_binding_operation& operation :
+         image_payload_binding.operations) {
+        if (!descriptor_operation_handles_ready(operation)) {
+            vulkan_native_command_packet_descriptor_payload_identity payload{
+                .set = operation.set,
+                .binding = operation.binding,
+                .descriptor_kind = operation.descriptor_kind,
+                .resource_id = operation.resource_id,
+                .descriptor_set = operation.descriptor_set,
+                .image_view = operation.image_view,
+                .sampler = operation.sampler,
+                .image_layout = operation.image_layout,
+                .required = true,
+                .available = false,
+                .image_descriptor = true,
+                .stable_identity = operation.payload_identity,
+            };
+            result.descriptor_write_calls.push_back(
+                make_native_descriptor_write_call(
+                    operation,
+                    payload,
+                    result.descriptor_write_calls.size(),
+                    result.native_descriptor_write_symbol_ready,
+                    true,
+                    "Native Vulkan descriptor write call evidence found invalid descriptor or image handles"));
+            result.descriptor_write_call_count = result.descriptor_write_calls.size();
+            mark_descriptor_write_bind_call_blocker(
+                result,
+                vulkan_native_descriptor_write_bind_call_status::invalid_descriptor_handle,
+                operation,
+                "Native Vulkan descriptor write call evidence found invalid descriptor or image handles");
+            result.failed_call_index = result.descriptor_write_calls.back().call_index;
+            return result;
+        }
+
+        if (descriptor_payload_identity_count_for_operation(image_payload_binding, operation)
+            != 1) {
+            mark_descriptor_write_bind_call_blocker(
+                result,
+                vulkan_native_descriptor_write_bind_call_status::
+                    mismatched_payload_identity,
+                operation,
+                "Native Vulkan descriptor write call evidence could not match exactly one image payload identity");
+            return result;
+        }
+
+        const vulkan_native_command_packet_descriptor_payload_identity* payload =
+            find_descriptor_payload_identity_for_operation(image_payload_binding, operation);
+        if (payload == nullptr
+            || !descriptor_payload_identity_matches_operation(*payload, operation)) {
+            mark_descriptor_write_bind_call_blocker(
+                result,
+                vulkan_native_descriptor_write_bind_call_status::
+                    mismatched_payload_identity,
+                operation,
+                "Native Vulkan descriptor write call evidence found mismatched payload identity");
+            return result;
+        }
+
+        vulkan_native_descriptor_write_call_evidence call =
+            make_native_descriptor_write_call(
+                operation,
+                *payload,
+                result.descriptor_write_calls.size(),
+                result.native_descriptor_write_symbol_ready,
+                false,
+                "Native Vulkan descriptor write call evidence is ready");
+        if (!call.successful()) {
+            result.descriptor_write_calls.push_back(std::move(call));
+            result.descriptor_write_call_count = result.descriptor_write_calls.size();
+            mark_descriptor_write_bind_call_blocker(
+                result,
+                vulkan_native_descriptor_write_bind_call_status::invalid_descriptor_handle,
+                operation,
+                "Native Vulkan descriptor write call evidence found invalid descriptor or image handles");
+            result.failed_call_index = result.descriptor_write_calls.back().call_index;
+            return result;
+        }
+
+        result.descriptor_write_calls.push_back(std::move(call));
+        result.descriptor_write_call_count = result.descriptor_write_calls.size();
+    }
+
+    for (const vulkan_native_command_packet_descriptor_payload_bind& bind :
+         image_payload_binding.descriptor_payload_binds) {
+        if (!descriptor_bind_handles_ready(bind)) {
+            mark_descriptor_write_bind_call_blocker(
+                result,
+                vulkan_native_descriptor_write_bind_call_status::invalid_descriptor_handle,
+                bind,
+                "Native Vulkan descriptor bind call evidence found invalid descriptor bind handles");
+            return result;
+        }
+
+        const std::size_t write_call_count =
+            descriptor_write_call_count_for_packet(result.descriptor_write_calls, bind);
+        vulkan_native_descriptor_bind_call_evidence call =
+            make_native_descriptor_bind_call(
+                bind,
+                result.descriptor_bind_calls.size(),
+                write_call_count,
+                result.native_descriptor_bind_symbol_ready,
+                false,
+                "Native Vulkan descriptor bind call evidence is ready");
+        if (!call.successful()) {
+            result.descriptor_bind_calls.push_back(std::move(call));
+            result.descriptor_bind_call_count = result.descriptor_bind_calls.size();
+            mark_descriptor_write_bind_call_blocker(
+                result,
+                write_call_count == bind.image_descriptor_payload_count
+                    ? vulkan_native_descriptor_write_bind_call_status::
+                        invalid_descriptor_handle
+                    : vulkan_native_descriptor_write_bind_call_status::
+                        mismatched_payload_identity,
+                bind,
+                "Native Vulkan descriptor bind call evidence could not match descriptor write calls");
+            result.failed_call_index = result.descriptor_bind_calls.back().call_index;
+            return result;
+        }
+
+        result.descriptor_bind_calls.push_back(std::move(call));
+        result.descriptor_bind_call_count = result.descriptor_bind_calls.size();
+        result.descriptor_payload_binds.push_back(bind);
+    }
+
+    result.diagnostic =
+        "Native Vulkan descriptor write and bind call evidence is ready";
+    if (!result.completed()) {
+        result.status =
+            vulkan_native_descriptor_write_bind_call_status::
+                mismatched_payload_identity;
+        result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+        result.diagnostic =
+            "Native Vulkan descriptor write and bind call evidence could not complete";
+        return result;
+    }
+
+    return result;
+}
+
+vulkan_native_command_packet_executor_evidence
+merge_vulkan_native_descriptor_write_bind_call_result(
+    vulkan_native_command_packet_executor_evidence evidence,
+    const vulkan_native_descriptor_write_bind_call_result& descriptor_write_bind_calls)
+{
+    if (!descriptor_write_bind_calls.completed()) {
+        return evidence;
+    }
+
+    evidence.descriptor_payload_binds =
+        descriptor_write_bind_calls.descriptor_payload_binds;
+    evidence.descriptor_write_calls =
+        descriptor_write_bind_calls.descriptor_write_calls;
+    evidence.descriptor_bind_calls =
+        descriptor_write_bind_calls.descriptor_bind_calls;
     return evidence;
 }
 

@@ -2572,6 +2572,189 @@ void test_render_resource_manifest_to_payload_bridge_e2e_uses_materialized_bytes
     require(wrong_bridge->selection.expected_type == asset_type::image, "bridge keeps expected render address type");
 }
 
+void test_render_resource_materialized_cache_summary_reuses_manifest_payload_identity()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    write_fixture_file(fixture_root / "packaged" / "cards" / "front.png", "image bytes");
+    write_fixture_file(fixture_root / "packaged" / "fonts" / "body.ttf", "font bytes");
+    write_fixture_file(fixture_root / "build" / "external" / "shader_pack" / "shaders" / "ui.vert.spv", "shader bytes");
+
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .root_path = fixture_root / "packaged",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "external_shader_pack",
+        .root_path = fixture_root / "build" / "external" / "shader_pack",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "ASSET:///cards/./front.png",
+        .root_id = "packaged",
+        .cache_revision = "image-rev1",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "body_font",
+        .type = asset_type::font,
+        .uri = "asset://fonts/body.ttf",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "ui_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/ui.vert.spv",
+        .root_id = "external_shader_pack",
+        .cache_revision = "shader-rev2",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "bad_traversal",
+        .type = asset_type::image,
+        .uri = "asset://cards/%2e%2e/secret.png",
+        .root_id = "packaged",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const local_file_asset_bytes_provider provider;
+    const std::vector<asset_render_resource_materialized_cache_request> requests{
+        asset_render_resource_materialized_cache_request{
+            .id = "card_front",
+            .expected_type = asset_type::image,
+        },
+        asset_render_resource_materialized_cache_request{
+            .id = "body_font",
+            .expected_type = asset_type::font,
+        },
+        asset_render_resource_materialized_cache_request{
+            .id = "ui_shader",
+            .expected_type = asset_type::shader,
+        },
+        asset_render_resource_materialized_cache_request{
+            .id = "bad_traversal",
+            .expected_type = asset_type::image,
+        },
+        asset_render_resource_materialized_cache_request{
+            .id = "missing_card",
+            .expected_type = asset_type::image,
+        },
+        asset_render_resource_materialized_cache_request{
+            .id = "body_font",
+            .expected_type = asset_type::image,
+        },
+    };
+
+    const runtime_asset_catalog first_catalog = build_runtime_asset_catalog(manifest, resolver);
+    const asset_render_resource_address_summary first_addresses =
+        summarize_asset_render_resource_addresses(manifest, resolver);
+    const asset_materialized_byte_payload_bundle first_bundle =
+        make_materialized_asset_byte_payload_bundle(provider, first_catalog);
+    const asset_render_resource_materialized_cache_summary first_cache =
+        make_asset_render_resource_materialized_cache_summary(first_addresses, first_bundle, requests);
+
+    const runtime_asset_catalog second_catalog = build_runtime_asset_catalog(manifest, resolver);
+    const asset_render_resource_address_summary second_addresses =
+        summarize_asset_render_resource_addresses(manifest, resolver);
+    const asset_materialized_byte_payload_bundle second_bundle =
+        make_materialized_asset_byte_payload_bundle(provider, second_catalog);
+    const asset_render_resource_materialized_cache_summary second_cache =
+        make_asset_render_resource_materialized_cache_summary(second_addresses, second_bundle, requests);
+
+    require(!first_cache.ok(), "render resource materialized cache reports blocked request evidence");
+    require(first_cache.requested_count == 6U, "render resource materialized cache preserves request count");
+    require(first_cache.entry_count() == 6U, "render resource materialized cache emits one result per request");
+    require(first_cache.ready_count == 3U, "render resource materialized cache counts reusable payloads");
+    require(first_cache.blocked_count() == 3U, "render resource materialized cache counts blocked entries");
+    require(first_cache.address_rejected_count == 1U, "render resource materialized cache counts rejected addresses");
+    require(
+        first_cache.missing_render_resource_address_count == 1U,
+        "render resource materialized cache counts missing requested ids");
+    require(first_cache.type_mismatch_count == 1U, "render resource materialized cache counts request type mismatches");
+
+    const asset_render_resource_materialized_cache_entry* first_image = first_cache.find_ready("card_front");
+    const asset_render_resource_materialized_cache_entry* second_image = second_cache.find_ready("card_front");
+    require(first_image != nullptr && second_image != nullptr, "render cache finds repeated image entries");
+    require(first_image->ready() && second_image->ready(), "repeated image cache entries are reusable");
+    require(first_image->runtime_cache_key == second_image->runtime_cache_key, "image runtime cache key is stable");
+    require(first_image->cache_key == second_image->cache_key, "image manifest cache key is stable");
+    require(first_image->content_hash == second_image->content_hash, "image content hash evidence is stable");
+    require(first_image->byte_count == second_image->byte_count, "image byte count evidence is stable");
+    require(
+        first_image->payload_byte_count == second_image->payload_byte_count,
+        "image payload byte count evidence is stable");
+    require(
+        first_image->materialized_path == second_image->materialized_path,
+        "image materialized path evidence is stable");
+    require(
+        first_cache.find_runtime_cache_key(first_image->runtime_cache_key) == first_image,
+        "render cache can look up entries by runtime cache key");
+    require(
+        first_image->runtime_cache_key
+            == "render-resource|image|asset://cards/front.png|image|asset://cards/front.png|rev=image-rev1|hash="
+                + make_asset_bytes_content_hash(detail::make_asset_byte_vector("image bytes")),
+        "image runtime cache key includes resource identity cache key and content hash");
+    require(
+        first_image->runtime_cache_key.find(fixture_root.string()) == std::string::npos,
+        "image runtime cache key does not leak absolute fixture paths");
+
+    const asset_render_resource_materialized_cache_entry* first_font = first_cache.find_ready("body_font");
+    const asset_render_resource_materialized_cache_entry* second_font = second_cache.find_ready("body_font");
+    require(first_font != nullptr && second_font != nullptr, "render cache finds repeated font entries");
+    require(first_font->runtime_cache_key == second_font->runtime_cache_key, "font runtime cache key is stable");
+    require(first_font->canonical_identity == "asset://fonts/body.ttf", "font runtime cache preserves identity");
+    require(
+        first_font->runtime_cache_key.find(fixture_root.string()) == std::string::npos,
+        "font runtime cache key does not leak absolute fixture paths");
+
+    const asset_render_resource_materialized_cache_entry* first_shader = first_cache.find_ready("ui_shader");
+    const asset_render_resource_materialized_cache_entry* second_shader = second_cache.find_ready("ui_shader");
+    require(first_shader != nullptr && second_shader != nullptr, "render cache finds repeated shader entries");
+    require(first_shader->runtime_cache_key == second_shader->runtime_cache_key, "shader runtime cache key is stable");
+    require(
+        first_shader->runtime_cache_key
+            == "render-resource|shader|asset://shaders/ui.vert.spv|shader|asset://shaders/ui.vert.spv|rev=shader-rev2|hash="
+                + make_asset_bytes_content_hash(detail::make_asset_byte_vector("shader bytes")),
+        "shader runtime cache key includes revised shader identity and content hash");
+    require(
+        first_shader->runtime_cache_key.find(fixture_root.string()) == std::string::npos,
+        "shader runtime cache key does not leak build-external fixture paths");
+    require(
+        first_shader->materialized_path
+            == std::filesystem::absolute(
+                   fixture_root / "build" / "external" / "shader_pack" / "shaders" / "ui.vert.spv")
+                   .lexically_normal(),
+        "shader runtime cache keeps build-external path as evidence outside the cache key");
+
+    const asset_render_resource_materialized_cache_entry* traversal = first_cache.find_blocked("bad_traversal");
+    require(traversal != nullptr, "render cache keeps traversal rejection evidence");
+    require(
+        traversal->status == asset_render_resource_materialized_cache_status::address_rejected,
+        "render cache maps traversal to address rejection");
+    require(
+        traversal->diagnostic == "asset path traversal is not allowed",
+        "render cache preserves traversal diagnostic");
+
+    const asset_render_resource_materialized_cache_entry* missing = first_cache.find_blocked("missing_card");
+    require(missing != nullptr, "render cache keeps missing requested id evidence");
+    require(
+        missing->status == asset_render_resource_materialized_cache_status::missing_render_resource_address,
+        "render cache reports missing render resource addresses explicitly");
+    require(
+        asset_render_resource_materialized_cache_status_name(missing->status)
+            == "missing_render_resource_address",
+        "render cache missing-id status name is stable");
+
+    const asset_render_resource_materialized_cache_entry* wrong_type = first_cache.find_blocked("body_font");
+    require(wrong_type != nullptr, "render cache keeps request type mismatch evidence");
+    require(
+        wrong_type->status == asset_render_resource_materialized_cache_status::type_mismatch,
+        "render cache reports request type mismatches explicitly");
+    require(wrong_type->type == asset_type::font, "render cache type mismatch keeps actual manifest type");
+    require(wrong_type->cache_key == "font|asset://fonts/body.ttf", "render cache type mismatch keeps cache key");
+}
+
 void test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics()
 {
     using namespace quiz_vulkan::assets;
@@ -3386,6 +3569,7 @@ int main()
     test_shader_byte_pipeline_source_summary_combines_manifest_fallback_and_payload_evidence();
     test_render_resource_payload_bridge_matches_addresses_to_materialized_payloads();
     test_render_resource_manifest_to_payload_bridge_e2e_uses_materialized_bytes();
+    test_render_resource_materialized_cache_summary_reuses_manifest_payload_identity();
     test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics();
     test_materialized_asset_byte_payload_request_transaction_preserves_order_and_counts();
     test_materialized_asset_byte_payload_request_transaction_review_summary_groups_by_expected_type();

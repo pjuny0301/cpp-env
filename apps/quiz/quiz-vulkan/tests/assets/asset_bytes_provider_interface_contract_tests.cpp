@@ -641,6 +641,12 @@ static_assert(requires(
 });
 
 static_assert(std::is_enum_v<asset_render_resource_payload_bridge_status>);
+static_assert(std::is_enum_v<asset_render_resource_materialized_cache_status>);
+
+static_assert(requires(asset_render_resource_materialized_cache_request request) {
+    { request.id } -> std::same_as<std::string&>;
+    { request.expected_type } -> std::same_as<asset_type&>;
+});
 
 static_assert(requires(
     asset_render_resource_payload_bridge_entry entry,
@@ -676,6 +682,51 @@ static_assert(requires(
     { const_summary.find_entry(id) } -> std::same_as<const asset_render_resource_payload_bridge_entry*>;
     { const_summary.find_canonical_identity(canonical_identity) } ->
         std::same_as<const asset_render_resource_payload_bridge_entry*>;
+});
+
+static_assert(requires(
+    asset_render_resource_materialized_cache_entry entry,
+    const asset_render_resource_materialized_cache_entry& const_entry) {
+    { entry.status } -> std::same_as<asset_render_resource_materialized_cache_status&>;
+    { entry.id } -> std::same_as<std::string&>;
+    { entry.type } -> std::same_as<asset_type&>;
+    { entry.canonical_identity } -> std::same_as<std::string&>;
+    { entry.cache_key } -> std::same_as<asset_cache_key&>;
+    { entry.source_uri } -> std::same_as<std::string&>;
+    { entry.materialized_path } -> std::same_as<std::filesystem::path&>;
+    { entry.byte_count } -> std::same_as<std::size_t&>;
+    { entry.payload_byte_count } -> std::same_as<std::size_t&>;
+    { entry.content_hash } -> std::same_as<std::string&>;
+    { entry.runtime_cache_key } -> std::same_as<std::string&>;
+    { entry.related_id } -> std::same_as<std::string&>;
+    { entry.diagnostic } -> std::same_as<std::string&>;
+    { const_entry.ready() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_render_resource_materialized_cache_summary summary,
+    const asset_render_resource_materialized_cache_summary& const_summary,
+    std::string_view id,
+    std::string_view runtime_cache_key) {
+    { summary.ready } -> std::same_as<std::vector<asset_render_resource_materialized_cache_entry>&>;
+    { summary.blocked } -> std::same_as<std::vector<asset_render_resource_materialized_cache_entry>&>;
+    { summary.requested_count } -> std::same_as<std::size_t&>;
+    { summary.ready_count } -> std::same_as<std::size_t&>;
+    { summary.address_rejected_count } -> std::same_as<std::size_t&>;
+    { summary.missing_render_resource_address_count } -> std::same_as<std::size_t&>;
+    { summary.missing_materialized_bytes_count } -> std::same_as<std::size_t&>;
+    { summary.type_mismatch_count } -> std::same_as<std::size_t&>;
+    { summary.cache_key_mismatch_count } -> std::same_as<std::size_t&>;
+    { summary.duplicate_canonical_identity_count } -> std::same_as<std::size_t&>;
+    { summary.duplicate_materialized_payload_id_count } -> std::same_as<std::size_t&>;
+    { const_summary.ok() } -> std::same_as<bool>;
+    { const_summary.entry_count() } -> std::same_as<std::size_t>;
+    { const_summary.blocked_count() } -> std::same_as<std::size_t>;
+    { const_summary.find_ready(id) } -> std::same_as<const asset_render_resource_materialized_cache_entry*>;
+    { const_summary.find_blocked(id) } -> std::same_as<const asset_render_resource_materialized_cache_entry*>;
+    { const_summary.find_entry(id) } -> std::same_as<const asset_render_resource_materialized_cache_entry*>;
+    { const_summary.find_runtime_cache_key(runtime_cache_key) } ->
+        std::same_as<const asset_render_resource_materialized_cache_entry*>;
 });
 
 static_assert(std::has_virtual_destructor_v<asset_bytes_provider_interface>);
@@ -714,6 +765,7 @@ static_assert(requires(
     const asset_typed_materialized_bytes_summary& typed_summary,
     const asset_materialized_byte_payload& payload,
     const asset_materialized_byte_payload_bundle& payload_bundle,
+    const asset_materialized_byte_payload_snapshot& payload_entry_snapshot,
     const asset_materialized_byte_payload_bundle_snapshot& payload_snapshot,
     const asset_materialized_byte_payload_selection_request& selection_request,
     const asset_materialized_byte_payload_filter& payload_filter,
@@ -728,9 +780,15 @@ static_assert(requires(
     const asset_pack_index_root_selection_summary& root_selection,
     const std::vector<std::string>& expected_shader_ids,
     const asset_render_resource_address_entry& render_resource_address,
+    const asset_render_resource_address_diagnostic& render_resource_address_diagnostic,
     const asset_render_resource_address_summary& render_resource_addresses,
+    const asset_render_resource_payload_bridge_entry& render_resource_bridge_entry,
     asset_materialized_byte_payload_selection_status payload_selection_status,
     asset_render_resource_payload_bridge_status bridge_status,
+    asset_render_resource_materialized_cache_status materialized_cache_status,
+    const asset_render_resource_materialized_cache_request& materialized_cache_request,
+    const std::vector<asset_render_resource_materialized_cache_request>& materialized_cache_requests,
+    std::string_view id,
     const std::vector<asset_bytes_catalog_request>& requests,
     const asset_bytes_catalog_request& request) {
     { make_asset_bytes_content_hash(bytes) } -> std::same_as<std::string>;
@@ -794,6 +852,26 @@ static_assert(requires(
     { bridge_asset_render_resource_addresses_to_payloads(render_resource_addresses, payload_bundle) } ->
         std::same_as<asset_render_resource_payload_bridge_summary>;
     { asset_render_resource_payload_bridge_status_name(bridge_status) } -> std::same_as<std::string>;
+    { asset_render_resource_materialized_cache_status_from_bridge(bridge_status) } ->
+        std::same_as<asset_render_resource_materialized_cache_status>;
+    { find_asset_render_resource_address_diagnostic(render_resource_addresses, id) } ->
+        std::same_as<const asset_render_resource_address_diagnostic*>;
+    { make_asset_render_resource_materialized_cache_key(render_resource_address, payload_entry_snapshot) } ->
+        std::same_as<std::string>;
+    { make_asset_render_resource_materialized_cache_entry(render_resource_bridge_entry) } ->
+        std::same_as<asset_render_resource_materialized_cache_entry>;
+    { make_asset_render_resource_materialized_cache_entry(render_resource_address_diagnostic) } ->
+        std::same_as<asset_render_resource_materialized_cache_entry>;
+    { make_asset_render_resource_materialized_cache_missing_entry(materialized_cache_request) } ->
+        std::same_as<asset_render_resource_materialized_cache_entry>;
+    { make_asset_render_resource_materialized_cache_summary(render_resource_addresses, payload_bundle) } ->
+        std::same_as<asset_render_resource_materialized_cache_summary>;
+    { make_asset_render_resource_materialized_cache_summary(
+        render_resource_addresses,
+        payload_bundle,
+        materialized_cache_requests) } -> std::same_as<asset_render_resource_materialized_cache_summary>;
+    { asset_render_resource_materialized_cache_status_name(materialized_cache_status) } ->
+        std::same_as<std::string>;
     { asset_shader_materialized_byte_issue_kind_name(shader_issue_kind) } -> std::same_as<std::string>;
     { asset_shader_byte_pipeline_source_kind_name(shader_source_kind) } -> std::same_as<std::string>;
     { asset_shader_byte_pipeline_blocker_kind_name(shader_blocker_kind) } -> std::same_as<std::string>;

@@ -1,6 +1,7 @@
 #include "render/text/fake_text_engine.h"
 #include "render/text/text_frame_upload_handoff.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
@@ -56,6 +57,14 @@ std::filesystem::path first_available_freetype_real_font_fixture()
     return {};
 }
 
+std::filesystem::path korean_multiline_font_fixture()
+{
+    const std::filesystem::path path =
+        desktop_external_root() / "harfbuzz-14.2.0" / "test" / "api" / "fonts"
+        / "varc-ac00-ac01.ttf";
+    return std::filesystem::exists(path) ? path : std::filesystem::path{};
+}
+
 quiz_vulkan::render::render_text_style_catalog style_catalog_for(
     const std::string& family,
     const std::string& style_id)
@@ -71,6 +80,33 @@ quiz_vulkan::render::render_text_style_catalog style_catalog_for(
     catalog.styles.push_back(quiz_vulkan::render::render_text_style{
         .id = style_id,
         .font_family = family,
+        .font_size = 32.0f,
+        .line_height = 36.0f,
+        .font_weight = 400,
+    });
+    return catalog;
+}
+
+quiz_vulkan::render::render_text_style_catalog multiline_korean_style_catalog()
+{
+    quiz_vulkan::render::render_text_style_catalog catalog;
+    catalog.fallback_style = quiz_vulkan::render::render_text_style{
+        .id = "fallback",
+        .font_family = "Sans",
+        .font_size = 12.0f,
+        .line_height = 14.0f,
+        .font_weight = 400,
+    };
+    catalog.styles.push_back(quiz_vulkan::render::render_text_style{
+        .id = "payload-korean",
+        .font_family = "Payload Korean Varc",
+        .font_size = 32.0f,
+        .line_height = 36.0f,
+        .font_weight = 400,
+    });
+    catalog.styles.push_back(quiz_vulkan::render::render_text_style{
+        .id = "payload-latin",
+        .font_family = "Payload Latin Sans",
         .font_size = 32.0f,
         .line_height = 36.0f,
         .font_weight = 400,
@@ -99,17 +135,48 @@ quiz_vulkan::render::render_text_request single_glyph_request(
     };
 }
 
-quiz_vulkan::render::render_text_glyph_atlas_upload_result_snapshot upload_result_for_diagnostics(
+quiz_vulkan::render::render_text_request multiline_korean_request()
+{
+    return quiz_vulkan::render::render_text_request{
+        .text_runs = {
+            quiz_vulkan::render::render_text_run{
+                .text = "가각\n",
+                .style_token = "payload-korean",
+            },
+            quiz_vulkan::render::render_text_run{
+                .text = "A",
+                .style_token = "payload-latin",
+            },
+        },
+        .bounds = quiz_vulkan::render::render_rect{0.0f, 0.0f, 320.0f, 0.0f},
+        .style_catalog = multiline_korean_style_catalog(),
+        .options = quiz_vulkan::render::render_text_options{
+            .wrap = quiz_vulkan::render::render_text_wrap_mode::no_wrap,
+            .alignment = quiz_vulkan::render::render_text_alignment::start,
+            .max_lines = 0,
+        },
+    };
+}
+
+std::vector<std::string> upload_request_ids_for_diagnostics(
     const quiz_vulkan::render::fake_text_engine_diagnostics& diagnostics)
 {
-    using namespace quiz_vulkan::render;
-
     std::vector<std::string> upload_request_ids;
-    for (const render_text_frame_draw_packet_snapshot& packet : diagnostics.text_frame_draw_plan.packets) {
+    for (const quiz_vulkan::render::render_text_frame_draw_packet_snapshot& packet :
+         diagnostics.text_frame_draw_plan.packets) {
         if (!packet.atlas_upload_request_id.empty()) {
             upload_request_ids.push_back(packet.atlas_upload_request_id);
         }
     }
+    return upload_request_ids;
+}
+
+quiz_vulkan::render::render_text_glyph_atlas_upload_result_snapshot upload_result_for_diagnostics(
+    const quiz_vulkan::render::fake_text_engine_diagnostics& diagnostics,
+    std::vector<std::string> upload_request_ids)
+{
+    using namespace quiz_vulkan::render;
+
     const render_text_glyph_atlas_page_plan_snapshot page_plan =
         plan_render_text_glyph_atlas_pages(diagnostics.glyph_atlas_materializations);
     const render_text_glyph_atlas_upload_operation_plan_snapshot operation_plan =
@@ -120,6 +187,14 @@ quiz_vulkan::render::render_text_glyph_atlas_upload_result_snapshot upload_resul
         .operation_plan = operation_plan,
         .upload_request_ids = std::move(upload_request_ids),
     });
+}
+
+quiz_vulkan::render::render_text_glyph_atlas_upload_result_snapshot upload_result_for_diagnostics(
+    const quiz_vulkan::render::fake_text_engine_diagnostics& diagnostics)
+{
+    return upload_result_for_diagnostics(
+        diagnostics,
+        upload_request_ids_for_diagnostics(diagnostics));
 }
 
 quiz_vulkan::render::render_text_renderer_glyph_quad_packet_snapshot glyph_quads_for_diagnostics(
@@ -389,6 +464,215 @@ void test_file_backed_freetype_selection_rasterizes_real_payload()
     require(summary.changed_packet_ids.size() == 1U, "real font summary exposes changed draw packet id");
 }
 
+void test_multiline_korean_text_reaches_frame_handoff_with_partial_upload_blocker()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path korean_font_path = korean_multiline_font_fixture();
+    const std::filesystem::path latin_font_path = first_available_freetype_real_font_fixture();
+    if (korean_font_path.empty() || latin_font_path.empty()
+        || !render_text_freetype_memory_face_adapter_available()) {
+        return;
+    }
+
+    fake_text_engine engine;
+    select_real_text_stack(engine);
+    engine.add_font_face(font_face_descriptor{
+        .id = 812,
+        .family = "Payload Korean Varc",
+        .source_uri = korean_font_path.generic_string(),
+        .version = "external-fixture",
+        .license = "harfbuzz-test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = U'\uAC00', .last = U'\uAC01'},
+        },
+        .weight = 400,
+    });
+    engine.add_font_face(font_face_descriptor{
+        .id = 813,
+        .family = "Payload Latin Sans",
+        .source_uri = latin_font_path.generic_string(),
+        .version = "external-fixture",
+        .license = "harfbuzz-test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = U'A', .last = U'A'},
+        },
+        .weight = 400,
+    });
+
+    const render_text_layout layout = engine.layout_text(multiline_korean_request());
+    const fake_text_engine_diagnostics& diagnostics = engine.last_diagnostics();
+
+    require(layout.glyphs.size() == 3U, "multiline Korean request lays out three visible glyphs");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.line_count >= 2U,
+        "multiline Korean diagnostics preserve two layout lines");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.cluster_count >= 3U,
+        "multiline Korean diagnostics preserve per-glyph cluster evidence");
+    const bool has_korean_utf8_cluster = std::any_of(
+        diagnostics.shaping_line_run_evidence.begin(),
+        diagnostics.shaping_line_run_evidence.end(),
+        [](const fake_text_engine_shaping_line_run_evidence_snapshot& cluster) {
+            return cluster.cluster_byte_count >= 3U
+                && cluster.cluster_codepoint_count == 1U
+                && cluster.resolved_face_id == 812U;
+        });
+    require(has_korean_utf8_cluster, "multiline diagnostics preserve Korean UTF-8 cluster bytes");
+    require(
+        diagnostics.shaping_line_run_evidence_policy.harfbuzz_cluster_count
+            + diagnostics.shaping_line_run_evidence_policy.deterministic_fallback_cluster_count
+            >= 3U,
+        "multiline diagnostics preserve HarfBuzz-or-fallback shaping evidence");
+    require(
+        diagnostics.rasterized_glyph_atlas_payload_policy.freetype_rasterizer_count > 0U,
+        "multiline path records a real FreeType raster payload");
+    require(
+        diagnostics.rasterized_glyph_atlas_payload_policy.deterministic_rasterizer_count > 0U,
+        "multiline path records deterministic fallback raster payloads");
+    require(
+        diagnostics.rasterized_glyph_atlas_payload_policy.materialized_font_bytes_count == 3U,
+        "multiline path materializes font bytes for all visible glyphs");
+    require(
+        diagnostics.glyph_atlas_materializations.size() == 3U,
+        "multiline path records three atlas materializations");
+    require(
+        diagnostics.line_run_atlas_upload_policy.line_count >= 2U,
+        "line/run atlas upload diagnostics preserve two lines");
+    require(
+        diagnostics.line_run_atlas_upload_policy.upload_ready_cluster_count == 3U,
+        "line/run atlas upload diagnostics mark all glyphs upload-ready before consumption");
+
+    const std::vector<std::string> all_upload_request_ids =
+        upload_request_ids_for_diagnostics(diagnostics);
+    require(all_upload_request_ids.size() == 3U, "multiline path exposes one upload request per glyph");
+
+    fake_text_engine_diagnostics ready_diagnostics = diagnostics;
+    ready_diagnostics.text_frame_snapshot =
+        render_text_frame_snapshot_with_consumed_atlas_updates(
+            diagnostics.text_frame_snapshot,
+            all_upload_request_ids,
+            all_upload_request_ids.size());
+    ready_diagnostics.text_frame_draw_plan =
+        plan_render_text_frame_draw_packets(render_text_frame_draw_plan_request{
+            .frame = ready_diagnostics.text_frame_snapshot,
+            .materializations = ready_diagnostics.glyph_atlas_materializations,
+            .item_index = 0U,
+        });
+    require(
+        ready_diagnostics.text_frame_snapshot.ready_for_renderer(),
+        "multiline text frame becomes renderer-ready after upload consumption");
+    require(
+        ready_diagnostics.text_frame_draw_plan.policy.packet_count == 3U,
+        "multiline draw plan records three glyph packets");
+    require(
+        ready_diagnostics.text_frame_draw_plan.policy.draw_ready_count == 3U,
+        "multiline draw plan marks all glyph packets ready after consumption");
+    require(
+        ready_diagnostics.text_frame_draw_plan.policy.upload_consumed_count == 3U,
+        "multiline draw plan records upload consumption for all glyph packets");
+
+    const render_text_renderer_glyph_quad_packet_snapshot full_quads =
+        glyph_quads_for_diagnostics(ready_diagnostics);
+    require(full_quads.ok(), "multiline glyph quad packet snapshot is renderer-ready");
+    require(full_quads.policy.quad_packet_count == 3U, "multiline glyph quads preserve each glyph packet");
+    require(full_quads.policy.ready_quad_count == 3U, "multiline glyph quads are ready");
+    require(full_quads.policy.real_backend_count == 3U, "multiline glyph quads preserve real backend route");
+    const bool has_second_line_quad = std::any_of(
+        full_quads.packets.begin(),
+        full_quads.packets.end(),
+        [&](const render_text_renderer_glyph_quad_packet_record& packet) {
+            return packet.atlas_consumption.line_index
+                != full_quads.packets.front().atlas_consumption.line_index;
+        });
+    require(has_second_line_quad, "multiline glyph quads preserve line index boundaries");
+
+    const render_text_render_frame_handoff_summary_snapshot full_summary =
+        summary_for_diagnostics(ready_diagnostics);
+    require(full_summary.ok(), "multiline render frame handoff summary is renderer-ready");
+    require(full_summary.policy.draw_packet_count == 3U, "multiline summary counts all draw packets");
+    require(full_summary.policy.glyph_quad_ready_count == 3U, "multiline summary counts ready quads");
+    require(full_summary.policy.upload_request_count == 3U, "multiline summary exposes upload requests");
+    require(full_summary.policy.real_backend_count == 6U, "multiline summary preserves draw and quad real backend evidence");
+
+    const std::size_t first_line_index =
+        ready_diagnostics.text_frame_draw_plan.packets.front().atlas_consumption.line_index;
+    std::vector<std::string> first_line_upload_request_ids;
+    std::size_t first_line_packet_count = 0U;
+    std::size_t later_line_packet_count = 0U;
+    for (const render_text_frame_draw_packet_snapshot& packet :
+         ready_diagnostics.text_frame_draw_plan.packets) {
+        if (packet.atlas_consumption.line_index == first_line_index) {
+            ++first_line_packet_count;
+            first_line_upload_request_ids.push_back(packet.atlas_upload_request_id);
+        } else {
+            ++later_line_packet_count;
+        }
+    }
+    require(first_line_packet_count > 0U, "partial upload test finds a first line");
+    require(later_line_packet_count > 0U, "partial upload test finds a later line");
+
+    const render_text_glyph_atlas_upload_result_snapshot partial_upload_result =
+        upload_result_for_diagnostics(ready_diagnostics, first_line_upload_request_ids);
+    const render_text_frame_upload_handoff_snapshot partial_handoff =
+        make_render_text_frame_upload_handoff(render_text_frame_upload_handoff_request{
+            .frame = ready_diagnostics.text_frame_snapshot,
+            .draw_plan = ready_diagnostics.text_frame_draw_plan,
+            .upload_result = partial_upload_result,
+        });
+    require(
+        partial_handoff.policy.ready_glyph_packet_count == first_line_packet_count,
+        "partial upload handoff keeps first line ready");
+    require(
+        partial_handoff.policy.upload_result_rejected_count == later_line_packet_count,
+        "partial upload handoff rejects the line without upload consumption");
+
+    const render_text_frame_resource_packet_materialization partial_resources =
+        materialize_render_text_frame_resource_packets(
+            render_text_frame_resource_packet_materialization_request{
+                .draw_plan = ready_diagnostics.text_frame_draw_plan,
+                .upload_handoff = partial_handoff,
+            });
+    require(!partial_resources.ok(), "partial resource materialization exposes blockers");
+    require(
+        partial_resources.policy.ready_packet_count == first_line_packet_count,
+        "partial resource materialization keeps first line resource packets ready");
+    require(
+        partial_resources.policy.rejected_upload_count == later_line_packet_count,
+        "partial resource materialization blocks later line upload packets");
+
+    const render_text_renderer_glyph_quad_packet_snapshot partial_quads =
+        make_render_text_renderer_glyph_quad_packets(
+            render_text_renderer_glyph_quad_packet_request{
+                .resource_packets = partial_resources,
+            });
+    require(!partial_quads.ok(), "partial glyph quad packet snapshot exposes blockers");
+    require(
+        partial_quads.policy.ready_quad_count == first_line_packet_count,
+        "partial glyph quad packets keep first line ready");
+    require(
+        partial_quads.policy.blocked_quad_count == later_line_packet_count,
+        "partial glyph quad packets block the line without upload handoff");
+
+    const render_text_render_frame_handoff_summary_snapshot partial_summary =
+        make_render_text_render_frame_handoff_summary(
+            render_text_render_frame_handoff_summary_request{
+                .frame = ready_diagnostics.text_frame_snapshot,
+                .draw_plan = ready_diagnostics.text_frame_draw_plan,
+                .glyph_quads = partial_quads,
+            });
+    require(!partial_summary.ok(), "partial render frame handoff summary exposes blockers");
+    require(
+        partial_summary.policy.glyph_quad_ready_count == first_line_packet_count,
+        "partial summary keeps first line ready");
+    require(
+        partial_summary.policy.glyph_quad_blocked_count == later_line_packet_count,
+        "partial summary blocks later line glyph quads");
+    require(
+        partial_summary.policy.non_upload_ready_atlas_payload_blocker_count == later_line_packet_count,
+        "partial summary counts missing upload consumption blockers");
+}
+
 void test_missing_file_backed_freetype_payload_falls_back_and_skips()
 {
     using namespace quiz_vulkan::render;
@@ -510,6 +794,7 @@ void test_missing_file_backed_freetype_payload_falls_back_and_skips()
 int main()
 {
     test_file_backed_freetype_selection_rasterizes_real_payload();
+    test_multiline_korean_text_reaches_frame_handoff_with_partial_upload_blocker();
     test_missing_file_backed_freetype_payload_falls_back_and_skips();
     return 0;
 }

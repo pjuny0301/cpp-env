@@ -317,6 +317,31 @@ void write_bytes(const std::filesystem::path& path, const std::vector<std::byte>
     require(file.good(), "image pipeline fixture bytes can be written");
 }
 
+const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot* find_cache_entry_by_source_key(
+    const quiz_vulkan::render::fake_image_texture_cache_snapshot& snapshot,
+    std::string_view source_key)
+{
+    for (const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot& entry : snapshot.entries) {
+        if (entry.key.source_key == source_key) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot*
+find_placeholder_cache_entry_by_requested_source_key(
+    const quiz_vulkan::render::fake_image_texture_cache_snapshot& snapshot,
+    std::string_view source_key)
+{
+    for (const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot& entry : snapshot.entries) {
+        if (entry.placeholder_texture && entry.requested_key.source_key == source_key) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
 quiz_vulkan::render::fake_image_texture_pipeline_snapshot make_optional_stb_pipeline_snapshot(
     std::string uri,
     const std::vector<std::byte>& encoded_bytes,
@@ -466,8 +491,16 @@ void test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff()
     const stb_image_decoder_dependency_manifest manifest = probe.probe_dependency();
     standard_image_texture_pipeline pipeline(resolver, loader);
 
-    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
-        render_image_texture_pipeline_request{.uri = "textures/real-stb.jpg"});
+    render_image_sampler_policy sampler;
+    sampler.min_filter = render_image_filter::nearest;
+    sampler.mag_filter = render_image_filter::linear;
+    sampler.wrap_u = render_image_wrap_mode::repeat;
+
+    const render_image_texture_pipeline_request request{
+        .uri = "textures/real-stb.jpg",
+        .sampler = sampler,
+    };
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(request);
 
     require(result.resolve.ok(), "real JPEG pipeline resolves local file source");
     require(result.source_bytes.ok(), "real JPEG pipeline loads source bytes from filesystem");
@@ -505,6 +538,7 @@ void test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff()
     require(!result.texture.cache_hit, "real JPEG first acquire is a cache miss");
     require(result.texture.texture.width == 1, "real JPEG texture preserves decoded width");
     require(result.texture.texture.height == 1, "real JPEG texture preserves decoded height");
+    require(result.texture.key.sampler == sampler, "real JPEG texture key preserves sampler policy");
     require(result.texture.decode_metadata.decoder_id == "stb_image_decoder", "standard pipeline real JPEG decode uses stb backend");
     require(result.texture.decode_metadata.width == 1, "real JPEG metadata records width");
     require(result.texture.decode_metadata.height == 1, "real JPEG metadata records height");
@@ -522,6 +556,15 @@ void test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff()
     require(
         !result.texture.external_decoder_selection.fallback_to_standard_decoder_chain,
         "real JPEG selection records no standard fallback");
+
+    const std::string stable_cache_key =
+        make_render_image_texture_key_diagnostic(result.texture.key).stable_cache_key;
+    require(
+        stable_cache_key.find("source=textures/real-stb.jpg") != std::string::npos,
+        "real JPEG stable cache key preserves normalized source");
+    require(
+        stable_cache_key.find(render_image_sampler_policy_stable_fragment(sampler)) != std::string::npos,
+        "real JPEG stable cache key preserves sampler identity");
 
     const standard_image_texture_pipeline_snapshot standard_snapshot = pipeline.standard_diagnostic_snapshot();
     require(standard_snapshot.decoder.support_check_count == 1, "real JPEG standard decoder records support check");
@@ -550,6 +593,9 @@ void test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff()
     require(
         snapshot.upload_snapshot.request_snapshots[0].staging_byte_count == 4,
         "real JPEG upload snapshot records staging bytes");
+    require(
+        snapshot.upload_snapshot.request_snapshots[0].key.sampler == sampler,
+        "real JPEG upload request snapshot preserves sampler policy");
     const render_image_decoded_payload_evidence& upload_payload =
         snapshot.upload_snapshot.request_snapshots[0].decoded_payload;
     require(upload_payload.payload_valid, "real JPEG upload snapshot records valid decoded payload evidence");
@@ -576,8 +622,22 @@ void test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff()
     require(snapshot.entries[0].upload_count_after == 1, "real JPEG snapshot records upload count after");
     require(!snapshot.cache_snapshot.entries.empty(), "real JPEG cache snapshot exposes cache entry");
 
-    const render_image_upload_readiness_snapshot& readiness =
-        snapshot.cache_snapshot.entries[0].upload_readiness;
+    const fake_image_texture_cache_entry_snapshot* cache_entry =
+        find_cache_entry_by_source_key(snapshot.cache_snapshot, "textures/real-stb.jpg");
+    require(cache_entry != nullptr, "real JPEG cache snapshot records source-keyed resident entry");
+    require(cache_entry->key.sampler == sampler, "real JPEG cache entry preserves sampler policy");
+    require(cache_entry->upload_generation_id == 1, "real JPEG cache entry records upload generation");
+    require(cache_entry->access_count == 1, "real JPEG cache entry records first frame access");
+    require(!cache_entry->placeholder_texture, "real JPEG cache entry is not placeholder-backed");
+    require(
+        cache_entry->upload_readiness.key_diagnostic.stable_cache_key == stable_cache_key,
+        "real JPEG cache entry preserves stable cache identity");
+    require(
+        cache_entry->upload_readiness.sampler_policy.stable_key_fragment
+            == render_image_sampler_policy_stable_fragment(sampler),
+        "real JPEG cache entry preserves stable sampler identity");
+
+    const render_image_upload_readiness_snapshot& readiness = cache_entry->upload_readiness;
     require(readiness.upload_ready, "real JPEG cache entry is upload-ready");
     require(readiness.decode_metadata_matches_image, "real JPEG cache entry validates decode handoff metadata");
     require(readiness.decoded_byte_count == 4, "real JPEG readiness records decoded bytes");
@@ -595,6 +655,125 @@ void test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff()
     require(
         readiness.decode_handoff_diagnostic == "decode handoff metadata matches decoded image",
         "real JPEG readiness records matching handoff diagnostic");
+
+    const render_image_texture_pipeline_result repeated = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{
+            .uri = "  ./textures\\real-stb.jpg  ",
+            .sampler = sampler,
+        });
+    const standard_image_texture_pipeline_snapshot repeated_snapshot =
+        pipeline.standard_diagnostic_snapshot();
+
+    require(repeated.ok(), "repeat real JPEG pipeline acquire succeeds");
+    require(repeated.resolve.source.cache_key() == result.resolve.source.cache_key(), "repeat real JPEG acquire normalizes source identity");
+    require(repeated.texture.cache_hit, "repeat real JPEG acquire reuses cache residency");
+    require(repeated.texture.key == result.texture.key, "repeat real JPEG acquire preserves texture cache key");
+    require(repeated.texture.texture.id == result.texture.texture.id, "repeat real JPEG acquire reuses texture id");
+    require(repeated.texture.decode_metadata.decoder_id == "stb_image_decoder", "repeat real JPEG acquire preserves decoder metadata");
+    require(repeated_snapshot.pipeline.acquire_count == 2, "repeat real JPEG snapshot records both acquires");
+    require(repeated_snapshot.pipeline.ready_count == 2, "repeat real JPEG snapshot records both requests ready");
+    require(repeated_snapshot.pipeline.cache_hit_count == 1, "repeat real JPEG snapshot counts cache hit");
+    require(repeated_snapshot.pipeline.upload_snapshot.upload_count == 1, "repeat real JPEG snapshot does not upload again");
+    require(repeated_snapshot.decoder.support_check_count == 1, "repeat real JPEG snapshot does not check decoder support again");
+    require(repeated_snapshot.decoder.decode_attempt_count == 1, "repeat real JPEG snapshot does not decode again");
+    require(repeated_snapshot.pipeline.cache_snapshot.texture_count == 1, "repeat real JPEG snapshot keeps one resident texture");
+    require(
+        repeated_snapshot.pipeline.cache_snapshot.resident_access_count == 2,
+        "repeat real JPEG snapshot records two resident accesses");
+    require(repeated_snapshot.pipeline.entries.size() == 2, "repeat real JPEG snapshot records both entries");
+    require(!repeated_snapshot.pipeline.entries[0].cache_reused, "first real JPEG entry records cache miss");
+    require(repeated_snapshot.pipeline.entries[1].cache_reused, "second real JPEG entry records cache reuse");
+    require(
+        repeated_snapshot.pipeline.entries[1].upload_count_before
+            == repeated_snapshot.pipeline.entries[1].upload_count_after,
+        "repeat real JPEG entry records unchanged upload count");
+
+    const fake_image_texture_cache_entry_snapshot* repeated_cache_entry =
+        find_cache_entry_by_source_key(repeated_snapshot.pipeline.cache_snapshot, "textures/real-stb.jpg");
+    require(repeated_cache_entry != nullptr, "repeat real JPEG cache snapshot keeps resident entry");
+    require(repeated_cache_entry->access_count == 2, "repeat real JPEG cache entry records reuse access count");
+    require(
+        repeated_cache_entry->upload_generation_id == cache_entry->upload_generation_id,
+        "repeat real JPEG cache entry reuses upload generation");
+    require(
+        repeated_cache_entry->upload_readiness.decoded_payload.stable_byte_hash
+            == readiness.decoded_payload.stable_byte_hash,
+        "repeat real JPEG cache entry preserves decoded payload identity");
+}
+
+void test_filesystem_standard_jpeg_decode_failure_uses_placeholder_without_original_residency()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path root = test_data_root();
+    reset_test_data_root(root);
+    write_bytes(root / "textures" / "bad-real-stb.jpg", make_jpeg_signature_bytes());
+
+    const normalizing_image_resolver resolver;
+    filesystem_image_source_bytes_loader loader(root);
+    standard_image_texture_pipeline pipeline(resolver, loader);
+    pipeline.set_placeholder_texture_policy(fake_image_texture_placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    });
+
+    render_image_sampler_policy sampler;
+    sampler.min_filter = render_image_filter::nearest;
+    sampler.wrap_u = render_image_wrap_mode::repeat;
+
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{
+            .uri = "textures/bad-real-stb.jpg",
+            .sampler = sampler,
+        });
+    const standard_image_texture_pipeline_snapshot snapshot = pipeline.standard_diagnostic_snapshot();
+
+    require(result.resolve.ok(), "bad real JPEG placeholder path resolves local source");
+    require(result.source_bytes.ok(), "bad real JPEG placeholder path loads source bytes");
+    require(result.texture.external_decoder_selection.diagnostics_available, "bad real JPEG placeholder path records decoder selection");
+    require(
+        result.texture.external_decoder_selection.detected_format == render_image_encoded_format::jpeg,
+        "bad real JPEG placeholder path records detected JPEG format");
+    require(result.ok(), "bad real JPEG placeholder path produces placeholder texture");
+    require(result.status == render_image_texture_pipeline_status::ready, "bad real JPEG placeholder result is pipeline-ready");
+    require(is_fake_image_texture_placeholder_key(result.texture.key), "bad real JPEG placeholder path returns placeholder key");
+    require(!result.texture.cache_hit, "bad real JPEG placeholder path uploads placeholder once");
+    require(
+        result.texture.decode_metadata.decoder_id == "fake_image_texture_placeholder_policy",
+        "bad real JPEG placeholder path records placeholder decoder metadata");
+    require(snapshot.decoder.decode_attempt_count == 1, "bad real JPEG placeholder path attempts standard decode");
+    require(snapshot.decoder.failed_decode_count == 1, "bad real JPEG placeholder path records failed decode");
+    require(snapshot.pipeline.ready_count == 1, "bad real JPEG placeholder path remains ready through fallback");
+    require(snapshot.pipeline.failure_count == 0, "bad real JPEG placeholder path records no pipeline failure");
+    require(snapshot.pipeline.upload_snapshot.upload_count == 1, "bad real JPEG placeholder path uploads placeholder");
+    require(
+        is_fake_image_texture_placeholder_key(snapshot.pipeline.upload_snapshot.request_snapshots[0].key),
+        "bad real JPEG placeholder path records placeholder upload request");
+    require(snapshot.pipeline.cache_snapshot.texture_count == 1, "bad real JPEG placeholder path caches placeholder texture");
+    require(
+        snapshot.pipeline.cache_snapshot.placeholder_policy_texture_count == 1,
+        "bad real JPEG placeholder path records placeholder cache entry");
+    require(
+        find_cache_entry_by_source_key(snapshot.pipeline.cache_snapshot, "textures/bad-real-stb.jpg")
+            == nullptr,
+        "bad real JPEG placeholder path does not mark failed source resident");
+
+    const fake_image_texture_cache_entry_snapshot* placeholder_entry =
+        find_placeholder_cache_entry_by_requested_source_key(
+            snapshot.pipeline.cache_snapshot,
+            "textures/bad-real-stb.jpg");
+    require(placeholder_entry != nullptr, "bad real JPEG placeholder path tracks requested source");
+    require(placeholder_entry->key == result.texture.key, "bad real JPEG placeholder cache entry matches result key");
+    require(placeholder_entry->requested_key.source_key == "textures/bad-real-stb.jpg", "bad real JPEG placeholder remembers requested source key");
+    require(placeholder_entry->requested_key.sampler == sampler, "bad real JPEG placeholder remembers requested sampler");
+    require(placeholder_entry->decoded_byte_count == 16, "bad real JPEG placeholder records deterministic RGBA bytes");
+    require(
+        placeholder_entry->placeholder_reason == fake_image_texture_placeholder_reason::decode_failed,
+        "bad real JPEG placeholder records decode failure reason");
+    require(
+        placeholder_entry->placeholder_diagnostic.find("using deterministic placeholder texture for decode_failed") == 0,
+        "bad real JPEG placeholder diagnostic is deterministic");
 }
 
 void test_filesystem_pipeline_reports_missing_file_source_load_failed()
@@ -4183,6 +4362,7 @@ int main()
 {
     test_filesystem_pipeline_reads_ppm_fixture_and_reuses_cache();
     test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff();
+    test_filesystem_standard_jpeg_decode_failure_uses_placeholder_without_original_residency();
     test_filesystem_pipeline_reports_missing_file_source_load_failed();
     test_filesystem_pipeline_reports_empty_file_source_load_failed();
     test_filesystem_pipeline_reports_malformed_ppm_decode_failed();

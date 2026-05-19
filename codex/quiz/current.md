@@ -19,43 +19,49 @@ details belong in git history.
 
 ## Integrated Baseline
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `31ba743`.
+- Main branch `codex/quiz-vulkan-remake-baseline` is at `d65cca5`.
 - Integrated since the previous remote baseline:
-  - app/runtime image texture cache reuse verification and missing image-engine
-    link wiring;
-  - asset manifest to typed materialized bytes to render payload bridge coverage;
-  - standard image decode to texture cache/upload residency coverage;
-  - text atlas residency blocker diagnostics;
-  - native Vulkan draw packet resource execution evidence.
+  - app image payload extraction now works for the standard image pipeline, not
+    only the fake pipeline;
+  - asset render resource materialized byte cache summaries preserve stable
+    identities for renderer-facing payloads;
+  - standard image decode/upload cache behavior is covered through repeated URI
+    reuse and malformed image placeholder paths;
+  - input/IME fixture coverage now includes IME preedit commit/cancel, Hangul
+    backspace, wheel routing, and pointer capture arbitration;
+  - Vulkan command packet execution records native vertex buffer bind evidence;
+  - FreeType-backed text atlas raster payloads now expose cache-hit reuse
+    evidence behind the text engine contract.
 - Full Windows MinGW CTest passed 108/108 in
   `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
 
 ## Active Bottlenecks
 
-- Vulkan: native draw resource execution is tracked; keep moving toward real
-  buffer/descriptor allocation and swapchain/pipeline execution while preserving
+- Vulkan: native vertex buffer bind evidence is tracked; keep moving toward
+  descriptor/buffer allocation and command packet execution while preserving
   renderer-only inputs.
-- Text: atlas residency blockers are tracked; keep replacing fake handoff
-  coverage with font/shaping/atlas evidence behind the text engine contract.
-- Image: standard decode cache/upload residency is covered; keep expanding real
-  texture upload/cache behavior without letting renderer or scene code decode
-  files directly.
-- Asset: manifest/render resources can bridge to materialized bytes; keep asset
-  payloads resolved through stable cache identities, not ad hoc file paths.
+- Text: FreeType atlas payload reuse is tracked; keep replacing fake handoff
+  behavior with font/shaping/atlas evidence behind the text engine contract.
+- Image: standard decode cache/upload residency is covered; expose a stable
+  image-owned upload snapshot/diagnostic contract so app wiring does not need
+  concrete fake/standard pipeline casts.
+- Asset: render resources can bridge to materialized bytes with stable cache
+  identities; keep cache invalidation based on content/revision, not absolute
+  file paths.
 - Input/IME: gesture route diagnostics are integrated; only resume when a
   user-visible input route or IME contract becomes the active blocker.
 
 ## Active Workers
 
 - `codex-vulkan-native-command-packet-executor-20260516`: latest commit
-  `378ad84` integrated as `31ba743`; session remains alive.
-- `codex-text-freetype-prototype-20260514`: latest commit `1819a70`
-  integrated as `d64924e`; session remains alive.
-- `codex-asset-unified-cache-key-20260514`: latest commit `311b00f`
-  integrated as `3f461ca`; session remains alive.
-- `codex-image-texture-next-20260514`: latest commit `8731734`
-  integrated as `2a22d99`; session remains alive.
-- `codex-input-ime`: latest commit `5e87138` integrated as `ce94ecd`;
+  `5855938` integrated as `88c721c`; session remains alive.
+- `codex-text-freetype-prototype-20260514`: latest commit `417bcd3`
+  integrated as `d65cca5`; session remains alive.
+- `codex-asset-unified-cache-key-20260514`: latest commit `06a9859`
+  integrated as `e499fe3`; session remains alive.
+- `codex-image-texture-next-20260514`: latest commit `117bc0c`
+  integrated as `34f80b8`; session remains alive.
+- `codex-input-ime`: latest commit `3eb456d` integrated as `47884d0`;
   session remains alive.
 - Idle sessions are intentionally kept alive. Give them fresh baseline branches
   before new work; do not re-merge historical ahead commits.

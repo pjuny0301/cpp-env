@@ -129,21 +129,13 @@ std::optional<render::render_image_texture_upload_result_snapshot> upload_result
     const render::image_texture_pipeline_interface& image_texture_pipeline,
     const render::render_image_texture_frame_snapshot& frame)
 {
-    const auto* fake_pipeline = dynamic_cast<const render::fake_image_texture_pipeline*>(&image_texture_pipeline);
-    if (fake_pipeline != nullptr) {
-        const render::render_image_texture_upload_result_snapshot upload_result =
+    const render::render_image_texture_pipeline_upload_cache_snapshot diagnostics =
+        render::render_image_texture_pipeline_upload_cache_diagnostic_snapshot(image_texture_pipeline);
+    if (diagnostics.upload_diagnostics_available) {
+        return filter_upload_result_snapshot_to_frame(
             render::make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
-                fake_pipeline->diagnostic_snapshot().upload_snapshot);
-        return filter_upload_result_snapshot_to_frame(upload_result, frame);
-    }
-
-    const auto* standard_pipeline =
-        dynamic_cast<const render::standard_image_texture_pipeline*>(&image_texture_pipeline);
-    if (standard_pipeline != nullptr) {
-        const render::render_image_texture_upload_result_snapshot upload_result =
-            render::make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
-                standard_pipeline->diagnostic_snapshot().upload_snapshot);
-        return filter_upload_result_snapshot_to_frame(upload_result, frame);
+                diagnostics.upload_snapshot),
+            frame);
     }
 
     return std::nullopt;

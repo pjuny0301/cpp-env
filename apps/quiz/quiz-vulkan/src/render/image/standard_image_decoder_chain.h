@@ -41,7 +41,7 @@ public:
     {
         if (stb_route_enabled_) {
             const stb_image_decoder_adapter_selection_result stb_selection =
-                select_stb_jpeg_adapter(request);
+                select_stb_standard_format_adapter(request);
             if (stb_selection.ready_for_external_decode) {
                 return true;
             }
@@ -53,9 +53,10 @@ public:
     {
         if (stb_route_enabled_) {
             const stb_image_decoder_adapter_selection_result stb_selection =
-                select_stb_jpeg_adapter(request);
-            if (stb_selection.detected_format == render_image_encoded_format::jpeg) {
-                return decode_jpeg_with_optional_stb_adapter(request, stb_selection);
+                select_stb_standard_format_adapter(request);
+            if (stb_selection.detected_format == render_image_encoded_format::jpeg
+                || stb_selection.detected_format == render_image_encoded_format::png) {
+                return decode_with_optional_stb_adapter(request, stb_selection);
             }
         }
         return chain_.decode(request);
@@ -67,12 +68,13 @@ public:
     }
 
 private:
-    stb_image_decoder_adapter_selection_result select_stb_jpeg_adapter(
+    stb_image_decoder_adapter_selection_result select_stb_standard_format_adapter(
         const render_image_decode_request& request) const
     {
         const render_image_format_detection_summary format_detection =
             detect_render_image_format(request);
-        if (format_detection.detected_format != render_image_encoded_format::jpeg) {
+        if (format_detection.detected_format != render_image_encoded_format::jpeg
+            && format_detection.detected_format != render_image_encoded_format::png) {
             return stb_image_decoder_adapter_selection_result{
                 .format_detection = format_detection,
                 .detected_format = format_detection.detected_format,
@@ -84,7 +86,7 @@ private:
         return select_stb_image_decoder_adapter(request, stb_probe_);
     }
 
-    render_image_decode_result decode_jpeg_with_optional_stb_adapter(
+    render_image_decode_result decode_with_optional_stb_adapter(
         const render_image_decode_request& request,
         const stb_image_decoder_adapter_selection_result& stb_selection) const
     {

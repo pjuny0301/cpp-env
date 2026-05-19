@@ -4,6 +4,7 @@
 #include <cassert>
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -50,6 +51,20 @@ void append_byte(std::vector<std::byte>& bytes, unsigned char value)
     bytes.push_back(std::byte{value});
 }
 
+void append_u16_le(std::vector<std::byte>& bytes, std::uint16_t value)
+{
+    append_byte(bytes, static_cast<unsigned char>(value & 0xffu));
+    append_byte(bytes, static_cast<unsigned char>((value >> 8) & 0xffu));
+}
+
+void append_u32_be(std::vector<std::byte>& bytes, std::uint32_t value)
+{
+    append_byte(bytes, static_cast<unsigned char>((value >> 24) & 0xffu));
+    append_byte(bytes, static_cast<unsigned char>((value >> 16) & 0xffu));
+    append_byte(bytes, static_cast<unsigned char>((value >> 8) & 0xffu));
+    append_byte(bytes, static_cast<unsigned char>(value & 0xffu));
+}
+
 std::vector<std::byte> make_bytes(std::initializer_list<unsigned char> values)
 {
     std::vector<std::byte> bytes;
@@ -57,6 +72,45 @@ std::vector<std::byte> make_bytes(std::initializer_list<unsigned char> values)
     for (const unsigned char value : values) {
         append_byte(bytes, value);
     }
+    return bytes;
+}
+
+std::uint32_t adler32(const std::vector<std::byte>& bytes)
+{
+    constexpr std::uint32_t adler_modulus = 65521u;
+    std::uint32_t a = 1u;
+    std::uint32_t b = 0u;
+    for (std::byte value : bytes) {
+        a = (a + std::to_integer<unsigned char>(value)) % adler_modulus;
+        b = (b + a) % adler_modulus;
+    }
+    return (b << 16) | a;
+}
+
+void append_png_chunk(
+    std::vector<std::byte>& bytes,
+    std::string_view type_code,
+    const std::vector<std::byte>& data)
+{
+    append_u32_be(bytes, static_cast<std::uint32_t>(data.size()));
+    for (char value : type_code) {
+        append_byte(bytes, static_cast<unsigned char>(value));
+    }
+    bytes.insert(bytes.end(), data.begin(), data.end());
+    append_u32_be(bytes, 0);
+}
+
+std::vector<std::byte> make_zlib_stored_stream(const std::vector<std::byte>& payload)
+{
+    std::vector<std::byte> bytes;
+    append_byte(bytes, 0x78);
+    append_byte(bytes, 0x01);
+    append_byte(bytes, 0x01);
+    const std::uint16_t len = static_cast<std::uint16_t>(payload.size());
+    append_u16_le(bytes, len);
+    append_u16_le(bytes, static_cast<std::uint16_t>(len ^ 0xffffu));
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    append_u32_be(bytes, adler32(payload));
     return bytes;
 }
 
@@ -68,6 +122,26 @@ std::vector<std::byte> make_jpeg_signature_bytes()
 std::vector<std::byte> make_png_signature_bytes()
 {
     return make_bytes({0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a});
+}
+
+std::vector<std::byte> make_internal_png_fallback_bytes()
+{
+    std::vector<std::byte> bytes;
+    const std::vector<std::byte> signature = make_png_signature_bytes();
+    bytes.insert(bytes.end(), signature.begin(), signature.end());
+    append_png_chunk(
+        bytes,
+        "IHDR",
+        make_bytes({0, 0, 0, 2, 0, 0, 0, 2, 8, 6, 0, 0, 0}));
+    append_png_chunk(
+        bytes,
+        "IDAT",
+        make_zlib_stored_stream(make_bytes({
+            0, 1, 2, 3, 4, 5, 6, 7, 8,
+            0, 9, 10, 11, 12, 13, 14, 15, 16,
+        })));
+    append_png_chunk(bytes, "IEND", std::vector<std::byte>{});
+    return bytes;
 }
 
 std::vector<std::byte> make_valid_png_bytes()
@@ -683,6 +757,63 @@ void test_adapter_failure_falls_back_to_standard_decoder_chain()
     require(manifest.terminal_decoder_id == "ppm_image_decoder", "adapter failure manifest terminal id is fallback PPM");
 }
 
+void test_adapter_failure_falls_back_to_internal_png_without_standard_stb_recursion()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_third_party_image_decoder_backend backend;
+    backend.set_decoder_id("fake_stb_decoder");
+    backend.set_supported_formats({render_image_encoded_format::png});
+    backend.set_result(render_image_decode_result{
+        .status = render_image_decode_status::invalid_data,
+        .image = {},
+        .diagnostic = "fake third-party PNG decode failed",
+        .metadata = {},
+    });
+    const optional_third_party_image_decoder_chain decoder(backend);
+
+    const render_image_decode_result result =
+        decoder.decode(make_decode_request("textures/card.png", make_internal_png_fallback_bytes()));
+
+    require(result.ok(), "optional decoder chain falls back to internal PNG after adapter failure");
+    require(result.metadata.decoder_id == "png_image_decoder", "PNG fallback selects internal PNG decoder");
+    require(
+        result.image.pixels == make_bytes({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}),
+        "PNG fallback preserves internal decoder pixels");
+    require(result.decoder_diagnostics.size() == 4, "PNG fallback records adapter, BMP, PPM, and PNG diagnostics");
+    require(result.decoder_diagnostics[0].decoder_id == "fake_stb_decoder", "PNG fallback records failed adapter first");
+    require(result.decoder_diagnostics[0].decode_attempted, "PNG fallback records adapter decode attempt");
+    require(!result.decoder_diagnostics[0].terminal_candidate, "PNG adapter failure is not terminal");
+    require(result.decoder_diagnostics[1].decoder_id == "bmp_image_decoder", "PNG fallback records BMP after adapter");
+    require(result.decoder_diagnostics[2].decoder_id == "ppm_image_decoder", "PNG fallback records PPM after BMP");
+    require(result.decoder_diagnostics[3].decoder_id == "png_image_decoder", "PNG fallback records internal PNG last");
+    require(result.decoder_diagnostics[3].candidate_index == 3, "PNG fallback reindexes internal PNG after adapter");
+    require(result.decoder_diagnostics[3].terminal_candidate, "PNG fallback terminates on internal PNG");
+
+    const render_image_decoder_capability_manifest manifest =
+        make_render_image_decoder_capability_manifest(
+            make_decode_request("textures/card.png", make_internal_png_fallback_bytes()),
+            result);
+    require(manifest.candidates.size() == 4, "PNG adapter failure manifest records adapter and internal fallback");
+    require(manifest.used_third_party_adapter, "PNG adapter failure manifest records adapter use");
+    require(manifest.fallback_used, "PNG adapter failure manifest records standard fallback");
+    require_candidate(
+        manifest,
+        0,
+        render_image_decoder_capability_candidate_kind::third_party_adapter,
+        render_image_decoder_capability_candidate_status::decode_failed,
+        "fake_stb_decoder",
+        false);
+    require_candidate(
+        manifest,
+        3,
+        render_image_decoder_capability_candidate_kind::png,
+        render_image_decoder_capability_candidate_status::decoded,
+        "png_image_decoder",
+        true);
+    require(manifest.terminal_decoder_id == "png_image_decoder", "PNG adapter failure manifest terminal id is internal PNG");
+}
+
 void test_unsupported_adapter_falls_back_to_standard_decoder_chain()
 {
     using namespace quiz_vulkan::render;
@@ -958,6 +1089,7 @@ int main()
     test_stb_dependency_selection_respects_supported_format_matrix();
     test_optional_chain_decodes_with_adapter_before_standard_candidates();
     test_adapter_failure_falls_back_to_standard_decoder_chain();
+    test_adapter_failure_falls_back_to_internal_png_without_standard_stb_recursion();
     test_unsupported_adapter_falls_back_to_standard_decoder_chain();
     test_unavailable_adapter_preserves_standard_unsupported_failure();
     test_adapter_unsupported_format_is_placeholder_safe();

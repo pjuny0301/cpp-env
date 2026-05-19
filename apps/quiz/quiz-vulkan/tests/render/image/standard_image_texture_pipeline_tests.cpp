@@ -753,6 +753,119 @@ void test_standard_pipeline_threads_decoded_bytes_into_draw_payloads()
     require(placeholder.staging_payload_byte_count == 16, "standard placeholder draw payload records placeholder staging bytes");
 }
 
+void test_standard_pipeline_threads_png_decoded_bytes_into_draw_payloads()
+{
+    using namespace quiz_vulkan::render;
+
+    normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    set_source_bytes(
+        loader,
+        "textures/card.png",
+        make_png_bytes(make_zlib_stored_stream(make_filter_none_scanlines())));
+    standard_image_texture_pipeline pipeline(resolver, loader);
+
+    render_image_sampler_policy nearest_sampler;
+    nearest_sampler.min_filter = render_image_filter::nearest;
+    nearest_sampler.mag_filter = render_image_filter::nearest;
+
+    render_draw_list draw_list;
+    draw_list.commands = {
+        render_draw_command{
+            .type = render_draw_command_type::image,
+            .node_id = "png-card-image",
+            .parent_node_id = "card",
+            .bounds = render_rect{.x = 2.0f, .y = 3.0f, .width = 12.0f, .height = 12.0f},
+            .content_bounds = render_rect{.x = 3.0f, .y = 4.0f, .width = 10.0f, .height = 9.0f},
+            .image = render_image_ref{
+                .uri = "textures/card.png",
+                .alt_text = "png card",
+                .aspect_ratio = 1.0f,
+                .sampler = nearest_sampler,
+            },
+        },
+    };
+
+    const render_image_draw_list_frame_handoff_snapshot handoff =
+        make_render_image_draw_list_frame_handoff_snapshot(draw_list, "png-draw-frame");
+    const render_image_texture_batch_plan plan = plan_render_image_texture_batch(handoff, resolver);
+    const render_image_texture_batch_execution_diagnostics execution =
+        execute_render_image_texture_batch_plan(plan, pipeline);
+    const standard_image_texture_pipeline_snapshot standard_snapshot =
+        pipeline.standard_diagnostic_snapshot();
+
+    require(execution.ok(), "standard PNG draw payload batch executes");
+    require(standard_snapshot.pipeline.entries.size() == 1, "standard PNG draw payload records one pipeline entry");
+    require(
+        standard_snapshot.pipeline.entries[0].external_decoder_selection.detected_format
+            == render_image_encoded_format::png,
+        "standard PNG draw payload records PNG selection");
+    if (standard_snapshot.pipeline.entries[0].external_decoder_selection.ready_for_external_decode) {
+        require(
+            standard_snapshot.pipeline.entries[0].decode_metadata.decoder_id == "stb_image_decoder",
+            "standard PNG draw payload uses STB when available");
+        require(
+            standard_snapshot.pipeline.entries[0].external_decoder_selection.used_third_party_adapter,
+            "standard PNG draw payload records adapter route");
+    } else {
+        require(
+            standard_snapshot.pipeline.entries[0].decode_metadata.decoder_id == "png_image_decoder",
+            "standard PNG draw payload falls back to internal PNG decoder");
+        require(
+            standard_snapshot.pipeline.entries[0].external_decoder_selection.fallback_to_standard_decoder_chain,
+            "standard PNG draw payload records standard fallback route");
+    }
+
+    const render_image_texture_frame_snapshot frame =
+        make_render_image_texture_frame_snapshot(plan, execution);
+    const render_image_texture_upload_result_snapshot upload_result =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
+            standard_snapshot.pipeline.upload_snapshot);
+    const render_image_texture_frame_resource_packet_plan resources =
+        make_render_image_texture_frame_resource_packet_plan(frame, upload_result);
+    const render_image_texture_frame_resource_packet_materialization materialization =
+        materialize_render_image_texture_frame_resource_packets(resources);
+    const render_image_texture_frame_resource_packet_consumption_summary consumption =
+        make_render_image_texture_frame_resource_packet_consumption_summary(materialization);
+    const render_image_draw_list_texture_frame_composition composition =
+        make_render_image_draw_list_texture_frame_composition(handoff, plan, frame, resources);
+    const render_image_renderer_texture_quad_packet_summary quad_summary =
+        make_render_image_renderer_texture_quad_packet_summary_with_resource_consumption(
+            make_render_image_renderer_texture_quad_packet_summary(composition),
+            consumption);
+    const render_image_renderer_texture_quad_draw_payload_frame payload_frame =
+        make_render_image_renderer_texture_quad_draw_payload_frame(quad_summary);
+
+    require(materialization.ok(), "standard PNG resource packets materialize");
+    require(consumption.ok(), "standard PNG resource consumption is ready");
+    require(payload_frame.ok(), "standard PNG draw payload frame is ready");
+    require(payload_frame.payload_count == 1, "standard PNG draw payload frame records one payload");
+    require(payload_frame.draw_ready_payload_count == 1, "standard PNG draw payload is draw-ready");
+    require(payload_frame.decoded_resource_ready_payload_count == 1, "standard PNG draw payload counts decoded resource");
+    require(payload_frame.decoded_payload_byte_count == 16, "standard PNG draw payload sums RGBA bytes");
+    require(payload_frame.staging_payload_byte_count == 16, "standard PNG draw payload sums staging bytes");
+    require(payload_frame.decoded_payload_hash_count == 1, "standard PNG draw payload counts decoded hash");
+
+    const render_image_renderer_texture_quad_draw_payload& payload = payload_frame.payloads[0];
+    require(payload.draw_ready, "standard PNG payload is draw-ready");
+    require(payload.draw_command_index == 0, "standard PNG payload preserves command index");
+    require(payload.node_id == "png-card-image", "standard PNG payload preserves node id");
+    require(payload.parent_node_id == "card", "standard PNG payload preserves parent node id");
+    require(payload.bounds.width == 12.0f, "standard PNG payload preserves bounds");
+    require(payload.content_bounds.width == 10.0f, "standard PNG payload preserves content bounds");
+    require(payload.decoded_resource_ready, "standard PNG payload preserves decoded readiness");
+    require(payload.decoded_payload_hash == consumption.entries[0].decoded_payload_hash, "standard PNG payload preserves decoded hash");
+    require(payload.decoded_byte_count == 16, "standard PNG payload records decoded RGBA bytes");
+    require(payload.upload_layout_byte_count == 16, "standard PNG payload records upload layout bytes");
+    require(payload.staging_payload_byte_count == 16, "standard PNG payload records staging bytes");
+    require(
+        payload.stable_texture_cache_key.find("textures/card.png") != std::string::npos,
+        "standard PNG payload preserves cache key");
+    require(
+        payload.sampler_key == render_image_sampler_policy_stable_fragment(nearest_sampler),
+        "standard PNG payload preserves sampler identity");
+}
+
 void test_standard_pipeline_threads_stb_jpeg_decoded_bytes_into_draw_payloads()
 {
     using namespace quiz_vulkan::render;
@@ -1094,6 +1207,7 @@ int main()
     test_standard_pipeline_decodes_and_uploads_distinct_cache_revision_after_invalidation();
     test_standard_pipeline_materializes_decoded_bytes_for_resource_consumption();
     test_standard_pipeline_threads_decoded_bytes_into_draw_payloads();
+    test_standard_pipeline_threads_png_decoded_bytes_into_draw_payloads();
     test_standard_pipeline_threads_stb_jpeg_decoded_bytes_into_draw_payloads();
     test_standard_pipeline_draw_payload_fallback_preserves_decode_blocker();
     test_standard_pipeline_materialization_reports_source_and_decode_blockers();

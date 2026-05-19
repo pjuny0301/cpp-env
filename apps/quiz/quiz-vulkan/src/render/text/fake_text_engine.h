@@ -215,6 +215,7 @@ struct fake_text_engine_shaping_atlas_handoff_policy_snapshot {
     std::size_t upload_ready_cluster_count = 0;
     std::size_t clean_reuse_cluster_count = 0;
     std::size_t raster_payload_blocked_cluster_count = 0;
+    std::size_t missing_atlas_slot_cluster_count = 0;
     std::size_t missing_cache_key_cluster_count = 0;
     std::size_t fallback_reason_cluster_count = 0;
     std::size_t unique_cache_key_count = 0;

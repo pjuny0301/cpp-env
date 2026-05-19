@@ -77,6 +77,9 @@ std::string line_run_atlas_upload_blocker_reason_for(
     if (!materialization->payload_upload_ready) {
         return "line/run cluster raster payload is not upload-ready";
     }
+    if (!materialization->has_atlas_placement) {
+        return "line/run cluster has no resident atlas slot";
+    }
     if (!materialization->has_atlas_update && !materialization->clean_reuse) {
         return "line/run cluster has no atlas update";
     }

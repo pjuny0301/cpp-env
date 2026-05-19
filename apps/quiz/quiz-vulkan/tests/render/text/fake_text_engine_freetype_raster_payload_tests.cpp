@@ -158,6 +158,25 @@ quiz_vulkan::render::render_text_request multiline_korean_request()
     };
 }
 
+quiz_vulkan::render::render_text_request hangul_residency_request(std::string text)
+{
+    return quiz_vulkan::render::render_text_request{
+        .text_runs = {
+            quiz_vulkan::render::render_text_run{
+                .text = std::move(text),
+                .style_token = "payload-korean",
+            },
+        },
+        .bounds = quiz_vulkan::render::render_rect{0.0f, 0.0f, 320.0f, 0.0f},
+        .style_catalog = multiline_korean_style_catalog(),
+        .options = quiz_vulkan::render::render_text_options{
+            .wrap = quiz_vulkan::render::render_text_wrap_mode::no_wrap,
+            .alignment = quiz_vulkan::render::render_text_alignment::start,
+            .max_lines = 0,
+        },
+    };
+}
+
 std::vector<std::string> upload_request_ids_for_diagnostics(
     const quiz_vulkan::render::fake_text_engine_diagnostics& diagnostics)
 {
@@ -673,6 +692,194 @@ void test_multiline_korean_text_reaches_frame_handoff_with_partial_upload_blocke
         "partial summary counts missing upload consumption blockers");
 }
 
+void test_repeated_hangul_text_reuses_atlas_residency_and_uploads_new_glyph()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path korean_font_path = korean_multiline_font_fixture();
+    if (korean_font_path.empty() || !render_text_freetype_memory_face_adapter_available()) {
+        return;
+    }
+
+    fake_text_engine engine;
+    select_real_text_stack(engine);
+    engine.add_font_face(font_face_descriptor{
+        .id = 814,
+        .family = "Payload Korean Varc",
+        .source_uri = korean_font_path.generic_string(),
+        .version = "external-fixture",
+        .license = "harfbuzz-test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = U'\uAC00', .last = U'\uAC01'},
+        },
+        .weight = 400,
+    });
+
+    const render_text_layout first_layout = engine.layout_text(hangul_residency_request("가"));
+    const fake_text_engine_diagnostics first = engine.last_diagnostics();
+    require(first_layout.glyphs.size() == 1U, "first Hangul frame lays out one glyph");
+    require(first.has_font_source_resolutions(), "first Hangul frame records font source identity");
+    require(first.has_font_source_bytes(), "first Hangul frame records font source byte readiness");
+    require(
+        std::any_of(
+            first.font_source_resolutions.begin(),
+            first.font_source_resolutions.end(),
+            [&](const render_text_font_source_resolution_snapshot& source) {
+                return source.resolved_face_id == 814U
+                    && source.resolved_location == korean_font_path.generic_string();
+            }),
+        "first Hangul frame preserves file-backed font source location");
+    require(
+        first.rasterized_glyph_atlas_payload_policy.materialized_font_bytes_count == 1U,
+        "first Hangul frame materializes font bytes");
+    require(first.glyph_cache_readiness.size() == 1U, "first Hangul frame records one cache readiness item");
+    require(
+        first.glyph_cache_readiness.front().codepoint == static_cast<std::uint32_t>(U'\uAC00'),
+        "first Hangul frame preserves Hangul codepoint identity");
+    require(first.glyph_cache_readiness.front().has_atlas_slot, "first Hangul glyph is resident in an atlas slot");
+    require(first.glyph_atlas_placements.size() == 1U, "first Hangul frame records one atlas placement");
+    require(first.glyph_atlas_placements.front().newly_allocated, "first Hangul glyph allocates a new slot");
+    require(!first.glyph_atlas_placements.front().cache_hit, "first Hangul glyph is not an atlas cache hit");
+    require(first.glyph_atlas_metrics.new_slot_count == 1U, "first Hangul frame counts one new atlas slot");
+    require(first.glyph_atlas_metrics.cache_hit_count == 0U, "first Hangul frame records no atlas cache hit");
+    require(
+        first.shaping_line_run_evidence_policy.cluster_count == 1U,
+        "first Hangul frame records one shaped cluster");
+    require(
+        first.shaping_line_run_evidence.front().cluster_byte_count == 3U,
+        "first Hangul cluster preserves UTF-8 byte width");
+    require(
+        first.glyph_atlas_materialization_policy.upload_ready_count == 1U,
+        "first Hangul glyph queues an atlas upload");
+    require(
+        first.line_run_atlas_upload_policy.upload_ready_cluster_count == 1U,
+        "first Hangul line/run evidence records upload-ready atlas work");
+    require(
+        first.line_run_atlas_upload_policy.clean_reuse_cluster_count == 0U,
+        "first Hangul line/run evidence records no clean reuse");
+    require(
+        first.atlas_upload_request_bridge.policy.unique_upload_request_count == 1U,
+        "first Hangul frame exposes one unique upload request");
+
+    const glyph_atlas_key first_key = first.glyph_atlas_placements.front().key;
+    const render_text_atlas_page_id first_page_id = first.glyph_atlas_placements.front().page.id;
+    const render_rect first_atlas_bounds = first.glyph_atlas_placements.front().atlas_bounds;
+
+    const render_text_layout second_layout = engine.layout_text(hangul_residency_request("가"));
+    const fake_text_engine_diagnostics second = engine.last_diagnostics();
+    require(second_layout.glyphs.size() == 1U, "second Hangul frame lays out the repeated glyph");
+    require(second.glyph_cache_readiness.size() == 1U, "second Hangul frame records one cache readiness item");
+    require(
+        second.glyph_cache_readiness.front().has_atlas_slot,
+        "second Hangul glyph remains resident in an atlas slot");
+    require(second.glyph_atlas_placements.size() == 1U, "second Hangul frame records one atlas placement");
+    require(second.glyph_atlas_placements.front().cache_hit, "second Hangul glyph reuses atlas residency");
+    require(
+        !second.glyph_atlas_placements.front().newly_allocated,
+        "second Hangul glyph does not allocate a new slot");
+    require(second.glyph_atlas_placements.front().key == first_key, "second Hangul glyph preserves atlas key");
+    require(second.glyph_atlas_placements.front().page.id == first_page_id, "second Hangul glyph preserves page id");
+    require(
+        second.glyph_atlas_placements.front().atlas_bounds.x == first_atlas_bounds.x
+            && second.glyph_atlas_placements.front().atlas_bounds.y == first_atlas_bounds.y
+            && second.glyph_atlas_placements.front().atlas_bounds.width == first_atlas_bounds.width
+            && second.glyph_atlas_placements.front().atlas_bounds.height == first_atlas_bounds.height,
+        "second Hangul glyph preserves atlas slot bounds");
+    require(second.glyph_atlas_metrics.cache_hit_count == 1U, "second Hangul frame counts one atlas cache hit");
+    require(second.glyph_atlas_metrics.new_slot_count == 0U, "second Hangul frame allocates no new atlas slots");
+    require(second.glyph_atlas_metrics.dirty_page_count == 0U, "second Hangul frame marks no dirty atlas pages");
+    require(
+        second.glyph_atlas_page_policy.repeated_layout_clean_page_count > 0U,
+        "second Hangul frame records clean atlas page reuse");
+    require(
+        second.glyph_atlas_materialization_policy.clean_reuse_count == 1U,
+        "second Hangul materialization records clean reuse");
+    require(
+        second.glyph_atlas_materializations.front().status
+            == render_text_glyph_atlas_materialization_status::materialized_clean_reuse,
+        "second Hangul materialization reports clean atlas reuse");
+    require(
+        second.line_run_atlas_upload_policy.clean_reuse_cluster_count == 1U,
+        "second Hangul line/run evidence records clean reuse");
+    require(
+        second.line_run_atlas_upload_policy.reused_cluster_count == 1U,
+        "second Hangul line/run evidence records atlas data reuse");
+    require(
+        second.line_run_atlas_upload_policy.upload_ready_cluster_count == 0U,
+        "second Hangul frame queues no new upload request");
+    require(
+        second.atlas_upload_request_bridge.policy.clean_reuse_count == 1U,
+        "second Hangul upload bridge records clean reuse");
+    require(
+        second.atlas_upload_request_bridge.policy.unique_upload_request_count == 0U,
+        "second Hangul upload bridge emits no unique upload request");
+    require(
+        second.shaped_atlas_update_trace_policy.clean_atlas_page_reused_count == 1U,
+        "second Hangul shaped-atlas trace records clean page reuse");
+
+    const render_text_layout third_layout = engine.layout_text(hangul_residency_request("가각"));
+    const fake_text_engine_diagnostics third = engine.last_diagnostics();
+    require(third_layout.glyphs.size() == 2U, "third Hangul frame lays out repeated and new glyphs");
+    require(third.glyph_cache_readiness.size() == 2U, "third Hangul frame records two cache readiness items");
+    require(
+        std::all_of(
+            third.glyph_cache_readiness.begin(),
+            third.glyph_cache_readiness.end(),
+            [](const render_text_glyph_cache_readiness_snapshot& readiness) {
+                return readiness.has_atlas_slot;
+            }),
+        "third Hangul frame keeps both shaped glyphs resident in atlas slots");
+    require(
+        std::any_of(
+            third.glyph_cache_readiness.begin(),
+            third.glyph_cache_readiness.end(),
+            [](const render_text_glyph_cache_readiness_snapshot& readiness) {
+                return readiness.codepoint == static_cast<std::uint32_t>(U'\uAC01');
+            }),
+        "third Hangul frame records the new Hangul codepoint");
+    require(third.glyph_atlas_placements.size() == 2U, "third Hangul frame records two atlas placements");
+    const std::size_t third_cache_hits = static_cast<std::size_t>(std::count_if(
+        third.glyph_atlas_placements.begin(),
+        third.glyph_atlas_placements.end(),
+        [](const render_text_glyph_atlas_placement_snapshot& placement) {
+            return placement.cache_hit;
+        }));
+    const std::size_t third_new_slots = static_cast<std::size_t>(std::count_if(
+        third.glyph_atlas_placements.begin(),
+        third.glyph_atlas_placements.end(),
+        [](const render_text_glyph_atlas_placement_snapshot& placement) {
+            return placement.newly_allocated;
+        }));
+    require(third_cache_hits == 1U, "third Hangul frame reuses one existing atlas slot");
+    require(third_new_slots == 1U, "third Hangul frame allocates one new atlas slot");
+    require(third.glyph_atlas_metrics.cache_hit_count == 1U, "third Hangul metrics count one cache hit");
+    require(third.glyph_atlas_metrics.new_slot_count == 1U, "third Hangul metrics count one new slot");
+    require(
+        third.glyph_atlas_materialization_policy.clean_reuse_count == 1U,
+        "third Hangul materialization records one reused glyph");
+    require(
+        third.glyph_atlas_materialization_policy.upload_ready_count == 1U,
+        "third Hangul materialization records one newly upload-ready glyph");
+    require(
+        third.line_run_atlas_upload_policy.clean_reuse_cluster_count == 1U,
+        "third Hangul line/run evidence records one clean reuse");
+    require(
+        third.line_run_atlas_upload_policy.upload_ready_cluster_count == 1U,
+        "third Hangul line/run evidence records one new upload");
+    require(
+        third.atlas_upload_request_bridge.policy.clean_reuse_count == 1U,
+        "third Hangul upload bridge records reused atlas residency");
+    require(
+        third.atlas_upload_request_bridge.policy.unique_upload_request_count == 1U,
+        "third Hangul upload bridge emits one new upload request");
+    require(
+        third.shaped_atlas_update_trace_policy.shaped_glyph_missing_atlas_slot_count == 0U,
+        "third Hangul shaped glyphs all have resident atlas slots");
+    require(
+        third.shaping_atlas_handoff_policy.missing_atlas_slot_cluster_count == 0U,
+        "third Hangul shaping atlas handoff records no missing atlas slot blockers");
+}
+
 void test_missing_file_backed_freetype_payload_falls_back_and_skips()
 {
     using namespace quiz_vulkan::render;
@@ -795,6 +1002,7 @@ int main()
 {
     test_file_backed_freetype_selection_rasterizes_real_payload();
     test_multiline_korean_text_reaches_frame_handoff_with_partial_upload_blocker();
+    test_repeated_hangul_text_reuses_atlas_residency_and_uploads_new_glyph();
     test_missing_file_backed_freetype_payload_falls_back_and_skips();
     return 0;
 }

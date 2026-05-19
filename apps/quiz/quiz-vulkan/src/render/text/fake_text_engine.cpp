@@ -2617,7 +2617,6 @@ std::uint32_t combined_shaped_glyph_id_for_cluster(const std::vector<std::uint32
 bool readiness_has_cache_key(const render_text_glyph_cache_readiness_snapshot& readiness)
 {
     return readiness.cacheable
-        && readiness.has_atlas_slot
         && readiness.cache_key.face_id != 0U
         && readiness.cache_key.glyph_id != 0U
         && readiness.cache_key.pixel_size != 0U;
@@ -2806,6 +2805,10 @@ void record_shaping_atlas_handoff_diagnostics(fake_text_engine_diagnostics& diag
         if (snapshot.atlas_update_trace_status
             == render_text_shaped_atlas_update_trace_status::rasterized_payload_skipped) {
             ++diagnostics.shaping_atlas_handoff_policy.raster_payload_blocked_cluster_count;
+        }
+        if (snapshot.atlas_update_trace_status
+            == render_text_shaped_atlas_update_trace_status::shaped_glyph_missing_atlas_slot) {
+            ++diagnostics.shaping_atlas_handoff_policy.missing_atlas_slot_cluster_count;
         }
         if (snapshot.atlas_update_trace_status
             == render_text_shaped_atlas_update_trace_status::shaped_glyph_without_cache_key) {
@@ -3047,8 +3050,12 @@ void record_glyph_atlas_materialization_diagnostics(
             find_rasterized_payload_for_cluster(diagnostics.rasterized_glyph_atlas_payloads, readiness.cluster_index);
         const render_text_glyph_atlas_placement_snapshot* placement =
             find_atlas_placement_for_cluster(diagnostics.glyph_atlas_placements, readiness.cluster_index);
+        const bool placement_reuses_resident_slot =
+            placement != nullptr && placement->cache_hit && !placement->newly_allocated;
         const render_text_atlas_update* update =
-            placement == nullptr ? nullptr : find_dirty_update_for_page(dirty_updates, placement->page.id);
+            placement == nullptr || placement_reuses_resident_slot
+            ? nullptr
+            : find_dirty_update_for_page(dirty_updates, placement->page.id);
         const laid_out_glyph_cluster* cluster =
             readiness.cluster_index < clusters.size() ? &clusters[readiness.cluster_index] : nullptr;
 
@@ -3127,8 +3134,12 @@ void record_shaped_atlas_update_trace_diagnostics(
             find_rasterized_payload_for_cluster(diagnostics.rasterized_glyph_atlas_payloads, readiness.cluster_index);
         const render_text_glyph_atlas_placement_snapshot* placement =
             find_atlas_placement_for_cluster(diagnostics.glyph_atlas_placements, readiness.cluster_index);
+        const bool placement_reuses_resident_slot =
+            placement != nullptr && placement->cache_hit && !placement->newly_allocated;
         const render_text_atlas_update* update =
-            placement == nullptr ? nullptr : find_dirty_update_for_page(dirty_updates, placement->page.id);
+            placement == nullptr || placement_reuses_resident_slot
+            ? nullptr
+            : find_dirty_update_for_page(dirty_updates, placement->page.id);
         std::vector<std::uint32_t> shaped_glyph_ids = shaped_glyph_ids_for_cluster(diagnostics.shaped_glyphs, readiness);
         const std::uint32_t combined_shaped_glyph_id = combined_shaped_glyph_id_for_cluster(shaped_glyph_ids);
 

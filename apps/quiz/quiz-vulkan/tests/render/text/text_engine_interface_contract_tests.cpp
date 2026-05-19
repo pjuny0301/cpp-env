@@ -3104,6 +3104,9 @@ static_assert(requires(
     render::render_text_renderer_glyph_quad_packet_diff_policy glyph_quad_diff_policy,
     render::render_text_renderer_glyph_quad_packet_diff_record glyph_quad_packet_diff,
     render::render_text_renderer_glyph_quad_packet_diff_snapshot glyph_quad_diff,
+    render::render_text_render_frame_handoff_summary_policy render_frame_handoff_policy,
+    render::render_text_render_frame_handoff_summary_request render_frame_handoff_request,
+    render::render_text_render_frame_handoff_summary_snapshot render_frame_handoff_summary,
     render::render_text_frame_resource_packet_consumption_diff_policy resource_consumption_policy,
     render::render_text_frame_resource_packet_consumption_packet_diff resource_consumption_packet_diff,
     render::render_text_frame_resource_packet_consumption_page_diff resource_consumption_page_diff,
@@ -4319,6 +4322,79 @@ static_assert(requires(
         -> std::same_as<void>;
     { render::diff_render_text_renderer_glyph_quad_packet_snapshots(glyph_quad_snapshot, glyph_quad_snapshot) }
         -> std::same_as<render::render_text_renderer_glyph_quad_packet_diff_snapshot>;
+    { render_frame_handoff_policy.draw_packet_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.draw_ready_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.draw_blocked_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.draw_skipped_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.glyph_quad_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.glyph_quad_ready_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.glyph_quad_blocked_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.atlas_page_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.upload_request_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.added_packet_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.removed_packet_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.changed_packet_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.missing_atlas_upload_blocker_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.missing_materialization_blocker_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.missing_glyph_quad_packet_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.non_upload_ready_atlas_payload_blocker_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.skipped_fallback_packet_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.deterministic_fallback_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.real_backend_count } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.total_upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { render_frame_handoff_policy.frame_ready_for_renderer } -> std::same_as<bool&>;
+    { render_frame_handoff_policy.has_blockers } -> std::same_as<bool&>;
+    { render_frame_handoff_policy.used_deterministic_fallback } -> std::same_as<bool&>;
+    { render_frame_handoff_policy.used_real_backend } -> std::same_as<bool&>;
+    { render_frame_handoff_policy.stable_no_change } -> std::same_as<bool&>;
+    { render_frame_handoff_request.frame } -> std::same_as<render::render_text_frame_snapshot&>;
+    { render_frame_handoff_request.draw_plan } -> std::same_as<render::render_text_frame_draw_plan_snapshot&>;
+    { render_frame_handoff_request.glyph_quads }
+        -> std::same_as<render::render_text_renderer_glyph_quad_packet_snapshot&>;
+    { render_frame_handoff_request.draw_packet_diff }
+        -> std::same_as<render::render_text_frame_draw_plan_diff&>;
+    { render_frame_handoff_request.has_draw_packet_diff } -> std::same_as<bool&>;
+    { render_frame_handoff_request.glyph_quad_diff }
+        -> std::same_as<render::render_text_renderer_glyph_quad_packet_diff_snapshot&>;
+    { render_frame_handoff_request.has_glyph_quad_diff } -> std::same_as<bool&>;
+    { render_frame_handoff_summary.frame_id } -> std::same_as<std::string&>;
+    { render_frame_handoff_summary.source_label } -> std::same_as<std::string&>;
+    { render_frame_handoff_summary.frame_status } -> std::same_as<render::render_text_frame_snapshot_status&>;
+    { render_frame_handoff_summary.policy }
+        -> std::same_as<render::render_text_render_frame_handoff_summary_policy&>;
+    { render_frame_handoff_summary.atlas_page_ids } -> std::same_as<std::vector<std::string>&>;
+    { render_frame_handoff_summary.upload_request_ids } -> std::same_as<std::vector<std::string>&>;
+    { render_frame_handoff_summary.ready_draw_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { render_frame_handoff_summary.blocked_draw_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { render_frame_handoff_summary.ready_glyph_quad_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { render_frame_handoff_summary.blocked_glyph_quad_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { render_frame_handoff_summary.added_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { render_frame_handoff_summary.removed_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { render_frame_handoff_summary.changed_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { render_frame_handoff_summary.missing_glyph_quad_draw_packet_ids }
+        -> std::same_as<std::vector<std::string>&>;
+    { render_frame_handoff_summary.blocker_packet_ids } -> std::same_as<std::vector<std::string>&>;
+    { render_frame_handoff_summary.summary } -> std::same_as<std::string&>;
+    { render_frame_handoff_summary.diagnostic } -> std::same_as<std::string&>;
+    { render_frame_handoff_summary.ok() } -> std::same_as<bool>;
+    { render_frame_handoff_summary.has_blockers() } -> std::same_as<bool>;
+    { render::render_text_render_frame_handoff_page_id_for(
+        render::render_text_atlas_page_id{},
+        render::render_text_revision{}) } -> std::same_as<std::string>;
+    { render::find_render_text_renderer_glyph_quad_packet_for_draw_packet(glyph_quad_snapshot, style_key_text) }
+        -> std::same_as<const render::render_text_renderer_glyph_quad_packet_record*>;
+    { render::append_render_text_render_frame_handoff_summary_atlas_page(
+        render_frame_handoff_summary,
+        render::render_text_atlas_page_id{},
+        render::render_text_revision{}) } -> std::same_as<void>;
+    { render::append_render_text_render_frame_handoff_summary_upload_request(
+        render_frame_handoff_summary,
+        style_key_text) } -> std::same_as<void>;
+    { render::append_render_text_render_frame_handoff_summary_blocker(
+        render_frame_handoff_summary,
+        style_key_text) } -> std::same_as<void>;
+    { render::make_render_text_render_frame_handoff_summary(render_frame_handoff_request) }
+        -> std::same_as<render::render_text_render_frame_handoff_summary_snapshot>;
     { resource_consumption_policy.resource_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
     { resource_consumption_policy.ready_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
     { resource_consumption_policy.blocked_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;

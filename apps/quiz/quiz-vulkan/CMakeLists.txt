@@ -355,6 +355,7 @@ target_sources(
             src/render/text/font_unicode_coverage.h
             src/render/text/glyph_run.h
             src/render/text/text_frame_draw_plan.h
+            src/render/text/text_render_frame_handoff_summary.h
             src/render/text/text_frame_snapshot.h
             src/render/text/text_frame_upload_handoff.h
             src/render/text/text_engine.h

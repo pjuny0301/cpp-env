@@ -2424,6 +2424,7 @@ diff_render_text_renderer_glyph_quad_packet_snapshots(
   return diff;
 }
 
+
 namespace detail {
 
 [[nodiscard]] inline std::ptrdiff_t resource_packet_consumption_delta(
@@ -3344,3 +3345,5 @@ diff_render_text_frame_upload_handoffs(
 }
 
 }  // namespace quiz_vulkan::render
+
+#include "render/text/text_render_frame_handoff_summary.h"

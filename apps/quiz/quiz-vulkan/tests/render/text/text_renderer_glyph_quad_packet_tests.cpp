@@ -127,6 +127,139 @@ quiz_vulkan::render::render_text_renderer_glyph_quad_packet_snapshot make_quads(
         });
 }
 
+quiz_vulkan::render::render_text_frame_draw_packet_snapshot draw_packet_for_resource(
+    const quiz_vulkan::render::render_text_frame_resource_packet_materialization_entry& entry)
+{
+    using namespace quiz_vulkan::render;
+
+    return render_text_frame_draw_packet_snapshot{
+        .packet_id = entry.draw_packet_id,
+        .frame_id = entry.frame_id,
+        .source_label = entry.source_label,
+        .atlas_upload_request_id = entry.upload_request_id,
+        .status = entry.draw_status,
+        .item_index = 0,
+        .materialization_index = entry.materialization_index,
+        .run_index = entry.run_index,
+        .cluster_byte_offset = entry.cluster_byte_offset,
+        .cluster_byte_count = entry.cluster_byte_count,
+        .cache_key = entry.cache_key,
+        .resolved_glyph_id = entry.resolved_glyph_id,
+        .resolved_face_id = entry.resolved_face_id,
+        .page_id = entry.page_id,
+        .page_revision = entry.page_revision,
+        .page_width = entry.page_width,
+        .page_height = entry.page_height,
+        .layout_bounds = entry.layout_bounds,
+        .has_layout_bounds = entry.layout_bounds.width > 0.0f && entry.layout_bounds.height > 0.0f,
+        .atlas_bounds = entry.atlas_bounds,
+        .has_atlas_bounds = entry.atlas_bounds.width > 0.0f && entry.atlas_bounds.height > 0.0f,
+        .uv_bounds = entry.uv_bounds,
+        .frame_ready_for_renderer = entry.renderer_boundary_ready,
+        .fallback_incomplete = entry.status
+            == render_text_frame_resource_packet_materialization_status::blocked_draw_packet,
+        .used_deterministic_fallback = entry.used_deterministic_fallback,
+        .used_real_backend = entry.used_real_backend,
+        .glyph_supported = entry.glyph_supported,
+        .stable_cache_key = entry.cache_key.face_id != 0U
+            && entry.cache_key.glyph_id != 0U
+            && entry.cache_key.pixel_size != 0U,
+        .upload_consumed = entry.upload_consumed,
+        .atlas_consumption = entry.atlas_consumption,
+        .diagnostic = entry.diagnostic,
+    };
+}
+
+quiz_vulkan::render::render_text_frame_draw_plan_snapshot draw_plan_for_resources(
+    const std::vector<quiz_vulkan::render::render_text_frame_resource_packet_materialization_entry>& entries,
+    const bool frame_ready = true)
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_frame_draw_plan_snapshot draw_plan{
+        .frame_id = "frame-1",
+        .source_label = "quad-packet-test",
+        .frame_status = frame_ready ? render_text_frame_snapshot_status::ready
+                                    : render_text_frame_snapshot_status::pending_atlas_updates,
+        .frame_ready_for_renderer = frame_ready,
+        .diagnostic = "test draw plan",
+    };
+    for (const render_text_frame_resource_packet_materialization_entry& entry : entries) {
+        append_render_text_frame_draw_packet(
+            draw_plan.packets,
+            draw_plan.policy,
+            draw_packet_for_resource(entry));
+    }
+    return draw_plan;
+}
+
+quiz_vulkan::render::render_text_frame_snapshot frame_for_resources(
+    const std::vector<quiz_vulkan::render::render_text_frame_resource_packet_materialization_entry>& entries,
+    const bool frame_ready = true)
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_frame_snapshot frame{
+        .status = frame_ready ? render_text_frame_snapshot_status::ready
+                              : render_text_frame_snapshot_status::pending_atlas_updates,
+        .frame_id = "frame-1",
+        .source_label = "quad-packet-test",
+        .diagnostic = "test frame",
+    };
+    for (const render_text_frame_resource_packet_materialization_entry& entry : entries) {
+        frame.atlas_uploads.push_back(render_text_frame_atlas_upload_snapshot{
+            .request_id = entry.upload_request_id,
+            .status = render_text_atlas_upload_request_status::upload_ready,
+            .materialization_index = entry.materialization_index,
+            .cache_key = entry.cache_key,
+            .resolved_glyph_id = entry.resolved_glyph_id,
+            .resolved_face_id = entry.resolved_face_id,
+            .page = render_text_atlas_page{
+                .id = entry.page_id,
+                .revision = entry.page_revision,
+                .width = entry.page_width,
+                .height = entry.page_height,
+            },
+            .updated_bounds = entry.update_bounds,
+            .upload_rgba_bytes = entry.upload_rgba_bytes,
+            .has_upload_request = true,
+            .queued = true,
+            .consumed = entry.upload_consumed,
+            .stable_request_id = true,
+        });
+    }
+    frame.policy.upload_request_count = frame.atlas_uploads.size();
+    frame.policy.queued_upload_request_id_count = frame.atlas_uploads.size();
+    frame.policy.consumed_upload_request_id_count = frame_ready ? frame.atlas_uploads.size() : 0U;
+    frame.policy.total_upload_rgba_bytes = 0U;
+    for (const auto& upload : frame.atlas_uploads) {
+        frame.policy.total_upload_rgba_bytes += upload.upload_rgba_bytes;
+        frame.queued_atlas_upload_request_ids.push_back(upload.request_id);
+        if (upload.consumed) {
+            frame.consumed_atlas_upload_request_ids.push_back(upload.request_id);
+        }
+    }
+    return frame;
+}
+
+quiz_vulkan::render::render_text_render_frame_handoff_summary_snapshot summary_for_resources(
+    std::vector<quiz_vulkan::render::render_text_frame_resource_packet_materialization_entry> entries,
+    const bool frame_ready = true)
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_snapshot frame = frame_for_resources(entries, frame_ready);
+    const render_text_frame_draw_plan_snapshot draw_plan = draw_plan_for_resources(entries, frame_ready);
+    const render_text_renderer_glyph_quad_packet_snapshot quads =
+        make_quads(resources_for(std::move(entries), frame_ready));
+    return make_render_text_render_frame_handoff_summary(
+        render_text_render_frame_handoff_summary_request{
+            .frame = frame,
+            .draw_plan = draw_plan,
+            .glyph_quads = quads,
+        });
+}
+
 void test_ready_resource_packets_become_glyph_quads()
 {
     using namespace quiz_vulkan::render;
@@ -262,6 +395,128 @@ void test_duplicate_and_missing_identities_are_diagnosed()
         quads.packets[3].status
             == render_text_renderer_glyph_quad_packet_status::blocked_missing_stable_packet_key,
         "missing stable packet key is explicitly blocked");
+}
+
+void test_render_frame_handoff_summary_preserves_ready_quad_facts()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_resource_packet_materialization_entry entry =
+        ready_resource_packet("resource-ready-summary", U'R', 0);
+    const render_text_render_frame_handoff_summary_snapshot summary =
+        summary_for_resources({entry});
+
+    require(summary.ok(), "ready render frame handoff summary is renderer-ready");
+    require(summary.frame_id == "frame-1", "summary preserves frame id");
+    require(summary.source_label == "quad-packet-test", "summary preserves source label");
+    require(summary.policy.draw_packet_count == 1U, "summary counts draw packets");
+    require(summary.policy.draw_ready_count == 1U, "summary counts ready draw packets");
+    require(summary.policy.draw_blocked_count == 0U, "summary has no blocked draw packets");
+    require(summary.policy.glyph_quad_count == 1U, "summary counts glyph quad packets");
+    require(summary.policy.glyph_quad_ready_count == 1U, "summary counts ready glyph quads");
+    require(summary.policy.atlas_page_count == 1U, "summary preserves atlas page id");
+    require(summary.policy.upload_request_count == 1U, "summary preserves upload request id");
+    require(summary.policy.total_upload_rgba_bytes == 256U, "summary preserves upload byte count");
+    require(summary.policy.used_real_backend, "summary preserves real backend evidence");
+    require(!summary.policy.has_blockers, "ready summary has no blockers");
+    require(summary.ready_draw_packet_ids.size() == 1U, "ready draw packet id is exposed");
+    require(summary.ready_glyph_quad_packet_ids.size() == 1U, "ready glyph quad id is exposed");
+    require(!summary.atlas_page_ids.empty(), "summary exposes atlas page ids");
+    require(!summary.upload_request_ids.empty(), "summary exposes upload request ids");
+}
+
+void test_render_frame_handoff_summary_reports_missing_quad_and_fallback_blockers()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_frame_resource_packet_materialization_entry entry =
+        ready_resource_packet("resource-blocked-summary", U'A', 0);
+    render_text_frame_draw_plan_snapshot draw_plan = draw_plan_for_resources({entry});
+    render_text_frame_snapshot frame = frame_for_resources({entry});
+    render_text_renderer_glyph_quad_packet_snapshot no_quads{
+        .frame_id = frame.frame_id,
+        .source_label = frame.source_label,
+        .frame_ready_for_renderer = true,
+    };
+    render_text_render_frame_handoff_summary_snapshot missing_quad =
+        make_render_text_render_frame_handoff_summary(
+            render_text_render_frame_handoff_summary_request{
+                .frame = frame,
+                .draw_plan = draw_plan,
+                .glyph_quads = no_quads,
+            });
+
+    require(!missing_quad.ok(), "missing glyph quad blocks render frame summary");
+    require(
+        missing_quad.policy.missing_glyph_quad_packet_count == 1U,
+        "summary counts missing glyph quad packet");
+    require(
+        missing_quad.missing_glyph_quad_draw_packet_ids.size() == 1U,
+        "summary exposes draw packet missing a glyph quad");
+
+    draw_plan.packets.front().status = render_text_frame_draw_packet_status::skipped_materialization;
+    draw_plan.packets.front().upload_consumed = false;
+    draw_plan.packets.front().used_deterministic_fallback = true;
+    draw_plan.packets.front().diagnostic = "deterministic fallback payload was not upload-ready";
+    render_text_render_frame_handoff_summary_snapshot skipped =
+        make_render_text_render_frame_handoff_summary(
+            render_text_render_frame_handoff_summary_request{
+                .frame = frame,
+                .draw_plan = draw_plan,
+                .glyph_quads = no_quads,
+            });
+
+    require(!skipped.ok(), "skipped fallback packet blocks render frame summary");
+    require(
+        skipped.policy.missing_atlas_upload_blocker_count == 1U,
+        "summary counts missing atlas upload evidence");
+    require(
+        skipped.policy.missing_materialization_blocker_count == 1U,
+        "summary counts missing materialization blocker");
+    require(
+        skipped.policy.non_upload_ready_atlas_payload_blocker_count == 1U,
+        "summary counts non-upload-ready atlas payload blocker");
+    require(
+        skipped.policy.skipped_fallback_packet_count == 1U,
+        "summary counts skipped deterministic fallback packet");
+    require(skipped.has_blockers(), "blocked summary exposes blocker helper");
+}
+
+void test_render_frame_handoff_summary_carries_diff_packet_ids()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_resource_packet_materialization_entry before_entry =
+        ready_resource_packet("resource-before-summary", U'A', 0);
+    const render_text_frame_resource_packet_materialization_entry after_entry =
+        ready_resource_packet("resource-after-summary", U'R', 1);
+    const render_text_frame_draw_plan_snapshot before_draw =
+        draw_plan_for_resources({before_entry});
+    const render_text_frame_draw_plan_snapshot after_draw =
+        draw_plan_for_resources({after_entry});
+    const render_text_renderer_glyph_quad_packet_snapshot before_quads =
+        make_quads(resources_for({before_entry}));
+    const render_text_renderer_glyph_quad_packet_snapshot after_quads =
+        make_quads(resources_for({after_entry}));
+    const render_text_render_frame_handoff_summary_snapshot summary =
+        make_render_text_render_frame_handoff_summary(
+            render_text_render_frame_handoff_summary_request{
+                .frame = frame_for_resources({after_entry}),
+                .draw_plan = after_draw,
+                .glyph_quads = after_quads,
+                .draw_packet_diff = diff_render_text_frame_draw_plans(before_draw, after_draw),
+                .has_draw_packet_diff = true,
+                .glyph_quad_diff = diff_render_text_renderer_glyph_quad_packet_snapshots(
+                    before_quads,
+                    after_quads),
+                .has_glyph_quad_diff = true,
+            });
+
+    require(summary.policy.added_packet_count >= 1U, "summary carries added packet diff count");
+    require(summary.policy.removed_packet_count >= 1U, "summary carries removed packet diff count");
+    require(!summary.added_packet_ids.empty(), "summary exposes added packet ids");
+    require(!summary.removed_packet_ids.empty(), "summary exposes removed packet ids");
+    require(!summary.policy.stable_no_change, "summary records changed frame handoff");
 }
 
 void test_glyph_quad_diff_reports_stable_no_change()
@@ -428,6 +683,9 @@ int main()
     test_blocked_resource_packet_stays_blocked();
     test_glyph_quad_packet_order_is_deterministic();
     test_duplicate_and_missing_identities_are_diagnosed();
+    test_render_frame_handoff_summary_preserves_ready_quad_facts();
+    test_render_frame_handoff_summary_reports_missing_quad_and_fallback_blockers();
+    test_render_frame_handoff_summary_carries_diff_packet_ids();
     test_glyph_quad_diff_reports_stable_no_change();
     test_glyph_quad_diff_classifies_ready_blocked_transitions();
     test_glyph_quad_diff_counts_layout_uv_page_sampler_and_upload_changes();

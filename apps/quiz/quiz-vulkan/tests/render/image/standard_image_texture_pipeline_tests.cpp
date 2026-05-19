@@ -243,6 +243,31 @@ void set_source_bytes(
     loader.set_source_bytes(std::move(source_key), std::move(bytes));
 }
 
+const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot* find_cache_entry_by_source_key(
+    const quiz_vulkan::render::fake_image_texture_cache_snapshot& snapshot,
+    std::string_view source_key)
+{
+    for (const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot& entry : snapshot.entries) {
+        if (entry.key.source_key == source_key) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot*
+find_placeholder_cache_entry_by_requested_source_key(
+    const quiz_vulkan::render::fake_image_texture_cache_snapshot& snapshot,
+    std::string_view source_key)
+{
+    for (const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot& entry : snapshot.entries) {
+        if (entry.placeholder_texture && entry.requested_key.source_key == source_key) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
 void test_standard_pipeline_uploads_bmp()
 {
     using namespace quiz_vulkan::render;
@@ -515,6 +540,212 @@ void test_standard_pipeline_reuses_cached_decode_and_upload_for_same_normalized_
     require(
         snapshot.pipeline.entries[1].decode_metadata.decoder_id == first.texture.decode_metadata.decoder_id,
         "cache hit preserves decoded metadata");
+}
+
+void test_standard_pipeline_reuses_upload_residency_across_frames_and_fallbacks()
+{
+    using namespace quiz_vulkan::render;
+
+    fake_image_texture_placeholder_policy placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    };
+
+    normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    set_source_bytes(
+        loader,
+        "textures/card.png",
+        make_png_bytes(make_zlib_stored_stream(make_filter_none_scanlines())));
+    set_source_bytes(loader, "textures/bad.ppm", make_short_ppm_bytes());
+    standard_image_texture_pipeline pipeline(resolver, loader);
+    pipeline.set_placeholder_texture_policy(placeholder_policy);
+
+    render_image_sampler_policy linear_sampler;
+    linear_sampler.min_filter = render_image_filter::linear;
+    linear_sampler.mag_filter = render_image_filter::linear;
+
+    const auto make_single_image_plan = [&](std::string uri) {
+        return plan_render_image_texture_batch(
+            std::vector<render_image_ref>{render_image_ref{
+                .uri = std::move(uri),
+                .sampler = linear_sampler,
+            }},
+            resolver,
+            render_image_texture_batch_plan_options{.placeholder_policy = placeholder_policy});
+    };
+
+    const render_image_texture_batch_plan first_plan = make_single_image_plan("textures/card.png");
+    const render_image_texture_batch_execution_diagnostics first_execution =
+        execute_render_image_texture_batch_plan(first_plan, pipeline);
+    const render_image_texture_frame_snapshot first_frame =
+        make_render_image_texture_frame_snapshot(first_plan, first_execution);
+    const standard_image_texture_pipeline_snapshot first_snapshot =
+        pipeline.standard_diagnostic_snapshot();
+    const render_image_texture_upload_result_snapshot first_upload_result =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
+            first_snapshot.pipeline.upload_snapshot);
+    const render_image_texture_frame_resource_packet_materialization first_materialization =
+        materialize_render_image_texture_frame_resource_packets(first_frame, first_upload_result);
+
+    require(first_plan.ok(), "first standard residency frame plans PNG request");
+    require(first_execution.ok(), "first standard residency frame executes PNG request");
+    require(first_materialization.ok(), "first standard residency frame materializes resource packet");
+    require(first_snapshot.pipeline.upload_snapshot.upload_count == 1, "first standard residency frame uploads once");
+    require(first_snapshot.decoder.decode_attempt_count == 1, "first standard residency frame decodes once");
+    require(first_snapshot.decoder.decoded_count == 1, "first standard residency frame records decoded image");
+    require(first_snapshot.pipeline.cache_snapshot.texture_count == 1, "first standard residency frame has one resident texture");
+    require(
+        first_snapshot.pipeline.cache_snapshot.cached_decoded_byte_count == 16,
+        "first standard residency frame tracks decoded RGBA bytes");
+    require(!first_execution.entries[0].cache_hit, "first standard residency frame is a cache miss");
+    require(!first_execution.entries[0].placeholder_texture, "first standard residency frame is not placeholder-backed");
+    require(!first_plan.entries[0].stable_texture_cache_key.empty(), "first standard residency frame has stable texture key");
+
+    const fake_image_texture_cache_entry_snapshot* first_cache_entry =
+        find_cache_entry_by_source_key(first_snapshot.pipeline.cache_snapshot, "textures/card.png");
+    require(first_cache_entry != nullptr, "first standard residency frame creates resident cache entry");
+    require(first_cache_entry->upload_generation_id == 1, "first resident cache entry records upload generation");
+    require(first_cache_entry->decoded_byte_count == 16, "first resident cache entry records decoded bytes");
+    require(first_cache_entry->access_count == 1, "first resident cache entry records one access");
+    require(!first_cache_entry->placeholder_texture, "first resident cache entry is not placeholder");
+    require(
+        first_materialization.entries[0].cache_record.stable_texture_cache_key
+            == first_plan.entries[0].stable_texture_cache_key,
+        "first materialization preserves stable cache key");
+    require(
+        first_materialization.entries[0].cache_record.texture_id == first_execution.entries[0].texture.id,
+        "first materialization preserves uploaded texture id");
+    require(
+        first_materialization.entries[0].upload_record.upload_generation_id
+            == first_cache_entry->upload_generation_id,
+        "first materialization preserves upload generation");
+    require(
+        first_materialization.entries[0].upload_record.uploaded_byte_count == 16,
+        "first materialization preserves uploaded RGBA byte count");
+
+    const render_image_texture_batch_plan second_plan = make_single_image_plan("  ./textures\\card.png  ");
+    const render_image_texture_batch_execution_diagnostics second_execution =
+        execute_render_image_texture_batch_plan(second_plan, pipeline);
+    const render_image_texture_frame_snapshot second_frame =
+        make_render_image_texture_frame_snapshot(second_plan, second_execution);
+    const standard_image_texture_pipeline_snapshot second_snapshot =
+        pipeline.standard_diagnostic_snapshot();
+    const render_image_texture_upload_result_snapshot second_upload_result =
+        make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
+            second_snapshot.pipeline.upload_snapshot);
+    const render_image_texture_frame_resource_packet_materialization second_materialization =
+        materialize_render_image_texture_frame_resource_packets(second_frame, second_upload_result);
+
+    require(second_plan.ok(), "second standard residency frame plans normalized PNG request");
+    require(second_execution.ok(), "second standard residency frame executes from residency");
+    require(second_materialization.ok(), "second standard residency frame materializes resident packet");
+    require(second_execution.entries[0].cache_hit, "second standard residency frame hits cache");
+    require(second_execution.entries[0].cache_reused, "second standard residency frame reuses residency");
+    require(
+        second_plan.entries[0].stable_texture_cache_key == first_plan.entries[0].stable_texture_cache_key,
+        "second standard residency frame keeps stable cache key");
+    require(
+        second_snapshot.pipeline.upload_snapshot.upload_count == 1,
+        "second standard residency frame does not request another upload");
+    require(second_snapshot.decoder.decode_attempt_count == 1, "second standard residency frame does not decode again");
+    require(second_snapshot.pipeline.cache_hit_count == 1, "standard residency snapshot counts second-frame hit");
+    require(second_snapshot.pipeline.cache_snapshot.texture_count == 1, "second standard residency frame keeps one texture resident");
+    require(
+        second_snapshot.pipeline.cache_snapshot.resident_access_count == 2,
+        "second standard residency frame records resident access reuse");
+
+    const fake_image_texture_cache_entry_snapshot* second_cache_entry =
+        find_cache_entry_by_source_key(second_snapshot.pipeline.cache_snapshot, "textures/card.png");
+    require(second_cache_entry != nullptr, "second standard residency frame keeps resident cache entry");
+    require(
+        second_cache_entry->texture.id == first_cache_entry->texture.id,
+        "second resident cache entry reuses texture handle");
+    require(
+        second_cache_entry->upload_generation_id == first_cache_entry->upload_generation_id,
+        "second resident cache entry reuses upload generation");
+    require(second_cache_entry->access_count == 2, "second resident cache entry records both frame accesses");
+    require(
+        second_materialization.entries[0].cache_record.cache_reused,
+        "second materialization records cache reuse");
+    require(
+        second_materialization.entries[0].upload_record.upload_generation_id
+            == first_materialization.entries[0].upload_record.upload_generation_id,
+        "second materialization reuses first upload generation");
+    require(
+        second_materialization.entries[0].upload_record.uploaded_byte_count
+            == first_materialization.entries[0].upload_record.uploaded_byte_count,
+        "second materialization reuses uploaded byte evidence");
+
+    const std::size_t upload_count_before_decode_failure =
+        second_snapshot.pipeline.upload_snapshot.upload_count;
+    const render_image_texture_batch_plan decode_failure_plan = make_single_image_plan("textures/bad.ppm");
+    const render_image_texture_batch_execution_diagnostics decode_failure_execution =
+        execute_render_image_texture_batch_plan(decode_failure_plan, pipeline);
+    const standard_image_texture_pipeline_snapshot decode_failure_snapshot =
+        pipeline.standard_diagnostic_snapshot();
+
+    require(decode_failure_plan.ok(), "decode failure residency frame plans malformed source");
+    require(decode_failure_execution.ok(), "decode failure residency frame uses placeholder fallback");
+    require(
+        decode_failure_execution.entries[0].placeholder_texture,
+        "decode failure residency frame is placeholder-backed");
+    require(
+        decode_failure_snapshot.decoder.failed_decode_count == 1,
+        "decode failure residency frame records failed standard decode");
+    require(
+        decode_failure_snapshot.pipeline.upload_snapshot.upload_count
+            == upload_count_before_decode_failure + 1,
+        "decode failure residency frame uploads one placeholder texture");
+    require(
+        decode_failure_snapshot.pipeline.cache_snapshot.placeholder_policy_texture_count == 1,
+        "decode failure residency frame records one placeholder texture");
+    require(
+        find_cache_entry_by_source_key(decode_failure_snapshot.pipeline.cache_snapshot, "textures/bad.ppm")
+            == nullptr,
+        "decode failure residency frame does not mark failed source texture resident");
+    const fake_image_texture_cache_entry_snapshot* decode_failure_placeholder =
+        find_placeholder_cache_entry_by_requested_source_key(
+            decode_failure_snapshot.pipeline.cache_snapshot,
+            "textures/bad.ppm");
+    require(
+        decode_failure_placeholder != nullptr,
+        "decode failure residency frame records placeholder entry for failed source");
+    require(
+        decode_failure_placeholder->decoded_byte_count == 16,
+        "decode failure placeholder keeps deterministic decoded bytes");
+
+    const std::size_t upload_count_before_missing_source =
+        decode_failure_snapshot.pipeline.upload_snapshot.upload_count;
+    const render_image_texture_batch_plan missing_source_plan = make_single_image_plan("textures/missing.png");
+    const render_image_texture_batch_execution_diagnostics missing_source_execution =
+        execute_render_image_texture_batch_plan(missing_source_plan, pipeline);
+    const standard_image_texture_pipeline_snapshot missing_source_snapshot =
+        pipeline.standard_diagnostic_snapshot();
+
+    require(missing_source_plan.ok(), "missing source residency frame plans source key");
+    require(!missing_source_execution.ok(), "missing source residency frame remains blocked");
+    require(
+        missing_source_execution.entries[0].pipeline_status
+            == render_image_texture_pipeline_status::source_load_failed,
+        "missing source residency frame records source load failure");
+    require(
+        !missing_source_execution.entries[0].placeholder_texture,
+        "missing source residency frame does not synthesize cache residency");
+    require(
+        missing_source_snapshot.pipeline.upload_snapshot.upload_count == upload_count_before_missing_source,
+        "missing source residency frame does not upload placeholder without source bytes");
+    require(
+        find_cache_entry_by_source_key(missing_source_snapshot.pipeline.cache_snapshot, "textures/missing.png")
+            == nullptr,
+        "missing source residency frame does not mark missing source resident");
+    require(
+        find_placeholder_cache_entry_by_requested_source_key(
+            missing_source_snapshot.pipeline.cache_snapshot,
+            "textures/missing.png")
+            == nullptr,
+        "missing source residency frame does not create placeholder cache entry");
 }
 
 void test_standard_pipeline_decodes_and_uploads_distinct_cache_revision_after_invalidation()
@@ -1204,6 +1435,7 @@ int main()
     test_standard_pipeline_uploads_zlib_stored_png();
     test_standard_pipeline_uploads_jpeg_through_stb_when_available();
     test_standard_pipeline_reuses_cached_decode_and_upload_for_same_normalized_key();
+    test_standard_pipeline_reuses_upload_residency_across_frames_and_fallbacks();
     test_standard_pipeline_decodes_and_uploads_distinct_cache_revision_after_invalidation();
     test_standard_pipeline_materializes_decoded_bytes_for_resource_consumption();
     test_standard_pipeline_threads_decoded_bytes_into_draw_payloads();

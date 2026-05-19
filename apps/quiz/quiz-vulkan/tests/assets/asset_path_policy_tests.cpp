@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <iostream>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -46,6 +47,19 @@ const quiz_vulkan::assets::asset_path_policy_diagnostic* find_policy_diagnostic(
     std::string_view id)
 {
     for (const quiz_vulkan::assets::asset_path_policy_diagnostic& diagnostic : catalog.diagnostics) {
+        if (diagnostic.status == status && diagnostic.id == id) {
+            return &diagnostic;
+        }
+    }
+    return nullptr;
+}
+
+const quiz_vulkan::assets::asset_render_resource_address_diagnostic* find_render_resource_address_diagnostic(
+    const quiz_vulkan::assets::asset_render_resource_address_summary& summary,
+    quiz_vulkan::assets::asset_render_resource_address_status status,
+    std::string_view id)
+{
+    for (const quiz_vulkan::assets::asset_render_resource_address_diagnostic& diagnostic : summary.diagnostics) {
         if (diagnostic.status == status && diagnostic.id == id) {
             return &diagnostic;
         }
@@ -168,6 +182,197 @@ void test_path_policy_catalog_groups_supported_asset_kinds()
     const asset_path_policy_snapshot* deck = policy_catalog.find("main_deck");
     require(deck != nullptr, "path policy catalog finds deck");
     require(deck->catalog_path == "decks/main.quiz", "deck catalog path stays under decks");
+}
+
+void test_render_resource_address_summary_preserves_stable_asset_identities()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .root_path = fixture_root / "packaged",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "external_shader_pack",
+        .root_path = fixture_root / "build" / "external" / "shader_pack",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "body_font",
+        .type = asset_type::font,
+        .uri = "fonts/body.ttf",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "ASSET:///cards/./front.png",
+        .root_id = "packaged",
+        .cache_revision = "r1",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "ui_shader",
+        .type = asset_type::shader,
+        .uri = "shaders/ui.vert.spv",
+        .root_id = "external_shader_pack",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "answer_sound",
+        .type = asset_type::sound,
+        .uri = "asset://sounds/correct.ogg",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "main_deck",
+        .type = asset_type::deck,
+        .uri = "decks/main.quiz",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "generic_blob",
+        .type = asset_type::generic,
+        .uri = "misc/blob.bin",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "bad_traversal",
+        .type = asset_type::image,
+        .uri = "asset://cards/%2e%2e/secret.png",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "missing_root_shader",
+        .type = asset_type::shader,
+        .uri = "shaders/missing-root.vert.spv",
+        .root_id = "missing",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "remote_image",
+        .type = asset_type::image,
+        .uri = "https://example.invalid/cards/front.png",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const asset_render_resource_address_summary summary =
+        summarize_asset_render_resource_addresses(manifest, resolver);
+
+    require(!summary.ok(), "render resource address summary reports blocked address evidence");
+    require(summary.entry_count() == 5U, "render resource address summary keeps accepted engine resources");
+    require(summary.diagnostic_count() == 4U, "render resource address summary records rejected resources");
+    require(summary.accepted_count == 5U, "render resource accepted count is deterministic");
+    require(summary.rejected_count == 4U, "render resource rejected count is deterministic");
+    require(summary.canonical_asset_uri_count == 2U, "render resource summary counts canonical asset uris");
+    require(summary.local_file_count == 3U, "render resource summary counts stable local file identities");
+    require(summary.local_fixture_boundary_count == 1U, "render resource summary counts local fixture boundaries");
+    require(summary.build_external_boundary_count == 1U, "render resource summary counts build external boundaries");
+    require(summary.path_traversal_rejection_count == 1U, "render resource summary counts traversal rejection");
+    require(summary.unsupported_asset_type_count == 1U, "render resource summary counts unsupported asset types");
+    require(summary.cache_key_component_mismatch_count == 0U, "render resource cache components match resolved sources");
+    require(asset_render_resource_address_type_supported(asset_type::font), "fonts are render-addressable assets");
+    require(asset_render_resource_address_type_supported(asset_type::image), "images are render-addressable assets");
+    require(asset_render_resource_address_type_supported(asset_type::sound), "sounds are render-addressable assets");
+    require(asset_render_resource_address_type_supported(asset_type::shader), "shaders are render-addressable assets");
+    require(asset_render_resource_address_type_supported(asset_type::deck), "decks are render-addressable assets");
+    require(!asset_render_resource_address_type_supported(asset_type::generic), "generic blobs are not render-addressable");
+
+    const asset_render_resource_address_entry* image = summary.find_entry("card_front");
+    require(image != nullptr, "render resource summary finds image address");
+    require(image->ok(), "image render resource address is accepted");
+    require(
+        image->address_kind == asset_render_resource_address_kind::canonical_asset_uri,
+        "asset uri images keep canonical asset identity");
+    require(image->canonical_identity == "asset://cards/front.png", "image identity is normalized asset uri");
+    require(image->source_uri == "asset://cards/front.png", "image source uri is normalized");
+    require(image->source_path == "cards/front.png", "image source path strips asset scheme");
+    require(image->cache_key == "image|asset://cards/front.png|rev=r1", "image cache key keeps revision");
+    require(image->cache_key_components.type_component == "image", "image cache key exposes type component");
+    require(
+        image->cache_key_components.source_component == "asset://cards/front.png",
+        "image cache key exposes source component");
+    require(image->cache_key_components.revision_component == "rev=r1", "image cache key exposes revision token");
+    require(image->cache_key_components.cache_revision == "r1", "image cache key exposes revision value");
+    require(image->cache_key_components.has_cache_revision(), "image cache components report revision presence");
+    require(
+        summary.find_cache_key("image|asset://cards/front.png|rev=r1") == image,
+        "render resource summary can find addresses by cache key");
+    require(
+        summary.find_canonical_identity("asset://cards/front.png") == image,
+        "render resource summary can find addresses by canonical identity");
+
+    const asset_render_resource_address_entry* font = summary.find_entry("body_font");
+    require(font != nullptr, "render resource summary finds font address");
+    require(
+        font->address_kind == asset_render_resource_address_kind::local_fixture_file,
+        "font rooted under packaged fixture is classified as local fixture");
+    require(
+        font->canonical_identity == "local-fixture://packaged/fonts/body.ttf",
+        "font local identity is stable and root-relative");
+    require(font->cache_key == "font|fonts/body.ttf", "font cache key does not include absolute fixture root");
+    require(
+        font->cache_key.find(fixture_root.generic_string()) == std::string::npos,
+        "font cache key does not leak absolute fixture path");
+
+    const asset_render_resource_address_entry* shader = summary.find_entry("ui_shader");
+    require(shader != nullptr, "render resource summary finds shader address");
+    require(
+        shader->address_kind == asset_render_resource_address_kind::build_external_file,
+        "shader rooted under build/external is classified as build external");
+    require(
+        shader->canonical_identity == "build-external://external_shader_pack/shaders/ui.vert.spv",
+        "shader build external identity is root-relative");
+    require(shader->cache_key == "shader|shaders/ui.vert.spv", "shader cache key is source-relative");
+    require(
+        shader->cache_key.find("build/external") == std::string::npos,
+        "shader cache key does not leak build output boundary");
+
+    const asset_render_resource_address_entry* sound = summary.find_entry("answer_sound");
+    require(sound != nullptr, "render resource summary finds sound address");
+    require(
+        sound->address_kind == asset_render_resource_address_kind::canonical_asset_uri,
+        "sound asset uri keeps canonical address kind");
+    require(sound->cache_key_components.type == asset_type::sound, "sound cache key components preserve type");
+
+    const asset_render_resource_address_entry* deck = summary.find_entry("main_deck");
+    require(deck != nullptr, "render resource summary finds deck address");
+    require(deck->address_kind == asset_render_resource_address_kind::local_file, "rootless deck is local file identity");
+    require(deck->canonical_identity == "local://decks/main.quiz", "rootless deck identity is source-relative");
+
+    const asset_render_resource_address_diagnostic* generic =
+        find_render_resource_address_diagnostic(
+            summary,
+            asset_render_resource_address_status::unsupported_asset_type,
+            "generic_blob");
+    require(generic != nullptr, "render resource summary reports unsupported generic entries");
+
+    const asset_render_resource_address_diagnostic* traversal =
+        find_render_resource_address_diagnostic(
+            summary,
+            asset_render_resource_address_status::path_traversal_rejected,
+            "bad_traversal");
+    require(traversal != nullptr, "render resource summary reports traversal rejection");
+    require(
+        asset_render_resource_address_status_name(traversal->status) == "path_traversal_rejected",
+        "render resource status names are stable");
+
+    const asset_render_resource_address_diagnostic* missing_root =
+        find_render_resource_address_diagnostic(
+            summary,
+            asset_render_resource_address_status::missing_root,
+            "missing_root_shader");
+    require(missing_root != nullptr, "render resource summary reports missing roots");
+    require(
+        missing_root->cache_key == "shader|shaders/missing-root.vert.spv",
+        "missing root diagnostics keep stable cache key evidence");
+
+    const asset_render_resource_address_diagnostic* remote =
+        find_render_resource_address_diagnostic(
+            summary,
+            asset_render_resource_address_status::unsupported_source_kind,
+            "remote_image");
+    require(remote != nullptr, "render resource summary reports unsupported remote sources");
+    require(remote->source_kind == asset_source_kind::https_uri, "remote diagnostic preserves source kind");
+    require(
+        asset_render_resource_address_kind_name(asset_render_resource_address_kind::build_external_file)
+            == "build_external_file",
+        "render resource address kind names are stable");
 }
 
 void test_path_policy_keeps_equivalent_shader_paths_stable()
@@ -455,6 +660,7 @@ void test_manifest_path_policy_validation_summary_reports_manifest_totals_and_du
 int main()
 {
     test_path_policy_catalog_groups_supported_asset_kinds();
+    test_render_resource_address_summary_preserves_stable_asset_identities();
     test_path_policy_keeps_equivalent_shader_paths_stable();
     test_path_policy_rejects_traversal_and_unsupported_paths();
     test_path_policy_catalog_carries_runtime_diagnostics();

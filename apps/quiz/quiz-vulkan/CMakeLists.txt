@@ -241,6 +241,7 @@ target_sources(
             src/assets/asset_pack_index.h
             src/assets/asset_pack_validation.h
             src/assets/asset_path_policy.h
+            src/assets/asset_render_resource_address.h
             src/assets/asset_resolver.h
             src/assets/asset_runtime_catalog.h
             src/assets/asset_runtime_resolver_policy.h

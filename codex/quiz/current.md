@@ -20,30 +20,35 @@ Historical integration notes are kept in git history, not repeated here.
 ## Active Bottlenecks
 
 - Vulkan: present image execution evidence, descriptor allocation merge guard
-  tests, descriptor payload bind recording, and native descriptor bind-call
-  evidence are integrated.
+  tests, descriptor payload bind recording, native descriptor bind-call evidence,
+  and native draw-call evidence are integrated.
 - Text: atlas packet consumption, HarfBuzz shaping handoff diagnostics, and real
   font atlas draw evidence, draw packet consumption diffs, and render-frame
-  handoff summary are integrated.
+  handoff summary/header split are integrated.
 - Image: staging payload blocker coverage, staging payload diff summaries,
   decoded-byte resource materialization, and decoded draw payload evidence are
   integrated. The oversized resource packet plan header is split into focused
-  image render handoff headers.
+  image render handoff headers, and standard JPEG decode now routes through the
+  existing STB adapter path.
 - Asset: materialized byte payload request/review evidence and shader byte
-  pipeline summary are integrated.
-- Input/IME: wheel modifier diagnostics are integrated; input is idle unless
-  gesture routing becomes the active bottleneck again.
+  pipeline summary are integrated; render resource address summaries are also
+  integrated.
+- Input/IME: wheel modifier diagnostics and IME composition lifecycle
+  diagnostics are integrated; input is idle unless gesture routing becomes the
+  active bottleneck again.
 
 ## Active Workers
 
 - `codex-vulkan-native-command-packet-executor-20260516`: integrated native
-  descriptor bind-call readiness.
+  descriptor bind-call readiness and native draw-call evidence.
 - `codex-text-freetype-prototype-20260514`: integrated compact text render-frame
-  handoff summary.
+  handoff summary and focused header split.
 - `codex-asset-unified-cache-key-20260514`: idle after shader byte source
-  pipeline summary and focused-header split.
-- `codex-image-texture-next-20260514`: integrated decoded draw payload evidence.
-- `codex-input-ime`: idle after wheel/drag/touch-like diagnostics work.
+  pipeline summary, focused-header split, and asset render resource addressing.
+- `codex-image-texture-next-20260514`: integrated decoded draw payload evidence
+  and standard JPEG decode through STB.
+- `codex-input-ime`: idle after wheel/drag/touch-like diagnostics and IME
+  composition lifecycle diagnostics.
 - Idle sessions are intentionally kept alive. Give them fresh baseline branches
   before new work; do not re-merge historical ahead commits.
 
@@ -75,15 +80,12 @@ Historical integration notes are kept in git history, not repeated here.
 
 ## Latest Known Verification
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `7165401` after
-  HarfBuzz shaping handoff diagnostics, image staging payload diff summaries,
-  Vulkan descriptor allocation merge guard integration, next engine worker
-  prompts, real font atlas draw evidence, and decoded-byte image resource
-  materialization, descriptor payload bind recording, and text draw packet
-  consumption diffs.
-- Last full Windows MinGW CTest batch should be treated as stale. Run focused
-  tests during normal integration; run full CTest after the next meaningful
-  engine batch.
+- Main branch `codex/quiz-vulkan-remake-baseline` is at `0c92941` after
+  text handoff header splitting, asset render resource addressing, IME
+  composition lifecycle diagnostics, Vulkan native draw-call evidence, and
+  standard JPEG decode through the existing STB adapter path.
+- After `0c92941`, full Windows MinGW CTest passed 108/108 in
+  `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
 - After `a09ce6d`, full Windows MinGW CTest passed 108/108.
 - After `51e6a40`, Windows MinGW built
   `quiz_vulkan_interface_contract_compile_tests`, `quiz_vulkan_architecture_boundary_tests`,
@@ -201,6 +203,23 @@ Historical integration notes are kept in git history, not repeated here.
   `quiz_vulkan_text_frame_resource_packet_materialization_tests`, and
   `quiz_vulkan_fake_text_engine_freetype_raster_payload_tests`; focused
   `ctest -R text --output-on-failure` passed 20/20.
+- After `3385bdc`, Windows MinGW built the interface, focused text handoff,
+  glyph quad packet, frame packet materialization, FreeType raster payload, and
+  shaped atlas targets; focused `ctest -R text --output-on-failure` passed
+  20/20.
+- After `097c680`, Windows MinGW built the interface and asset targets; focused
+  `ctest -R asset --output-on-failure` passed 11/11.
+- After `3edca66`, Windows MinGW built the interface, input engine IME, input
+  engine, and text input model targets; focused IME and text input model CTest
+  passed 2/2.
+- After `ca41fb1`, Windows MinGW built the interface, Vulkan command packet
+  execution, renderer, and architecture boundary targets; focused CTest passed
+  3/3 for those areas.
+- After `0c92941`, Windows MinGW built the interface, standard image decoder
+  chain, standard image texture pipeline, image texture pipeline, and
+  third-party image decoder adapter targets; focused CTest passed 5/5 for the
+  effective image decoder/texture areas.
+- After `0c92941`, full Windows MinGW CTest passed 108/108.
 
 ## Useful Commands
 

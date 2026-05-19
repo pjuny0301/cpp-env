@@ -23,8 +23,9 @@ Current baseline carries `text_focus_route_state` in routing diagnostics. Add on
 - Emit diagnostics for an app-owned router to consume later; do not dispatch app/domain actions directly.
 
 Verification before handoff:
-- `cmake --build . --target quiz_vulkan_interface_contract_compile_tests quiz_vulkan_input_engine_tests quiz_vulkan_input_engine_ime_tests quiz_vulkan_input_engine_keyboard_text_tests`
-- `ctest -R "input_engine_tests|input_engine_ime|input_engine_keyboard_text" --output-on-failure`
+- `build_dir="$(/mnt/c/aa/codex-workers/quiz-vulkan-worker-build-dir.sh "$(pwd)" windows-mingw-ascii)"`
+- `/mnt/c/aa/codex-workers/with-build-lock.sh "/mnt/c/Program Files/CMake/bin/cmake.exe" --build "$build_dir" --target quiz_vulkan_interface_contract_compile_tests quiz_vulkan_input_engine_tests quiz_vulkan_input_engine_ime_tests quiz_vulkan_input_engine_keyboard_text_tests`
+- `/mnt/c/aa/codex-workers/with-build-lock.sh "/mnt/c/Program Files/CMake/bin/ctest.exe" --test-dir "$build_dir" -R "input_engine_tests|input_engine_ime|input_engine_keyboard_text" --output-on-failure`
 - `git diff --check`
 
 Commit your changes with a concise message and leave the session open.

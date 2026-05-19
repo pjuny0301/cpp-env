@@ -24,8 +24,9 @@ Current baseline exposes `image_texture_pipeline_upload_cache_diagnostics_interf
 - Use existing STB/decoder dependencies under `build/external/lib/cpp/desktop` when useful. Do not vendor new source into `apps/quiz`.
 
 Verification before handoff:
-- `cmake --build . --target quiz_vulkan_interface_contract_compile_tests quiz_vulkan_image_texture_pipeline_tests quiz_vulkan_standard_image_texture_pipeline_tests quiz_vulkan_image_texture_frame_resource_packet_materialization_tests`
-- `ctest -R "image_texture_pipeline|standard_image_texture_pipeline|image_texture_frame_resource_packet_materialization" --output-on-failure`
+- `build_dir="$(/mnt/c/aa/codex-workers/quiz-vulkan-worker-build-dir.sh "$(pwd)" windows-mingw-ascii)"`
+- `/mnt/c/aa/codex-workers/with-build-lock.sh "/mnt/c/Program Files/CMake/bin/cmake.exe" --build "$build_dir" --target quiz_vulkan_interface_contract_compile_tests quiz_vulkan_image_texture_pipeline_tests quiz_vulkan_standard_image_texture_pipeline_tests quiz_vulkan_image_texture_frame_resource_packet_materialization_tests`
+- `/mnt/c/aa/codex-workers/with-build-lock.sh "/mnt/c/Program Files/CMake/bin/ctest.exe" --test-dir "$build_dir" -R "image_texture_pipeline|standard_image_texture_pipeline|image_texture_frame_resource_packet_materialization" --output-on-failure`
 - `git diff --check`
 
 Commit your changes with a concise message and leave the session open.

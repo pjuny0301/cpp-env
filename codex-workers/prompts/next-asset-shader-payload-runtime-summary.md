@@ -23,8 +23,9 @@ Current baseline can bridge render resources to materialized bytes and diff cach
 - Keep generic assets neutral: no renderer execution, no shader module creation, no app/domain assumptions.
 
 Verification before handoff:
-- `cmake --build . --target quiz_vulkan_interface_contract_compile_tests quiz_vulkan_asset_bytes_provider_tests quiz_vulkan_asset_manifest_tests quiz_vulkan_asset_runtime_catalog_tests`
-- `ctest -R "asset_bytes_provider|asset_manifest|asset_runtime_catalog" --output-on-failure`
+- `build_dir="$(/mnt/c/aa/codex-workers/quiz-vulkan-worker-build-dir.sh "$(pwd)" windows-mingw-ascii)"`
+- `/mnt/c/aa/codex-workers/with-build-lock.sh "/mnt/c/Program Files/CMake/bin/cmake.exe" --build "$build_dir" --target quiz_vulkan_interface_contract_compile_tests quiz_vulkan_asset_bytes_provider_tests quiz_vulkan_asset_manifest_tests quiz_vulkan_asset_runtime_catalog_tests`
+- `/mnt/c/aa/codex-workers/with-build-lock.sh "/mnt/c/Program Files/CMake/bin/ctest.exe" --test-dir "$build_dir" -R "asset_bytes_provider|asset_manifest|asset_runtime_catalog" --output-on-failure`
 - `git diff --check`
 
 Commit your changes with a concise message and leave the session open.

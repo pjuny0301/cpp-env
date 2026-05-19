@@ -25,8 +25,9 @@ Current baseline proves HarfBuzz-shaped glyph ids drive FreeType atlas residency
 - Keep all output as renderer-owned glyph/atlas packet data. No quiz/domain/UI semantics.
 
 Verification before handoff:
-- `cmake --build . --target quiz_vulkan_interface_contract_compile_tests quiz_vulkan_fake_text_engine_freetype_raster_payload_tests quiz_vulkan_text_renderer_glyph_quad_packet_tests quiz_vulkan_text_frame_resource_packet_materialization_tests`
-- `ctest -R "fake_text_engine_freetype_raster_payload|text_renderer_glyph_quad_packet|text_frame_resource_packet_materialization" --output-on-failure`
+- `build_dir="$(/mnt/c/aa/codex-workers/quiz-vulkan-worker-build-dir.sh "$(pwd)" windows-mingw-ascii)"`
+- `/mnt/c/aa/codex-workers/with-build-lock.sh "/mnt/c/Program Files/CMake/bin/cmake.exe" --build "$build_dir" --target quiz_vulkan_interface_contract_compile_tests quiz_vulkan_fake_text_engine_freetype_raster_payload_tests quiz_vulkan_text_renderer_glyph_quad_packet_tests quiz_vulkan_text_frame_resource_packet_materialization_tests`
+- `/mnt/c/aa/codex-workers/with-build-lock.sh "/mnt/c/Program Files/CMake/bin/ctest.exe" --test-dir "$build_dir" -R "fake_text_engine_freetype_raster_payload|text_renderer_glyph_quad_packet|text_frame_resource_packet_materialization" --output-on-failure`
 - `git diff --check`
 
 Commit your changes with a concise message and leave the session open.

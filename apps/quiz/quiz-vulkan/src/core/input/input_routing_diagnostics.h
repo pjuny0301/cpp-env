@@ -340,6 +340,21 @@ struct input_routing_pointer_capture_delta {
     bool changed = false;
 };
 
+struct input_routing_text_focus_route_delta {
+    text_focus_route_state before_state;
+    text_focus_route_state after_state;
+    input_routing_bool_delta has_focus;
+    input_routing_count_delta text_byte_count;
+    input_routing_bool_delta has_selection;
+    bool target_id_changed = false;
+    bool caret_changed = false;
+    bool selection_changed = false;
+    bool composition_active_changed = false;
+    bool composition_text_changed = false;
+    bool composition_range_changed = false;
+    bool changed = false;
+};
+
 struct input_routing_gesture_policy_threshold_deltas {
     input_routing_float_delta swipe_min_dx;
     input_routing_float_delta swipe_max_dy;
@@ -544,6 +559,7 @@ struct input_routing_diagnostics_diff {
     input_routing_keyboard_route_count_deltas keyboard_routes;
     input_routing_gesture_policy_diff gesture_policies;
     input_routing_pointer_capture_delta pointer_capture;
+    input_routing_text_focus_route_delta text_route_state;
     input_routing_bool_delta pointer_capture_ended_cleanly;
     input_routing_bool_delta focus_ended_cleanly;
     input_routing_bool_delta preedit_ended_cleanly;
@@ -552,6 +568,7 @@ struct input_routing_diagnostics_diff {
     bool keyboard_routes_changed = false;
     bool gesture_policy_changed = false;
     bool pointer_capture_changed = false;
+    bool text_route_state_changed = false;
     bool clean_state_changed = false;
     bool changed = false;
 };
@@ -901,6 +918,49 @@ inline void count_input_routing_keyboard_repeat_policy(
         || diff.tracked_pointer_count.changed
         || diff.lifecycle_changed
         || diff.pointer_id_changed;
+    return diff;
+}
+
+[[nodiscard]] inline bool input_routing_text_range_changed(text_range before, text_range after)
+{
+    return before.start_byte != after.start_byte || before.end_byte != after.end_byte;
+}
+
+[[nodiscard]] inline input_routing_text_focus_route_delta diff_input_routing_text_focus_route_state(
+    text_focus_route_state before,
+    text_focus_route_state after)
+{
+    input_routing_text_focus_route_delta diff{};
+    diff.before_state = std::move(before);
+    diff.after_state = std::move(after);
+    diff.has_focus = diff_input_routing_bool(diff.before_state.has_focus, diff.after_state.has_focus);
+    diff.text_byte_count =
+        diff_input_routing_count(diff.before_state.text_byte_count, diff.after_state.text_byte_count);
+    diff.has_selection =
+        diff_input_routing_bool(diff.before_state.has_selection, diff.after_state.has_selection);
+    diff.target_id_changed = diff.before_state.target_id != diff.after_state.target_id;
+    diff.caret_changed = input_routing_text_range_changed(diff.before_state.caret, diff.after_state.caret);
+    diff.selection_changed =
+        input_routing_text_range_changed(diff.before_state.selection, diff.after_state.selection);
+    diff.composition_active_changed =
+        diff.before_state.composition.active != diff.after_state.composition.active;
+    diff.composition_text_changed =
+        diff.before_state.composition.preedit_text != diff.after_state.composition.preedit_text;
+    diff.composition_range_changed =
+        input_routing_text_range_changed(diff.before_state.composition.replacement_range,
+            diff.after_state.composition.replacement_range)
+        || input_routing_text_range_changed(diff.before_state.composition.preedit_range,
+            diff.after_state.composition.preedit_range);
+    diff.changed =
+        diff.has_focus.changed
+        || diff.text_byte_count.changed
+        || diff.has_selection.changed
+        || diff.target_id_changed
+        || diff.caret_changed
+        || diff.selection_changed
+        || diff.composition_active_changed
+        || diff.composition_text_changed
+        || diff.composition_range_changed;
     return diff;
 }
 
@@ -1322,6 +1382,8 @@ inline void accumulate_input_routing_gesture_policy_threshold_counts(
         .keyboard_routes = diff_input_routing_keyboard_route_counts(before_keyboard_routes, after_keyboard_routes),
         .gesture_policies = diff_input_routing_gesture_policies(before, after),
         .pointer_capture = diff_input_routing_pointer_capture(before.pointer_capture, after.pointer_capture),
+        .text_route_state =
+            diff_input_routing_text_focus_route_state(before.text_route_state, after.text_route_state),
         .pointer_capture_ended_cleanly =
             diff_input_routing_bool(
                 before.summary.pointer_capture_ended_cleanly,
@@ -1343,6 +1405,7 @@ inline void accumulate_input_routing_gesture_policy_threshold_counts(
     diff.keyboard_routes_changed = diff.keyboard_routes.changed;
     diff.gesture_policy_changed = diff.gesture_policies.changed;
     diff.pointer_capture_changed = diff.pointer_capture.changed;
+    diff.text_route_state_changed = diff.text_route_state.changed;
     diff.clean_state_changed =
         diff.pointer_capture_ended_cleanly.changed
         || diff.focus_ended_cleanly.changed
@@ -1353,6 +1416,7 @@ inline void accumulate_input_routing_gesture_policy_threshold_counts(
         || diff.keyboard_routes_changed
         || diff.gesture_policy_changed
         || diff.pointer_capture_changed
+        || diff.text_route_state_changed
         || diff.clean_state_changed;
     return diff;
 }

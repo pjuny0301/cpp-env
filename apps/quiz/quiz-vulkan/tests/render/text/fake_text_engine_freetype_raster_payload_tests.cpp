@@ -283,6 +283,51 @@ summary_for_diagnostics(
         });
 }
 
+bool payload_has_matching_harfbuzz_handoff(
+    const quiz_vulkan::render::fake_text_engine_diagnostics& diagnostics,
+    const quiz_vulkan::render::render_text_rasterized_glyph_atlas_payload_snapshot& payload)
+{
+    return std::any_of(
+        diagnostics.shaping_handoffs.begin(),
+        diagnostics.shaping_handoffs.end(),
+        [&](const quiz_vulkan::render::fake_text_engine_shaping_handoff_snapshot& handoff) {
+            return handoff.used_harfbuzz
+                && handoff.materialized_font_bytes
+                && handoff.glyph_id == payload.glyph_id
+                && handoff.glyph_id == payload.cache_key.glyph_id
+                && handoff.resolved_face_id == payload.resolved_face_id
+                && handoff.run_index == payload.run_index
+                && handoff.byte_offset == payload.byte_offset
+                && handoff.byte_count == payload.byte_count;
+        });
+}
+
+bool materialization_preserves_real_shaping_and_raster_stack(
+    const quiz_vulkan::render::render_text_glyph_atlas_materialization_snapshot& materialization,
+    const quiz_vulkan::render::render_text_rasterized_glyph_atlas_payload_snapshot& payload)
+{
+    return materialization.cache_key == payload.cache_key
+        && materialization.resolved_glyph_id == payload.cache_key.glyph_id
+        && std::find(
+               materialization.shaped_glyph_ids.begin(),
+               materialization.shaped_glyph_ids.end(),
+               payload.cache_key.glyph_id)
+            != materialization.shaped_glyph_ids.end()
+        && materialization.shaping_font_backend_library
+            == quiz_vulkan::render::render_text_font_backend_library::harfbuzz
+        && materialization.raster_font_backend_library
+            == quiz_vulkan::render::render_text_font_backend_library::freetype
+        && !materialization.shaping_font_backend_used_deterministic_fallback
+        && !materialization.raster_font_backend_used_deterministic_fallback;
+}
+
+bool contains_atlas_key(
+    const std::vector<quiz_vulkan::render::glyph_atlas_key>& keys,
+    const quiz_vulkan::render::glyph_atlas_key& key)
+{
+    return std::find(keys.begin(), keys.end(), key) != keys.end();
+}
+
 void select_real_text_stack(quiz_vulkan::render::fake_text_engine& engine)
 {
     using namespace quiz_vulkan::render;
@@ -627,6 +672,132 @@ void test_repeated_file_backed_freetype_text_reuses_resident_atlas_payload()
     require(
         third.atlas_upload_request_bridge.policy.unique_upload_request_count == 1U,
         "third FreeType cache frame emits one new upload request");
+}
+
+void test_harfbuzz_shaped_glyph_ids_drive_freetype_atlas_residency()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path font_path = first_available_freetype_real_font_fixture();
+    if (font_path.empty()
+        || !render_text_harfbuzz_shaping_adapter_available()
+        || !render_text_freetype_memory_face_adapter_available()) {
+        return;
+    }
+
+    fake_text_engine engine;
+    select_real_text_stack(engine);
+    engine.add_font_face(font_face_descriptor{
+        .id = 816,
+        .family = "Payload FreeType Sans",
+        .source_uri = font_path.generic_string(),
+        .version = "external-fixture",
+        .license = "harfbuzz-test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = U'A', .last = U'B'},
+        },
+        .weight = 400,
+    });
+
+    const render_text_layout first_layout = engine.layout_text(latin_residency_request("AB"));
+    const fake_text_engine_diagnostics first = engine.last_diagnostics();
+    require(first_layout.glyphs.size() == 2U, "first HarfBuzz/FreeType frame lays out two glyphs");
+    require(first.shaping_handoff_policy.harfbuzz_run_count == 1U, "first frame uses HarfBuzz shaping");
+    require(
+        first.shaping_handoff_policy.materialized_font_byte_run_count == 1U,
+        "first frame materializes font bytes for HarfBuzz");
+    require(
+        first.shaping_line_run_evidence_policy.harfbuzz_cluster_count == 2U,
+        "first frame records two HarfBuzz-shaped clusters");
+    require(
+        first.rasterized_glyph_atlas_payload_policy.freetype_rasterizer_count == 2U,
+        "first frame rasterizes both HarfBuzz glyphs with FreeType");
+    require(
+        first.rasterized_glyph_atlas_payload_policy.materialized_font_bytes_count == 2U,
+        "first frame materializes font bytes for both FreeType payloads");
+    require(
+        first.glyph_atlas_materialization_policy.upload_ready_count == 2U,
+        "first frame queues two upload-ready atlas materializations");
+    require(
+        first.atlas_upload_request_bridge.policy.unique_upload_request_count == 2U,
+        "first frame exposes one upload request per shaped glyph");
+
+    std::vector<glyph_atlas_key> first_keys;
+    bool saw_real_font_glyph_id = false;
+    for (const render_text_rasterized_glyph_atlas_payload_snapshot& payload :
+         first.rasterized_glyph_atlas_payloads) {
+        require(payload.used_freetype_rasterizer, "first payload uses real FreeType");
+        require(payload.materialized_font_bytes, "first payload uses materialized font bytes");
+        require(payload.status == render_text_font_rasterizer_status::rasterized, "first payload rasterizes");
+        require(payload.cache_key.glyph_id == payload.glyph_id, "payload cache key uses shaped glyph id");
+        require(
+            payload_has_matching_harfbuzz_handoff(first, payload),
+            "payload glyph id matches a materialized HarfBuzz handoff");
+        saw_real_font_glyph_id = saw_real_font_glyph_id || payload.cache_key.glyph_id != payload.codepoint;
+        first_keys.push_back(payload.cache_key);
+
+        const auto materialization = std::find_if(
+            first.glyph_atlas_materializations.begin(),
+            first.glyph_atlas_materializations.end(),
+            [&](const render_text_glyph_atlas_materialization_snapshot& candidate) {
+                return candidate.cache_key == payload.cache_key;
+            });
+        require(
+            materialization != first.glyph_atlas_materializations.end(),
+            "first payload has matching atlas materialization");
+        require(
+            materialization_preserves_real_shaping_and_raster_stack(*materialization, payload),
+            "materialization preserves HarfBuzz shaping and FreeType raster evidence");
+        require(
+            materialization->status
+                == render_text_glyph_atlas_materialization_status::materialized_upload_ready,
+            "first materialization is upload-ready");
+    }
+    require(
+        saw_real_font_glyph_id,
+        "HarfBuzz path records at least one font glyph id distinct from the Unicode codepoint");
+
+    const render_text_layout second_layout = engine.layout_text(latin_residency_request("AB"));
+    const fake_text_engine_diagnostics second = engine.last_diagnostics();
+    require(second_layout.glyphs.size() == 2U, "second HarfBuzz/FreeType frame lays out repeated glyphs");
+    require(second.shaping_handoff_policy.harfbuzz_run_count == 1U, "second frame still uses HarfBuzz");
+    require(
+        second.shaping_line_run_evidence_policy.harfbuzz_cluster_count == 2U,
+        "second frame keeps HarfBuzz cluster evidence");
+    require(
+        second.rasterized_glyph_atlas_payload_policy.atlas_cache_hit_count == 2U,
+        "second frame reuses resident atlas payloads for both glyphs");
+    require(
+        second.rasterized_glyph_atlas_payload_policy.freetype_rasterizer_count == 0U,
+        "second frame does not rerun FreeType for resident glyphs");
+    require(
+        second.rasterized_glyph_atlas_payload_policy.materialized_font_bytes_count == 0U,
+        "second frame does not rematerialize font bytes for resident glyph payloads");
+    require(
+        second.glyph_atlas_materialization_policy.clean_reuse_count == 2U,
+        "second frame materializes two clean atlas reuses");
+    require(
+        second.line_run_atlas_upload_policy.clean_reuse_cluster_count == 2U,
+        "second frame line/run evidence records two clean reuses");
+    require(
+        second.atlas_upload_request_bridge.policy.unique_upload_request_count == 0U,
+        "second frame emits no new atlas upload requests");
+
+    for (const render_text_rasterized_glyph_atlas_payload_snapshot& payload :
+         second.rasterized_glyph_atlas_payloads) {
+        require(payload.status == render_text_font_rasterizer_status::atlas_cache_hit, "second payload is a cache hit");
+        require(payload.atlas_cache_hit, "second payload marks atlas cache hit");
+        require(payload.reused_atlas_payload, "second payload marks resident payload reuse");
+        require(
+            payload.rasterization_skipped_for_atlas_cache_hit,
+            "second payload skips rasterization because residency is available");
+        require(!payload.used_freetype_rasterizer, "second payload does not rerun FreeType");
+        require(!payload.materialized_font_bytes, "second payload does not reload font bytes");
+        require(contains_atlas_key(first_keys, payload.cache_key), "second payload preserves first-frame atlas key");
+        require(
+            payload_has_matching_harfbuzz_handoff(second, payload),
+            "cache-hit payload still matches current HarfBuzz-shaped glyph id");
+    }
 }
 
 void test_multiline_korean_text_reaches_frame_handoff_with_partial_upload_blocker()
@@ -1165,6 +1336,7 @@ int main()
 {
     test_file_backed_freetype_selection_rasterizes_real_payload();
     test_repeated_file_backed_freetype_text_reuses_resident_atlas_payload();
+    test_harfbuzz_shaped_glyph_ids_drive_freetype_atlas_residency();
     test_multiline_korean_text_reaches_frame_handoff_with_partial_upload_blocker();
     test_repeated_hangul_text_reuses_atlas_residency_and_uploads_new_glyph();
     test_missing_file_backed_freetype_payload_falls_back_and_skips();

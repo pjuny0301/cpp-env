@@ -1431,6 +1431,7 @@ enum class vulkan_native_command_packet_execution_status {
     pipeline_layout_unavailable,
     descriptor_sets_unavailable,
     descriptor_payloads_unavailable,
+    vertex_buffer_unavailable,
     invalid_packet_data,
 };
 
@@ -1440,6 +1441,7 @@ std::string_view native_command_packet_execution_status_name(
 enum class vulkan_native_command_packet_call_kind {
     bind_pipeline,
     bind_descriptor_sets,
+    bind_vertex_buffers,
     set_viewport,
     set_scissor,
     draw,
@@ -1819,6 +1821,37 @@ struct vulkan_native_command_packet_descriptor_payload_bind {
     }
 };
 
+struct vulkan_native_vertex_buffer_handle {
+    std::uintptr_t value = 0;
+
+    bool valid() const
+    {
+        return value != 0;
+    }
+};
+
+struct vulkan_native_command_packet_vertex_buffer_bind {
+    std::size_t packet_index = 0;
+    std::size_t command_index = 0;
+    vulkan_native_vertex_buffer_handle vertex_buffer;
+    std::size_t binding = 0;
+    std::size_t offset = 0;
+    std::size_t vertex_count = 0;
+    std::string packet_identity;
+    bool required = true;
+    bool available = false;
+    bool bind_ready = false;
+    bool draw_ready = false;
+    std::string diagnostic;
+
+    bool completed() const
+    {
+        return !required
+            || (available && bind_ready && draw_ready && vertex_buffer.valid()
+                && vertex_count > 0 && !packet_identity.empty());
+    }
+};
+
 struct vulkan_native_command_packet_executor_evidence {
     vulkan_native_function_table_diagnostics native_functions;
     vulkan_command_recording_command_buffer_handle command_buffer;
@@ -1829,6 +1862,7 @@ struct vulkan_native_command_packet_executor_evidence {
     std::vector<vulkan_native_command_packet_descriptor_set> descriptor_sets;
     std::vector<vulkan_native_descriptor_write_payload> descriptor_write_payloads;
     std::vector<vulkan_native_command_packet_descriptor_payload_bind> descriptor_payload_binds;
+    std::vector<vulkan_native_command_packet_vertex_buffer_bind> vertex_buffer_binds;
 };
 
 struct vulkan_native_command_packet_call_evidence {
@@ -1841,6 +1875,9 @@ struct vulkan_native_command_packet_call_evidence {
     std::size_t packet_index = 0;
     std::size_t command_index = 0;
     std::size_t descriptor_set_count = 0;
+    vulkan_native_vertex_buffer_handle vertex_buffer;
+    std::size_t vertex_buffer_binding = 0;
+    std::size_t vertex_buffer_offset = 0;
     std::size_t vertex_count = 0;
     std::size_t index_count = 0;
     std::size_t first_vertex = 0;
@@ -1849,6 +1886,7 @@ struct vulkan_native_command_packet_call_evidence {
     std::size_t first_instance = 0;
     std::string draw_packet_identity;
     std::string draw_payload_identity;
+    std::string vertex_buffer_packet_identity;
     render_rect viewport;
     vulkan_scissor_rect scissor;
     std::vector<vulkan_native_command_packet_descriptor_set> descriptor_sets;
@@ -1857,6 +1895,8 @@ struct vulkan_native_command_packet_call_evidence {
     bool pipeline_bind_ready = false;
     bool descriptor_bind_required = false;
     bool descriptor_bind_ready = false;
+    bool vertex_buffer_bind_required = false;
+    bool vertex_buffer_bind_ready = false;
     bool attempted = false;
     bool completed = false;
     bool failed = false;
@@ -1868,8 +1908,13 @@ struct vulkan_native_command_packet_call_evidence {
             && (kind != vulkan_native_command_packet_call_kind::draw
                 || (draw_ready && pipeline_bind_ready
                     && (!descriptor_bind_required || descriptor_bind_ready)
+                    && vertex_buffer_bind_required && vertex_buffer_bind_ready
                     && vertex_count > 0 && instance_count > 0
-                    && !draw_packet_identity.empty()));
+                    && !draw_packet_identity.empty()
+                    && !vertex_buffer_packet_identity.empty()))
+            && (kind != vulkan_native_command_packet_call_kind::bind_vertex_buffers
+                || (vertex_buffer.valid() && vertex_count > 0
+                    && !vertex_buffer_packet_identity.empty()));
     }
 };
 
@@ -1892,9 +1937,11 @@ struct vulkan_native_command_packet_execution_result {
     bool viewport_ready = false;
     bool descriptor_sets_ready = false;
     bool descriptor_payload_binds_ready = false;
+    bool vertex_buffer_binds_ready = false;
     bool draw_calls_ready = false;
     std::size_t descriptor_payload_bind_count = 0;
     std::size_t descriptor_payload_identity_count = 0;
+    std::size_t vertex_buffer_bind_count = 0;
     std::size_t draw_call_count = 0;
     std::size_t draw_payload_identity_count = 0;
     bool has_failed_packet = false;
@@ -1918,7 +1965,7 @@ struct vulkan_native_command_packet_execution_result {
             && native_function_table_checked && native_command_symbols_ready
             && command_buffer_ready && pipeline_ready && pipeline_layout_ready
             && viewport_ready && descriptor_sets_ready && descriptor_payload_binds_ready
-            && draw_calls_ready
+            && vertex_buffer_binds_ready && draw_calls_ready
             && !has_failed_packet
             && attempted_packet_count == planned_packet_count
             && translated_packet_count == planned_packet_count

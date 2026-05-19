@@ -6745,6 +6745,10 @@ static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_native_command_packet_execution_status::native_command_symbol_unavailable),
     render::vulkan_backend::vulkan_native_command_packet_execution_status>);
 static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_command_packet_execution_status::
+                 vertex_buffer_unavailable),
+    render::vulkan_backend::vulkan_native_command_packet_execution_status>);
+static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_native_command_packet_execution_status::invalid_packet_data),
     render::vulkan_backend::vulkan_native_command_packet_execution_status>);
 static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_execution_status status) {
@@ -6754,6 +6758,10 @@ static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_exec
 
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_native_command_packet_call_kind::bind_pipeline),
+    render::vulkan_backend::vulkan_native_command_packet_call_kind>);
+static_assert(std::same_as<
+    decltype(render::vulkan_backend::vulkan_native_command_packet_call_kind::
+                 bind_vertex_buffers),
     render::vulkan_backend::vulkan_native_command_packet_call_kind>);
 static_assert(std::same_as<
     decltype(render::vulkan_backend::vulkan_native_command_packet_call_kind::draw),
@@ -6776,6 +6784,28 @@ static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_desc
     { descriptor_set.required } -> std::same_as<bool&>;
     { descriptor_set.available } -> std::same_as<bool&>;
     { descriptor_set.completed() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_vertex_buffer_handle handle) {
+    { handle.value } -> std::same_as<std::uintptr_t&>;
+    { handle.valid() } -> std::same_as<bool>;
+});
+
+static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_vertex_buffer_bind bind) {
+    { bind.packet_index } -> std::same_as<std::size_t&>;
+    { bind.command_index } -> std::same_as<std::size_t&>;
+    { bind.vertex_buffer }
+        -> std::same_as<render::vulkan_backend::vulkan_native_vertex_buffer_handle&>;
+    { bind.binding } -> std::same_as<std::size_t&>;
+    { bind.offset } -> std::same_as<std::size_t&>;
+    { bind.vertex_count } -> std::same_as<std::size_t&>;
+    { bind.packet_identity } -> std::same_as<std::string&>;
+    { bind.required } -> std::same_as<bool&>;
+    { bind.available } -> std::same_as<bool&>;
+    { bind.bind_ready } -> std::same_as<bool&>;
+    { bind.draw_ready } -> std::same_as<bool&>;
+    { bind.diagnostic } -> std::same_as<std::string&>;
+    { bind.completed() } -> std::same_as<bool>;
 });
 
 static_assert(std::same_as<
@@ -7066,6 +7096,8 @@ static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_exec
         -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_command_packet_descriptor_set>&>;
     { evidence.descriptor_write_payloads }
         -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_descriptor_write_payload>&>;
+    { evidence.vertex_buffer_binds }
+        -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_command_packet_vertex_buffer_bind>&>;
 });
 
 static_assert(requires(
@@ -7130,9 +7162,16 @@ static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_call
     { call.packet_index } -> std::same_as<std::size_t&>;
     { call.command_index } -> std::same_as<std::size_t&>;
     { call.descriptor_set_count } -> std::same_as<std::size_t&>;
+    { call.vertex_buffer }
+        -> std::same_as<render::vulkan_backend::vulkan_native_vertex_buffer_handle&>;
+    { call.vertex_buffer_binding } -> std::same_as<std::size_t&>;
+    { call.vertex_buffer_offset } -> std::same_as<std::size_t&>;
     { call.vertex_count } -> std::same_as<std::size_t&>;
+    { call.vertex_buffer_packet_identity } -> std::same_as<std::string&>;
     { call.viewport } -> std::same_as<render::render_rect&>;
     { call.scissor } -> std::same_as<render::vulkan_backend::vulkan_scissor_rect&>;
+    { call.vertex_buffer_bind_required } -> std::same_as<bool&>;
+    { call.vertex_buffer_bind_ready } -> std::same_as<bool&>;
     { call.attempted } -> std::same_as<bool&>;
     { call.completed } -> std::same_as<bool&>;
     { call.failed } -> std::same_as<bool&>;
@@ -7159,6 +7198,8 @@ static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_exec
     { result.pipeline_layout_ready } -> std::same_as<bool&>;
     { result.viewport_ready } -> std::same_as<bool&>;
     { result.descriptor_sets_ready } -> std::same_as<bool&>;
+    { result.vertex_buffer_binds_ready } -> std::same_as<bool&>;
+    { result.vertex_buffer_bind_count } -> std::same_as<std::size_t&>;
     { result.has_failed_packet } -> std::same_as<bool&>;
     { result.first_failed_category }
         -> std::same_as<render::vulkan_backend::vulkan_command_packet_category&>;

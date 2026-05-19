@@ -358,6 +358,73 @@ make_native_packet_evidence(
             },
         },
         .descriptor_write_payloads = {},
+        .descriptor_payload_binds = {},
+        .vertex_buffer_binds = {
+            vulkan_backend::vulkan_native_command_packet_vertex_buffer_bind{
+                .packet_index = 0,
+                .command_index = 10,
+                .vertex_buffer =
+                    vulkan_backend::vulkan_native_vertex_buffer_handle{.value = 15000},
+                .binding = 0,
+                .offset = 0,
+                .vertex_count = 4,
+                .packet_identity =
+                    "packet:0:command:10:category:rect:batch:quad:vertex_buffer:vertices:4",
+                .required = true,
+                .available = true,
+                .bind_ready = true,
+                .draw_ready = true,
+                .diagnostic = "fixture vertex buffer bind ready",
+            },
+            vulkan_backend::vulkan_native_command_packet_vertex_buffer_bind{
+                .packet_index = 1,
+                .command_index = 11,
+                .vertex_buffer =
+                    vulkan_backend::vulkan_native_vertex_buffer_handle{.value = 15001},
+                .binding = 0,
+                .offset = 0,
+                .vertex_count = 4,
+                .packet_identity =
+                    "packet:1:command:11:category:text:batch:text:vertex_buffer:vertices:4",
+                .required = true,
+                .available = true,
+                .bind_ready = true,
+                .draw_ready = true,
+                .diagnostic = "fixture vertex buffer bind ready",
+            },
+            vulkan_backend::vulkan_native_command_packet_vertex_buffer_bind{
+                .packet_index = 2,
+                .command_index = 12,
+                .vertex_buffer =
+                    vulkan_backend::vulkan_native_vertex_buffer_handle{.value = 15002},
+                .binding = 0,
+                .offset = 0,
+                .vertex_count = 4,
+                .packet_identity =
+                    "packet:2:command:12:category:image:batch:image:vertex_buffer:vertices:4",
+                .required = true,
+                .available = true,
+                .bind_ready = true,
+                .draw_ready = true,
+                .diagnostic = "fixture vertex buffer bind ready",
+            },
+            vulkan_backend::vulkan_native_command_packet_vertex_buffer_bind{
+                .packet_index = 3,
+                .command_index = 13,
+                .vertex_buffer =
+                    vulkan_backend::vulkan_native_vertex_buffer_handle{.value = 15003},
+                .binding = 0,
+                .offset = 0,
+                .vertex_count = 4,
+                .packet_identity =
+                    "packet:3:command:13:category:debug_bounds:batch:debug_bounds:vertex_buffer:vertices:4",
+                .required = true,
+                .available = true,
+                .bind_ready = true,
+                .draw_ready = true,
+                .diagnostic = "fixture vertex buffer bind ready",
+            },
+        },
     };
 }
 
@@ -784,6 +851,12 @@ void test_vulkan_command_packet_execution_names_are_stable()
             == std::string_view{"descriptor_payloads_unavailable"},
         "native packet execution status name for descriptor payloads unavailable is stable");
     require(
+        vulkan_backend::native_command_packet_execution_status_name(
+            vulkan_backend::vulkan_native_command_packet_execution_status::
+                vertex_buffer_unavailable)
+            == std::string_view{"vertex_buffer_unavailable"},
+        "native packet execution status name for vertex buffer unavailable is stable");
+    require(
         vulkan_backend::native_command_packet_call_kind_name(
             vulkan_backend::vulkan_native_command_packet_call_kind::bind_pipeline)
             == std::string_view{"bind_pipeline"},
@@ -793,6 +866,11 @@ void test_vulkan_command_packet_execution_names_are_stable()
             vulkan_backend::vulkan_native_command_packet_call_kind::draw)
             == std::string_view{"draw"},
         "native packet call kind name for draw is stable");
+    require(
+        vulkan_backend::native_command_packet_call_kind_name(
+            vulkan_backend::vulkan_native_command_packet_call_kind::bind_vertex_buffers)
+            == std::string_view{"bind_vertex_buffers"},
+        "native packet call kind name for bind vertex buffers is stable");
     require(
         vulkan_backend::native_descriptor_set_allocation_status_name(
             vulkan_backend::vulkan_native_descriptor_set_allocation_status::ready)
@@ -1108,6 +1186,9 @@ void test_vulkan_native_command_packet_executor_translates_packets_to_native_cal
     require(
         native_result.descriptor_sets_ready,
         "native packet translation records descriptor set handles ready");
+    require(
+        native_result.vertex_buffer_binds_ready,
+        "native packet translation records vertex buffer bind readiness");
     require(native_result.planned_packet_count == 4, "native packet translation records planned packets");
     require(
         native_result.attempted_packet_count == 4,
@@ -1116,12 +1197,12 @@ void test_vulkan_native_command_packet_executor_translates_packets_to_native_cal
         native_result.translated_packet_count == 4,
         "native packet translation records translated packets");
     require(
-        native_result.attempted_native_call_count == 20,
-        "native packet translation attempts five native calls per packet");
+        native_result.attempted_native_call_count == 24,
+        "native packet translation attempts six native calls per packet");
     require(
-        native_result.completed_native_call_count == 20,
-        "native packet translation completes five native calls per packet");
-    require(native_result.calls.size() == 20, "native packet translation records native call evidence");
+        native_result.completed_native_call_count == 24,
+        "native packet translation completes six native calls per packet");
+    require(native_result.calls.size() == 24, "native packet translation records native call evidence");
     require(
         native_result.calls[0].kind
             == vulkan_backend::vulkan_native_command_packet_call_kind::bind_pipeline,
@@ -1132,28 +1213,48 @@ void test_vulkan_native_command_packet_executor_translates_packets_to_native_cal
         "native packet translation binds descriptor sets");
     require(
         native_result.calls[2].kind
+            == vulkan_backend::vulkan_native_command_packet_call_kind::bind_vertex_buffers,
+        "native packet translation binds vertex buffers");
+    require(
+        native_result.calls[3].kind
             == vulkan_backend::vulkan_native_command_packet_call_kind::set_viewport,
         "native packet translation sets the viewport");
     require(
-        native_result.calls[3].kind
+        native_result.calls[4].kind
             == vulkan_backend::vulkan_native_command_packet_call_kind::set_scissor,
         "native packet translation sets the packet scissor");
     require(
-        native_result.calls[4].kind
+        native_result.calls[5].kind
             == vulkan_backend::vulkan_native_command_packet_call_kind::draw,
         "native packet translation emits a draw call");
-    require(native_result.calls[4].symbol_name == "vkCmdDraw", "draw call records symbol name");
-    require(native_result.calls[4].vertex_count == 4, "draw call records quad vertex count");
-    require(native_result.calls[4].packet_index == 0, "draw call records packet index");
+    require(
+        native_result.calls[2].symbol_name == "vkCmdBindVertexBuffers",
+        "vertex buffer bind records symbol name");
+    require(
+        native_result.calls[2].vertex_buffer.value == 15000,
+        "vertex buffer bind records buffer handle");
+    require(
+        native_result.calls[2].vertex_count == 4,
+        "vertex buffer bind records vertex count");
+    require(native_result.calls[5].symbol_name == "vkCmdDraw", "draw call records symbol name");
+    require(native_result.calls[5].vertex_count == 4, "draw call records quad vertex count");
+    require(native_result.calls[5].packet_index == 0, "draw call records packet index");
     require(native_result.draw_calls_ready, "native packet translation records draw readiness");
     require(native_result.draw_call_count == 4, "native packet translation records draw call count");
-    require(native_result.calls[9].pipeline_bind_ready, "text packet draw sees pipeline bind");
-    require(native_result.calls[9].descriptor_bind_required, "text packet draw requires descriptor bind");
-    require(native_result.calls[9].descriptor_bind_ready, "text packet draw sees descriptor bind");
+    require(native_result.vertex_buffer_bind_count == 4, "native packet translation records vertex binds");
+    require(native_result.calls[11].pipeline_bind_ready, "text packet draw sees pipeline bind");
+    require(native_result.calls[11].descriptor_bind_required, "text packet draw requires descriptor bind");
+    require(native_result.calls[11].descriptor_bind_ready, "text packet draw sees descriptor bind");
+    require(native_result.calls[11].vertex_buffer_bind_required, "text packet draw requires vertex bind");
+    require(native_result.calls[11].vertex_buffer_bind_ready, "text packet draw sees vertex bind");
     require(
-        native_result.calls[9].draw_packet_identity
+        native_result.calls[11].draw_packet_identity
             == "packet:1:command:11:category:text:batch:text:vertices:4:instances:1",
         "text packet draw records stable packet identity");
+    require(
+        native_result.calls[11].vertex_buffer_packet_identity
+            == "packet:1:command:11:category:text:batch:text:vertex_buffer:vertices:4",
+        "text packet draw records stable vertex buffer identity");
     for (const vulkan_backend::vulkan_native_command_packet_call_evidence& call :
          native_result.calls) {
         require(call.successful(), "each native command packet call reports success");
@@ -1248,7 +1349,7 @@ void test_vulkan_native_command_packet_executor_completes_with_allocated_descrip
     require(result.completed(), "allocated descriptor evidence completes interface execution");
     require(native_result.completed(), "allocated descriptor evidence completes native execution");
     require(native_result.descriptor_sets_ready, "allocated descriptor evidence is ready");
-    require(native_result.calls.size() == 20, "allocated descriptor evidence emits native calls");
+    require(native_result.calls.size() == 24, "allocated descriptor evidence emits native calls");
     require(
         native_result.calls[1].kind
             == vulkan_backend::vulkan_native_command_packet_call_kind::bind_descriptor_sets,
@@ -1449,7 +1550,7 @@ void test_vulkan_native_descriptor_set_allocation_uses_image_materialization()
     require(
         native_result.descriptor_payload_binds_ready,
         "image materialization descriptor payload bind evidence is ready");
-    require(native_result.calls.size() == 5, "single image packet emits five native calls");
+    require(native_result.calls.size() == 6, "single image packet emits six native calls");
     require(
         native_result.calls[1].descriptor_set_count == 1,
         "single image packet binds one descriptor set");
@@ -2013,7 +2114,7 @@ void test_vulkan_native_command_packet_executor_binds_descriptor_payloads_for_im
     require(
         native_result.descriptor_payload_identity_count == 3,
         "native result records payload identity count");
-    require(native_result.calls.size() == 5, "image packet emits five native command calls");
+    require(native_result.calls.size() == 6, "image packet emits six native command calls");
     require(
         native_result.calls[1].kind
             == vulkan_backend::vulkan_native_command_packet_call_kind::bind_descriptor_sets,
@@ -2042,34 +2143,53 @@ void test_vulkan_native_command_packet_executor_binds_descriptor_payloads_for_im
         native_result.calls[1].descriptor_payloads[2].sampler.value == 13000,
         "bind call records sampler payload identity");
     require(
-        native_result.calls[4].kind == vulkan_backend::vulkan_native_command_packet_call_kind::draw,
+        native_result.calls[2].kind
+            == vulkan_backend::vulkan_native_command_packet_call_kind::bind_vertex_buffers,
+        "image packet vertex buffer bind is recorded after descriptor bind");
+    require(
+        native_result.calls[2].symbol_name == "vkCmdBindVertexBuffers",
+        "image packet vertex buffer bind records native symbol");
+    require(
+        native_result.calls[2].vertex_buffer.value == 15000,
+        "image packet vertex buffer bind records handle");
+    require(
+        native_result.calls[2].vertex_buffer_packet_identity
+            == "packet:0:command:20:category:image:batch:image:vertex_buffer:vertices:4",
+        "image packet vertex buffer bind records packet identity");
+    require(
+        native_result.calls[5].kind == vulkan_backend::vulkan_native_command_packet_call_kind::draw,
         "image packet draw call is recorded after descriptor bind");
     require(native_result.draw_calls_ready, "image packet draw call readiness is recorded");
+    require(
+        native_result.vertex_buffer_binds_ready,
+        "image packet vertex buffer bind readiness is recorded");
     require(native_result.draw_call_count == 1, "image packet records one draw call");
     require(
         native_result.draw_payload_identity_count == 3,
         "image packet records payload identity count for draw");
-    require(native_result.calls[4].draw_ready, "image draw call records draw readiness");
-    require(native_result.calls[4].pipeline_bind_ready, "image draw call records pipeline bind readiness");
-    require(native_result.calls[4].descriptor_bind_required, "image draw call requires descriptor bind");
-    require(native_result.calls[4].descriptor_bind_ready, "image draw call records descriptor bind readiness");
-    require(native_result.calls[4].vertex_count == 4, "image draw call records vertex count");
-    require(native_result.calls[4].index_count == 0, "image draw call records non-indexed count");
-    require(native_result.calls[4].first_vertex == 0, "image draw call records first vertex");
-    require(native_result.calls[4].first_index == 0, "image draw call records first index");
-    require(native_result.calls[4].instance_count == 1, "image draw call records instance count");
-    require(native_result.calls[4].first_instance == 0, "image draw call records first instance");
+    require(native_result.calls[5].draw_ready, "image draw call records draw readiness");
+    require(native_result.calls[5].pipeline_bind_ready, "image draw call records pipeline bind readiness");
+    require(native_result.calls[5].descriptor_bind_required, "image draw call requires descriptor bind");
+    require(native_result.calls[5].descriptor_bind_ready, "image draw call records descriptor bind readiness");
+    require(native_result.calls[5].vertex_buffer_bind_required, "image draw call requires vertex bind");
+    require(native_result.calls[5].vertex_buffer_bind_ready, "image draw call records vertex bind readiness");
+    require(native_result.calls[5].vertex_count == 4, "image draw call records vertex count");
+    require(native_result.calls[5].index_count == 0, "image draw call records non-indexed count");
+    require(native_result.calls[5].first_vertex == 0, "image draw call records first vertex");
+    require(native_result.calls[5].first_index == 0, "image draw call records first index");
+    require(native_result.calls[5].instance_count == 1, "image draw call records instance count");
+    require(native_result.calls[5].first_instance == 0, "image draw call records first instance");
     require(
-        native_result.calls[4].draw_packet_identity
+        native_result.calls[5].draw_packet_identity
             == "packet:0:command:20:category:image:batch:image:vertices:4:instances:1",
         "image draw call records stable packet identity");
     require(
-        native_result.calls[4].draw_payload_identity.find(
+        native_result.calls[5].draw_payload_identity.find(
             "packet:0:set:0:binding:1:kind:image_texture:resource:fixture://renderer/card.png")
             != std::string::npos,
         "image draw call records texture payload identity");
     require(
-        native_result.calls[4].descriptor_payloads[2].stable_identity
+        native_result.calls[5].descriptor_payloads[2].stable_identity
             == "packet:0:set:0:binding:2:kind:image_sampler:resource:image_sampler:1:1:0:0:0",
         "image draw call carries sampler payload identity");
 }
@@ -2396,8 +2516,18 @@ void test_vulkan_native_command_packet_executor_skips_descriptor_bind_without_de
             == 0,
         "packet without descriptor sets emits no descriptor bind calls");
     require(
-        native_result.calls.size() == 4,
-        "packet without descriptor sets emits pipeline, viewport, scissor, and draw calls");
+        count_native_calls_of_kind(
+            native_result,
+            vulkan_backend::vulkan_native_command_packet_call_kind::bind_vertex_buffers)
+            == 1,
+        "packet without descriptor sets still emits a vertex buffer bind");
+    require(
+        native_result.calls.size() == 5,
+        "packet without descriptor sets emits pipeline, vertex buffer, viewport, scissor, and draw calls");
+    require(
+        native_result.calls[1].kind
+            == vulkan_backend::vulkan_native_command_packet_call_kind::bind_vertex_buffers,
+        "packet without descriptor sets binds vertex buffers before draw");
     require(
         native_result.calls.back().kind
             == vulkan_backend::vulkan_native_command_packet_call_kind::draw,
@@ -2406,6 +2536,9 @@ void test_vulkan_native_command_packet_executor_skips_descriptor_bind_without_de
     require(
         !native_result.calls.back().descriptor_bind_required,
         "packet without descriptor sets records no descriptor bind requirement");
+    require(
+        native_result.calls.back().vertex_buffer_bind_ready,
+        "packet without descriptor sets records vertex bind readiness");
     require(
         native_result.calls.back().draw_payload_identity.find("payloads:none") != std::string::npos,
         "packet without descriptor sets records empty draw payload identity");
@@ -2451,6 +2584,15 @@ void test_vulkan_native_command_packet_evidence_preserves_descriptor_handle_gap(
     require(
         !evidence.descriptor_sets.front().descriptor_set.valid(),
         "native packet evidence does not fabricate native descriptor set handles");
+    require(
+        evidence.vertex_buffer_binds.size() == 4,
+        "native packet evidence records one vertex buffer bind per packet");
+    require(
+        evidence.vertex_buffer_binds.front().completed(),
+        "native packet evidence derives ready vertex buffer bind evidence from packet vertices");
+    require(
+        evidence.vertex_buffer_binds.front().vertex_buffer.value == 15000,
+        "native packet evidence records stable fake vertex buffer handle");
 
     vulkan_backend::vulkan_native_command_packet_executor executor(evidence);
     const vulkan_backend::vulkan_command_packet_execution_result result =
@@ -2641,6 +2783,93 @@ void test_vulkan_native_descriptor_set_allocation_blocks_incomplete_resource_bin
         "incomplete resource bindings map to resource binding fallback");
 }
 
+void test_vulkan_native_command_packet_executor_blocks_missing_vertex_buffer_bind()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+        make_native_packet_evidence();
+    evidence.vertex_buffer_binds.erase(evidence.vertex_buffer_binds.begin());
+
+    vulkan_backend::vulkan_native_command_packet_executor executor(std::move(evidence));
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(make_ready_bridge());
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(!result.completed(), "missing vertex buffer bind evidence blocks execution");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::
+                vertex_buffer_unavailable,
+        "missing vertex buffer bind evidence reports vertex buffer unavailable");
+    require(
+        !native_result.vertex_buffer_binds_ready,
+        "missing vertex buffer bind evidence keeps bind readiness false");
+    require(!native_result.draw_calls_ready, "missing vertex buffer bind keeps draw readiness false");
+    require(native_result.calls.empty(), "missing vertex buffer bind records no native calls");
+    require(
+        native_result.diagnostic.find("vertex buffer") != std::string::npos,
+        "missing vertex buffer bind diagnostic names vertex buffer evidence");
+}
+
+void test_vulkan_native_command_packet_executor_blocks_invalid_vertex_buffer_handle()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+        make_native_packet_evidence();
+    evidence.vertex_buffer_binds.front().vertex_buffer = {};
+
+    vulkan_backend::vulkan_native_command_packet_executor executor(std::move(evidence));
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(make_ready_bridge());
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(!result.completed(), "invalid vertex buffer handle blocks execution");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::
+                vertex_buffer_unavailable,
+        "invalid vertex buffer handle reports vertex buffer unavailable");
+    require(
+        native_result.diagnostic.find("vertex buffer handle") != std::string::npos,
+        "invalid vertex buffer handle diagnostic names handle evidence");
+    require(
+        count_native_calls_of_kind(
+            native_result,
+            vulkan_backend::vulkan_native_command_packet_call_kind::draw)
+            == 0,
+        "invalid vertex buffer handle records no native draw call");
+}
+
+void test_vulkan_native_command_packet_executor_blocks_mismatched_vertex_buffer_identity()
+{
+    using namespace quiz_vulkan::render;
+
+    vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+        make_native_packet_evidence();
+    evidence.vertex_buffer_binds.front().packet_identity = "mismatched-vertex-buffer";
+
+    vulkan_backend::vulkan_native_command_packet_executor executor(std::move(evidence));
+    const vulkan_backend::vulkan_command_packet_execution_result result =
+        executor.execute_packets(make_ready_bridge());
+    const vulkan_backend::vulkan_native_command_packet_execution_result native_result =
+        executor.native_execution_result();
+
+    require(!result.completed(), "mismatched vertex buffer identity blocks execution");
+    require(
+        native_result.status
+            == vulkan_backend::vulkan_native_command_packet_execution_status::
+                vertex_buffer_unavailable,
+        "mismatched vertex buffer identity reports vertex buffer unavailable");
+    require(
+        native_result.diagnostic.find("mismatched") != std::string::npos,
+        "mismatched vertex buffer identity diagnostic names mismatch");
+    require(native_result.calls.empty(), "mismatched vertex buffer identity records no native calls");
+}
+
 void test_vulkan_native_command_packet_executor_blocks_missing_draw_symbol()
 {
     using namespace quiz_vulkan::render;
@@ -2736,7 +2965,7 @@ void test_vulkan_native_command_packet_executor_blocks_invalid_packet_scissor()
             == vulkan_backend::vulkan_native_command_packet_execution_status::invalid_packet_data,
         "invalid scissor records invalid packet data status");
     require(
-        native_result.calls.size() == 5,
+        native_result.calls.size() == 6,
         "invalid scissor keeps native call evidence for completed prior packet");
     require(
         native_result.diagnostic.find("scissor") != std::string::npos,
@@ -2777,7 +3006,7 @@ void test_vulkan_native_command_packet_executor_blocks_invalid_draw_counts()
             == 0,
         "invalid draw counts emit no native draw call");
     require(
-        native_result.calls.size() == 4,
+        native_result.calls.size() == 5,
         "invalid draw counts preserve bind and state evidence before draw");
     require(
         native_result.diagnostic.find("draw counts") != std::string::npos,
@@ -3019,6 +3248,9 @@ int main()
     test_vulkan_native_command_packet_executor_blocks_duplicate_descriptor_evidence();
     test_vulkan_native_command_packet_executor_blocks_wrong_packet_descriptor_evidence();
     test_vulkan_native_descriptor_set_allocation_blocks_incomplete_resource_bindings();
+    test_vulkan_native_command_packet_executor_blocks_missing_vertex_buffer_bind();
+    test_vulkan_native_command_packet_executor_blocks_invalid_vertex_buffer_handle();
+    test_vulkan_native_command_packet_executor_blocks_mismatched_vertex_buffer_identity();
     test_vulkan_native_command_packet_executor_blocks_missing_draw_symbol();
     test_vulkan_native_command_packet_executor_blocks_invalid_command_buffer();
     test_vulkan_native_command_packet_executor_blocks_invalid_packet_scissor();

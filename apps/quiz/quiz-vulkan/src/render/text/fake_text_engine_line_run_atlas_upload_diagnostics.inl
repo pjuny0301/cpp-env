@@ -144,9 +144,11 @@ void record_line_run_atlas_upload_diagnostics(fake_text_engine_diagnostics& diag
         const bool duplicate_suppressed = upload_request != nullptr
             && upload_request->status == render_text_atlas_upload_request_status::duplicate_suppressed;
         const bool reused = clean_reuse || duplicate_suppressed;
+        const bool reused_atlas_payload = payload != nullptr && payload->reused_atlas_payload;
         const bool has_raster_payload =
-            payload != nullptr && !payload->skipped && payload->rgba_bytes > 0U;
-        const bool raster_payload_upload_ready = payload != nullptr && payload->upload_ready;
+            payload != nullptr && ((!payload->skipped && payload->rgba_bytes > 0U) || reused_atlas_payload);
+        const bool raster_payload_upload_ready =
+            payload != nullptr && (payload->upload_ready || reused_atlas_payload);
         const bool blocked = !upload_ready && !reused;
         const std::string blocker_reason = blocked
             ? line_run_atlas_upload_blocker_reason_for(

@@ -16,6 +16,7 @@ namespace quiz_vulkan::render {
 
 enum class render_text_font_rasterizer_status {
     rasterized,
+    atlas_cache_hit,
     missing_font_source,
     missing_font_bytes,
     unsupported_glyph,
@@ -28,6 +29,8 @@ inline std::string render_text_font_rasterizer_status_name(
     switch (status) {
     case render_text_font_rasterizer_status::rasterized:
         return "rasterized";
+    case render_text_font_rasterizer_status::atlas_cache_hit:
+        return "atlas_cache_hit";
     case render_text_font_rasterizer_status::missing_font_source:
         return "missing_font_source";
     case render_text_font_rasterizer_status::missing_font_bytes:
@@ -145,6 +148,9 @@ struct render_text_rasterized_glyph_atlas_payload_snapshot {
     bool used_freetype_rasterizer = false;
     bool uses_deterministic_rasterizer = true;
     std::string deterministic_fallback_reason;
+    bool atlas_cache_hit = false;
+    bool reused_atlas_payload = false;
+    bool rasterization_skipped_for_atlas_cache_hit = false;
     bool cacheable = false;
     bool upload_ready = false;
     bool skipped = true;
@@ -163,6 +169,9 @@ struct render_text_rasterized_glyph_atlas_payload_policy_snapshot {
     std::size_t freetype_rasterizer_count = 0;
     std::size_t materialized_font_bytes_count = 0;
     std::size_t deterministic_fallback_reason_count = 0;
+    std::size_t atlas_cache_hit_count = 0;
+    std::size_t reused_atlas_payload_count = 0;
+    std::size_t rasterization_skipped_for_atlas_cache_hit_count = 0;
     std::size_t total_alpha_bytes = 0;
     std::size_t total_rgba_bytes = 0;
 };

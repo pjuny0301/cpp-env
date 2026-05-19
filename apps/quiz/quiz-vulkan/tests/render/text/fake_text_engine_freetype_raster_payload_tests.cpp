@@ -135,6 +135,25 @@ quiz_vulkan::render::render_text_request single_glyph_request(
     };
 }
 
+quiz_vulkan::render::render_text_request latin_residency_request(std::string text)
+{
+    return quiz_vulkan::render::render_text_request{
+        .text_runs = {
+            quiz_vulkan::render::render_text_run{
+                .text = std::move(text),
+                .style_token = "payload-freetype",
+            },
+        },
+        .bounds = quiz_vulkan::render::render_rect{0.0f, 0.0f, 320.0f, 0.0f},
+        .style_catalog = style_catalog_for("Payload FreeType Sans", "payload-freetype"),
+        .options = quiz_vulkan::render::render_text_options{
+            .wrap = quiz_vulkan::render::render_text_wrap_mode::no_wrap,
+            .alignment = quiz_vulkan::render::render_text_alignment::start,
+            .max_lines = 0,
+        },
+    };
+}
+
 quiz_vulkan::render::render_text_request multiline_korean_request()
 {
     return quiz_vulkan::render::render_text_request{
@@ -483,6 +502,133 @@ void test_file_backed_freetype_selection_rasterizes_real_payload()
     require(summary.changed_packet_ids.size() == 1U, "real font summary exposes changed draw packet id");
 }
 
+void test_repeated_file_backed_freetype_text_reuses_resident_atlas_payload()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path font_path = first_available_freetype_real_font_fixture();
+    if (font_path.empty() || !render_text_freetype_memory_face_adapter_available()) {
+        return;
+    }
+
+    fake_text_engine engine;
+    select_real_text_stack(engine);
+    engine.add_font_face(font_face_descriptor{
+        .id = 815,
+        .family = "Payload FreeType Sans",
+        .source_uri = font_path.generic_string(),
+        .version = "external-fixture",
+        .license = "harfbuzz-test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = U'A', .last = U'B'},
+        },
+        .weight = 400,
+    });
+
+    const render_text_layout first_layout = engine.layout_text(latin_residency_request("A"));
+    const fake_text_engine_diagnostics first = engine.last_diagnostics();
+    require(first_layout.glyphs.size() == 1U, "first FreeType cache frame lays out one glyph");
+    require(
+        first.rasterized_glyph_atlas_payload_policy.freetype_rasterizer_count == 1U,
+        "first FreeType cache frame calls the real rasterizer");
+    require(
+        first.rasterized_glyph_atlas_payload_policy.materialized_font_bytes_count == 1U,
+        "first FreeType cache frame materializes font bytes");
+    require(
+        first.rasterized_glyph_atlas_payload_policy.atlas_cache_hit_count == 0U,
+        "first FreeType cache frame is not an atlas cache hit");
+    require(
+        first.glyph_atlas_materialization_policy.upload_ready_count == 1U,
+        "first FreeType cache frame queues one atlas upload");
+    require(
+        first.atlas_upload_request_bridge.policy.unique_upload_request_count == 1U,
+        "first FreeType cache frame exposes one upload request");
+
+    const glyph_atlas_key cached_key = first.rasterized_glyph_atlas_payloads.front().cache_key;
+    const render_text_atlas_page_id cached_page_id = first.glyph_atlas_placements.front().page.id;
+
+    const render_text_layout second_layout = engine.layout_text(latin_residency_request("A"));
+    const fake_text_engine_diagnostics second = engine.last_diagnostics();
+    require(second_layout.glyphs.size() == 1U, "second FreeType cache frame lays out repeated glyph");
+    require(second.rasterized_glyph_atlas_payloads.size() == 1U, "second FreeType cache frame records payload reuse");
+    const render_text_rasterized_glyph_atlas_payload_snapshot& reused_payload =
+        second.rasterized_glyph_atlas_payloads.front();
+    require(
+        reused_payload.status == render_text_font_rasterizer_status::atlas_cache_hit,
+        "second FreeType cache frame reports atlas cache hit instead of fresh rasterization");
+    require(reused_payload.atlas_cache_hit, "second FreeType cache frame marks payload atlas cache hit");
+    require(reused_payload.reused_atlas_payload, "second FreeType cache frame marks resident payload reuse");
+    require(
+        reused_payload.rasterization_skipped_for_atlas_cache_hit,
+        "second FreeType cache frame skips rerasterization for resident payload");
+    require(!reused_payload.used_freetype_rasterizer, "second FreeType cache frame does not rerun FreeType");
+    require(!reused_payload.uses_deterministic_rasterizer, "second FreeType cache frame does not use fake rasterizer");
+    require(!reused_payload.materialized_font_bytes, "second FreeType cache frame does not rematerialize font bytes");
+    require(reused_payload.cache_key == cached_key, "second FreeType cache frame preserves glyph cache key");
+    require(reused_payload.alpha_bytes == 0U, "second FreeType cache frame emits no new alpha payload bytes");
+    require(reused_payload.rgba_bytes == 0U, "second FreeType cache frame emits no new RGBA payload bytes");
+    require(
+        reused_payload.diagnostic.find("resident atlas slot") != std::string::npos,
+        "second FreeType cache frame diagnostic names resident atlas reuse");
+    require(
+        second.rasterized_glyph_atlas_payload_policy.freetype_rasterizer_count == 0U,
+        "second FreeType cache frame records no real rasterizer call");
+    require(
+        second.rasterized_glyph_atlas_payload_policy.materialized_font_bytes_count == 0U,
+        "second FreeType cache frame records no fresh font byte materialization");
+    require(
+        second.rasterized_glyph_atlas_payload_policy.atlas_cache_hit_count == 1U,
+        "second FreeType cache frame counts one atlas cache hit");
+    require(
+        second.rasterized_glyph_atlas_payload_policy.reused_atlas_payload_count == 1U,
+        "second FreeType cache frame counts one reused atlas payload");
+    require(
+        second.rasterized_glyph_atlas_payload_policy.rasterization_skipped_for_atlas_cache_hit_count == 1U,
+        "second FreeType cache frame counts one skipped rasterization");
+    require(second.glyph_atlas_placements.front().cache_hit, "second FreeType cache frame reuses atlas placement");
+    require(
+        second.glyph_atlas_placements.front().page.id == cached_page_id,
+        "second FreeType cache frame preserves atlas page residency");
+    require(
+        second.glyph_atlas_materialization_policy.clean_reuse_count == 1U,
+        "second FreeType cache frame materializes clean reuse");
+    require(
+        second.line_run_atlas_upload_policy.clean_reuse_cluster_count == 1U,
+        "second FreeType cache frame line/run upload records clean reuse");
+    require(
+        second.atlas_upload_request_bridge.policy.unique_upload_request_count == 0U,
+        "second FreeType cache frame emits no new unique upload request");
+
+    const render_text_layout third_layout = engine.layout_text(latin_residency_request("AB"));
+    const fake_text_engine_diagnostics third = engine.last_diagnostics();
+    require(third_layout.glyphs.size() == 2U, "third FreeType cache frame lays out repeated and new glyphs");
+    require(third.rasterized_glyph_atlas_payloads.size() == 2U, "third FreeType cache frame records two payload decisions");
+    require(
+        third.rasterized_glyph_atlas_payload_policy.atlas_cache_hit_count == 1U,
+        "third FreeType cache frame reuses one resident payload");
+    require(
+        third.rasterized_glyph_atlas_payload_policy.freetype_rasterizer_count == 1U,
+        "third FreeType cache frame rasterizes only the new glyph");
+    require(
+        third.rasterized_glyph_atlas_payload_policy.materialized_font_bytes_count == 1U,
+        "third FreeType cache frame materializes bytes only for the new glyph");
+    require(
+        third.glyph_atlas_materialization_policy.clean_reuse_count == 1U,
+        "third FreeType cache frame records one clean reuse materialization");
+    require(
+        third.glyph_atlas_materialization_policy.upload_ready_count == 1U,
+        "third FreeType cache frame records one new upload-ready materialization");
+    require(
+        third.line_run_atlas_upload_policy.clean_reuse_cluster_count == 1U,
+        "third FreeType cache frame line/run evidence preserves reused glyph");
+    require(
+        third.line_run_atlas_upload_policy.upload_ready_cluster_count == 1U,
+        "third FreeType cache frame line/run evidence exposes new glyph upload");
+    require(
+        third.atlas_upload_request_bridge.policy.unique_upload_request_count == 1U,
+        "third FreeType cache frame emits one new upload request");
+}
+
 void test_multiline_korean_text_reaches_frame_handoff_with_partial_upload_blocker()
 {
     using namespace quiz_vulkan::render;
@@ -732,6 +878,23 @@ void test_repeated_hangul_text_reuses_atlas_residency_and_uploads_new_glyph()
     require(
         first.rasterized_glyph_atlas_payload_policy.materialized_font_bytes_count == 1U,
         "first Hangul frame materializes font bytes");
+    require(
+        first.rasterized_glyph_atlas_payloads.size() == 1U,
+        "first Hangul frame records one raster payload decision");
+    const render_text_rasterized_glyph_atlas_payload_snapshot& first_hangul_payload =
+        first.rasterized_glyph_atlas_payloads.front();
+    if (first_hangul_payload.used_freetype_rasterizer) {
+        require(
+            first.rasterized_glyph_atlas_payload_policy.freetype_rasterizer_count == 1U,
+            "first Hangul frame records real FreeType raster coverage when fixture supports it");
+    } else {
+        require(
+            !first_hangul_payload.deterministic_fallback_reason.empty(),
+            "first Hangul frame records a fallback reason when FreeType cannot rasterize the fixture glyph");
+        require(
+            first_hangul_payload.deterministic_fallback_reason.find("FreeType") != std::string::npos,
+            "first Hangul fallback diagnostic names the FreeType coverage/raster blocker");
+    }
     require(first.glyph_cache_readiness.size() == 1U, "first Hangul frame records one cache readiness item");
     require(
         first.glyph_cache_readiness.front().codepoint == static_cast<std::uint32_t>(U'\uAC00'),
@@ -1001,6 +1164,7 @@ void test_missing_file_backed_freetype_payload_falls_back_and_skips()
 int main()
 {
     test_file_backed_freetype_selection_rasterizes_real_payload();
+    test_repeated_file_backed_freetype_text_reuses_resident_atlas_payload();
     test_multiline_korean_text_reaches_frame_handoff_with_partial_upload_blocker();
     test_repeated_hangul_text_reuses_atlas_residency_and_uploads_new_glyph();
     test_missing_file_backed_freetype_payload_falls_back_and_skips();

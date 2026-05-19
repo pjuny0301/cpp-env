@@ -2386,6 +2386,9 @@ static_assert(requires(render::render_text_rasterized_glyph_atlas_payload_snapsh
     { payload.used_freetype_rasterizer } -> std::same_as<bool&>;
     { payload.uses_deterministic_rasterizer } -> std::same_as<bool&>;
     { payload.deterministic_fallback_reason } -> std::same_as<std::string&>;
+    { payload.atlas_cache_hit } -> std::same_as<bool&>;
+    { payload.reused_atlas_payload } -> std::same_as<bool&>;
+    { payload.rasterization_skipped_for_atlas_cache_hit } -> std::same_as<bool&>;
     { payload.cacheable } -> std::same_as<bool&>;
     { payload.upload_ready } -> std::same_as<bool&>;
     { payload.skipped } -> std::same_as<bool&>;
@@ -2404,6 +2407,9 @@ static_assert(requires(render::render_text_rasterized_glyph_atlas_payload_policy
     { policy.freetype_rasterizer_count } -> std::same_as<std::size_t&>;
     { policy.materialized_font_bytes_count } -> std::same_as<std::size_t&>;
     { policy.deterministic_fallback_reason_count } -> std::same_as<std::size_t&>;
+    { policy.atlas_cache_hit_count } -> std::same_as<std::size_t&>;
+    { policy.reused_atlas_payload_count } -> std::same_as<std::size_t&>;
+    { policy.rasterization_skipped_for_atlas_cache_hit_count } -> std::same_as<std::size_t&>;
     { policy.total_alpha_bytes } -> std::same_as<std::size_t&>;
     { policy.total_rgba_bytes } -> std::same_as<std::size_t&>;
 });

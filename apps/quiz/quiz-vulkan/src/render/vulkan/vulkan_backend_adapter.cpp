@@ -6793,6 +6793,11 @@ bool packet_requires_descriptor_payload_bind(const vulkan_command_packet& packet
     return image_descriptor_payload_count_for_packet(packet) > 0;
 }
 
+bool packet_requires_descriptor_set_bind(const vulkan_command_packet& packet)
+{
+    return packet.descriptor_set_count > 0;
+}
+
 std::size_t descriptor_set_count_for_packet(
     const vulkan_native_command_packet_executor_evidence& evidence,
     const vulkan_command_packet& packet)
@@ -7092,7 +7097,19 @@ std::string descriptor_payload_bind_diagnostic_for_packet(
 
     const vulkan_native_command_packet_descriptor_payload_bind* bind =
         descriptor_payload_bind_for_packet(evidence, packet);
-    if (bind == nullptr || !bind->completed()) {
+    if (bind == nullptr) {
+        return "Native Vulkan command packet executor found incomplete descriptor payload bind evidence";
+    }
+    if (!bind->pipeline_layout.valid()) {
+        return "Native Vulkan command packet executor found invalid descriptor bind pipeline layout evidence";
+    }
+    for (const vulkan_native_command_packet_descriptor_set& descriptor_set :
+         bind->descriptor_sets) {
+        if (!descriptor_set.completed()) {
+            return "Native Vulkan command packet executor found invalid descriptor set handle evidence";
+        }
+    }
+    if (!bind->completed()) {
         return "Native Vulkan command packet executor found incomplete descriptor payload bind evidence";
     }
     if (!descriptor_payload_bind_matches_packet(evidence, packet, *bind)) {
@@ -7434,13 +7451,15 @@ vulkan_native_command_packet_executor::execute_packets(
             evidence_,
             packet,
             vulkan_native_command_packet_call_kind::bind_pipeline);
-        append_native_command_packet_call(
-            native_result_,
-            evidence_,
-            packet,
-            vulkan_native_command_packet_call_kind::bind_descriptor_sets,
-            descriptor_set_count,
-            descriptor_payload_bind);
+        if (packet_requires_descriptor_set_bind(packet)) {
+            append_native_command_packet_call(
+                native_result_,
+                evidence_,
+                packet,
+                vulkan_native_command_packet_call_kind::bind_descriptor_sets,
+                descriptor_set_count,
+                descriptor_payload_bind);
+        }
         append_native_command_packet_call(
             native_result_,
             evidence_,

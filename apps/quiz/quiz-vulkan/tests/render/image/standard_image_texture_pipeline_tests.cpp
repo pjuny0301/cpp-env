@@ -909,6 +909,7 @@ void test_standard_pipeline_threads_decoded_bytes_into_draw_payloads()
     set_source_bytes(loader, "textures/bad.ppm", make_short_ppm_bytes());
     standard_image_texture_pipeline pipeline(resolver, loader);
     pipeline.set_placeholder_texture_policy(placeholder_policy);
+    image_texture_pipeline_interface& pipeline_interface = pipeline;
 
     render_image_sampler_policy nearest_sampler;
     nearest_sampler.min_filter = render_image_filter::nearest;
@@ -941,12 +942,16 @@ void test_standard_pipeline_threads_decoded_bytes_into_draw_payloads()
         resolver,
         render_image_texture_batch_plan_options{.placeholder_policy = placeholder_policy});
     const render_image_texture_batch_execution_diagnostics execution =
-        execute_render_image_texture_batch_plan(plan, pipeline);
+        execute_render_image_texture_batch_plan(plan, pipeline_interface);
     const render_image_texture_frame_snapshot frame =
         make_render_image_texture_frame_snapshot(plan, execution);
+    const render_image_texture_pipeline_upload_cache_snapshot side_snapshot =
+        render_image_texture_pipeline_upload_cache_diagnostic_snapshot(pipeline_interface);
+    const render_image_texture_pipeline_upload_cache_payload_summary upload_cache_summary =
+        render_image_texture_pipeline_upload_cache_payload_diagnostic_summary(pipeline_interface);
     const render_image_texture_upload_result_snapshot upload_result =
         make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
-            pipeline.standard_diagnostic_snapshot().pipeline.upload_snapshot);
+            side_snapshot.upload_snapshot);
     const render_image_texture_frame_resource_packet_plan resources =
         make_render_image_texture_frame_resource_packet_plan(frame, upload_result);
     const render_image_texture_frame_resource_packet_materialization materialization =
@@ -960,9 +965,12 @@ void test_standard_pipeline_threads_decoded_bytes_into_draw_payloads()
             make_render_image_renderer_texture_quad_packet_summary(composition),
             consumption);
     const render_image_renderer_texture_quad_draw_payload_frame payload_frame =
-        make_render_image_renderer_texture_quad_draw_payload_frame(quad_summary);
+        make_render_image_renderer_texture_quad_draw_payload_frame_with_upload_cache_payload_summary(
+            quad_summary,
+            pipeline_interface);
 
     require(execution.ok(), "standard draw payload batch executes with placeholder fallback");
+    require(upload_cache_summary.ok(), "standard upload/cache payload summary is ready");
     require(consumption.ok(), "standard draw payload consumption is renderer-ready");
     require(quad_summary.ok(), "standard draw payload quad summary is ready");
     require(payload_frame.ok(), "standard draw payload frame is consumable");
@@ -973,27 +981,54 @@ void test_standard_pipeline_threads_decoded_bytes_into_draw_payloads()
     require(payload_frame.decoded_resource_ready_payload_count == 2, "standard draw payload frame counts decoded resources");
     require(payload_frame.decoded_payload_byte_count == 20, "standard draw payload frame sums decoded bytes");
     require(payload_frame.staging_payload_byte_count == 20, "standard draw payload frame sums staging bytes");
+    require(payload_frame.upload_cache_payload_evidence_count == 2, "standard draw payload frame attaches upload/cache evidence");
+    require(payload_frame.upload_cache_payload_ready_count == 2, "standard draw payload frame counts upload/cache-ready payloads");
+    require(payload_frame.upload_cache_placeholder_payload_count == 1, "standard draw payload frame counts upload/cache placeholders");
+    require(payload_frame.upload_cache_payload_blocked_count == 0, "standard draw payload frame has no upload/cache blockers");
+    require(payload_frame.upload_cache_decoded_byte_count == 20, "standard draw payload frame sums upload/cache decoded bytes");
+    require(payload_frame.upload_cache_staging_byte_count == 20, "standard draw payload frame sums upload/cache staging bytes");
+    require(payload_frame.upload_cache_uploaded_byte_count == 20, "standard draw payload frame sums upload/cache uploaded bytes");
     require(
         payload_frame.decoded_resource_summary
             == "decoded_payloads=2; payload_hashes=2; decoded_bytes=20; staging_bytes=20",
         "standard draw payload decoded summary is stable");
+    require(
+        payload_frame.upload_cache_payload_summary
+            == "upload_cache_payloads=2; ready=2; placeholders=1; blocked=0; payload_hashes=2; decoded_bytes=20; staging_bytes=20; uploaded_bytes=20",
+        "standard draw payload upload/cache summary is stable");
 
     const render_image_renderer_texture_quad_draw_payload& ready = payload_frame.payloads[0];
     require(ready.draw_ready, "standard draw payload keeps real texture draw-ready");
+    require(ready.upload_cache_payload_evidence_present, "standard draw payload attaches upload/cache evidence");
+    require(ready.upload_cache_payload_identity_matched, "standard draw payload matches upload/cache identity");
+    require(ready.upload_cache_payload_ready, "standard draw payload records upload/cache readiness");
     require(ready.decoded_resource_ready, "standard draw payload preserves decoded readiness");
     require(ready.decoded_payload_hash == consumption.entries[0].decoded_payload_hash, "standard draw payload preserves decoded hash");
+    require(
+        ready.upload_cache_decoded_payload_hash == ready.decoded_payload_hash,
+        "standard draw payload upload/cache hash matches decoded resource hash");
     require(ready.decoded_byte_count == 4, "standard draw payload records real RGBA byte count");
+    require(ready.upload_cache_decoded_byte_count == 4, "standard draw payload records upload/cache decoded bytes");
     require(ready.upload_layout_byte_count == 4, "standard draw payload records upload layout bytes");
     require(ready.staging_payload_byte_count == 4, "standard draw payload records staging bytes");
+    require(ready.upload_cache_uploaded_byte_count == 4, "standard draw payload records upload/cache uploaded bytes");
     require(ready.upload_generation_id == consumption.entries[0].upload_generation_id, "standard draw payload preserves upload generation");
     require(ready.stable_texture_cache_key.find("textures/card.ppm") != std::string::npos, "standard draw payload preserves cache key");
+    require(
+        ready.upload_cache_stable_cache_key == ready.stable_texture_cache_key,
+        "standard draw payload upload/cache evidence preserves cache identity");
     require(ready.sampler_key == render_image_sampler_policy_stable_fragment(nearest_sampler), "standard draw payload preserves sampler key");
 
     const render_image_renderer_texture_quad_draw_payload& placeholder = payload_frame.payloads[1];
     require(placeholder.placeholder_backed, "standard draw payload keeps placeholder-backed texture");
     require(!placeholder.fallback_placeholder, "standard draw payload distinguishes uploaded placeholder from draw fallback");
+    require(placeholder.upload_cache_placeholder_backed, "standard placeholder draw payload attaches upload/cache placeholder evidence");
+    require(
+        placeholder.upload_cache_placeholder_reason == fake_image_texture_placeholder_reason::decode_failed,
+        "standard placeholder draw payload records upload/cache placeholder reason");
     require(placeholder.decoded_resource_ready, "standard placeholder draw payload has decoded placeholder bytes");
     require(placeholder.decoded_byte_count == 16, "standard placeholder draw payload records placeholder RGBA bytes");
+    require(placeholder.upload_cache_decoded_byte_count == 16, "standard placeholder draw payload records upload/cache decoded bytes");
     require(placeholder.staging_payload_byte_count == 16, "standard placeholder draw payload records placeholder staging bytes");
 }
 
@@ -1222,6 +1257,7 @@ void test_standard_pipeline_draw_payload_fallback_preserves_decode_blocker()
     fake_image_source_bytes_loader loader;
     set_source_bytes(loader, "textures/short.ppm", make_short_ppm_bytes());
     standard_image_texture_pipeline pipeline(resolver, loader);
+    image_texture_pipeline_interface& pipeline_interface = pipeline;
 
     render_draw_list draw_list;
     draw_list.commands = {
@@ -1239,12 +1275,16 @@ void test_standard_pipeline_draw_payload_fallback_preserves_decode_blocker()
         make_render_image_draw_list_frame_handoff_snapshot(draw_list, "decoded-blocker-frame");
     const render_image_texture_batch_plan plan = plan_render_image_texture_batch(handoff, resolver);
     const render_image_texture_batch_execution_diagnostics execution =
-        execute_render_image_texture_batch_plan(plan, pipeline);
+        execute_render_image_texture_batch_plan(plan, pipeline_interface);
     const render_image_texture_frame_snapshot frame =
         make_render_image_texture_frame_snapshot(plan, execution);
+    const render_image_texture_pipeline_upload_cache_snapshot side_snapshot =
+        render_image_texture_pipeline_upload_cache_diagnostic_snapshot(pipeline_interface);
+    const render_image_texture_pipeline_upload_cache_payload_summary upload_cache_summary =
+        render_image_texture_pipeline_upload_cache_payload_diagnostic_summary(pipeline_interface);
     const render_image_texture_upload_result_snapshot upload_result =
         make_render_image_texture_upload_result_snapshot_from_fake_upload_snapshot(
-            pipeline.standard_diagnostic_snapshot().pipeline.upload_snapshot);
+            side_snapshot.upload_snapshot);
     const render_image_texture_frame_resource_packet_plan resources =
         make_render_image_texture_frame_resource_packet_plan(frame, upload_result);
     const render_image_texture_frame_resource_packet_materialization materialization =
@@ -1264,19 +1304,33 @@ void test_standard_pipeline_draw_payload_fallback_preserves_decode_blocker()
     options.placeholder_policy.height = 2;
     options.placeholder_policy.source_key_prefix = "placeholder://decoded-draw/";
     const render_image_renderer_texture_quad_draw_payload_frame payload_frame =
-        make_render_image_renderer_texture_quad_draw_payload_frame(quad_summary, options);
+        make_render_image_renderer_texture_quad_draw_payload_frame_with_upload_cache_payload_summary(
+            quad_summary,
+            upload_cache_summary,
+            options);
 
     require(!execution.ok(), "standard draw payload blocker batch fails before fallback payload");
+    require(!upload_cache_summary.ok(), "standard draw payload blocker upload/cache summary is blocked");
     require(!consumption.ok(), "standard draw payload blocker consumption is blocked");
     require(!quad_summary.ok(), "standard draw payload blocker quad summary is blocked");
     require(payload_frame.ok(), "draw-time placeholder policy makes blocked payload consumable");
     require(payload_frame.placeholder_payload_count == 1, "draw-time fallback produces placeholder payload");
     require(payload_frame.fallback_placeholder_payload_count == 1, "draw-time fallback is counted separately");
     require(payload_frame.has_decoded_resource_blockers, "draw-time fallback keeps decoded blocker aggregate");
+    require(payload_frame.has_upload_cache_payload_blockers, "draw-time fallback keeps upload/cache blocker aggregate");
+    require(payload_frame.upload_cache_payload_evidence_count == 1, "draw-time fallback attaches upload/cache blocker evidence");
+    require(payload_frame.upload_cache_payload_blocked_count == 1, "draw-time fallback counts upload/cache blocker");
+    require(
+        payload_frame.upload_cache_payload_blocker_summary.find("decode_failed=1") != std::string::npos,
+        "draw-time fallback records upload/cache decode blocker");
 
     const render_image_renderer_texture_quad_draw_payload& payload = payload_frame.payloads[0];
     require(payload.placeholder_backed, "blocked decoded payload becomes placeholder-backed under policy");
     require(payload.fallback_placeholder, "blocked decoded payload uses draw-time fallback");
+    require(payload.upload_cache_payload_blocked, "fallback payload preserves upload/cache blocked state");
+    require(
+        payload.upload_cache_payload_blocker_summary.find("decode_failed=1") != std::string::npos,
+        "fallback payload preserves upload/cache blocker summary");
     require(payload.decoded_resource_blocked, "fallback payload preserves decoded blocked state");
     require(
         payload.decoded_resource_blocker_summary.find("pixel data size does not match dimensions")

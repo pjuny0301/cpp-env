@@ -116,10 +116,33 @@ struct render_image_renderer_texture_quad_draw_payload {
     bool staging_payload_ready = false;
     bool decoded_resource_ready = false;
     bool decoded_resource_blocked = false;
+    render_image_texture_pipeline_upload_cache_payload_status upload_cache_payload_status =
+        render_image_texture_pipeline_upload_cache_payload_status::blocked;
+    std::string upload_cache_payload_status_name = render_image_texture_pipeline_upload_cache_payload_status_name(
+        render_image_texture_pipeline_upload_cache_payload_status::blocked);
+    std::string upload_cache_stable_cache_key;
+    std::string upload_cache_requested_stable_cache_key;
+    std::size_t upload_cache_decoded_width = 0;
+    std::size_t upload_cache_decoded_height = 0;
+    std::size_t upload_cache_decoded_byte_count = 0;
+    std::size_t upload_cache_staging_byte_count = 0;
+    std::size_t upload_cache_uploaded_byte_count = 0;
+    std::uint64_t upload_cache_decoded_payload_hash = 0;
+    fake_image_texture_placeholder_reason upload_cache_placeholder_reason =
+        fake_image_texture_placeholder_reason::none;
+    std::string upload_cache_placeholder_reason_name = fake_image_texture_placeholder_reason_name(
+        fake_image_texture_placeholder_reason::none);
+    bool upload_cache_payload_evidence_present = false;
+    bool upload_cache_payload_identity_matched = false;
+    bool upload_cache_payload_ready = false;
+    bool upload_cache_placeholder_backed = false;
+    bool upload_cache_payload_blocked = false;
     bool blocked = true;
     std::string blocker_summary;
     std::string decoded_resource_summary;
     std::string decoded_resource_blocker_summary;
+    std::string upload_cache_payload_summary;
+    std::string upload_cache_payload_blocker_summary;
     std::string diagnostic;
 
     bool ok() const
@@ -147,17 +170,28 @@ struct render_image_renderer_texture_quad_draw_payload_frame {
     std::size_t decoded_payload_byte_count = 0;
     std::size_t upload_layout_byte_count = 0;
     std::size_t staging_payload_byte_count = 0;
+    std::size_t upload_cache_payload_evidence_count = 0;
+    std::size_t upload_cache_payload_ready_count = 0;
+    std::size_t upload_cache_placeholder_payload_count = 0;
+    std::size_t upload_cache_payload_blocked_count = 0;
+    std::size_t upload_cache_payload_hash_count = 0;
+    std::size_t upload_cache_decoded_byte_count = 0;
+    std::size_t upload_cache_staging_byte_count = 0;
+    std::size_t upload_cache_uploaded_byte_count = 0;
     bool placeholder_policy_enabled = false;
     bool draw_payloads_ready = false;
     bool has_placeholders = false;
     bool has_fallback_placeholders = false;
     bool has_blockers = false;
     bool has_decoded_resource_blockers = false;
+    bool has_upload_cache_payload_blockers = false;
     std::vector<render_image_renderer_texture_quad_draw_payload> payloads;
     std::string payload_identity_summary;
     std::string blocker_summary;
     std::string decoded_resource_summary;
     std::string decoded_resource_blocker_summary;
+    std::string upload_cache_payload_summary;
+    std::string upload_cache_payload_blocker_summary;
     std::string diagnostic;
 
     bool ok() const
@@ -397,6 +431,218 @@ inline void count_render_image_renderer_texture_quad_draw_payload(
                     : payload.decoded_resource_blocker_summary);
         }
     }
+
+    if (payload.upload_cache_payload_evidence_present) {
+        ++frame.upload_cache_payload_evidence_count;
+        if (payload.upload_cache_payload_ready) {
+            ++frame.upload_cache_payload_ready_count;
+            frame.upload_cache_decoded_byte_count += payload.upload_cache_decoded_byte_count;
+            frame.upload_cache_staging_byte_count += payload.upload_cache_staging_byte_count;
+            frame.upload_cache_uploaded_byte_count += payload.upload_cache_uploaded_byte_count;
+        }
+        if (payload.upload_cache_placeholder_backed) {
+            ++frame.upload_cache_placeholder_payload_count;
+        }
+        if (payload.upload_cache_payload_blocked) {
+            ++frame.upload_cache_payload_blocked_count;
+            frame.has_upload_cache_payload_blockers = true;
+            append_render_image_texture_frame_upload_handoff_summary_fragment(
+                frame.upload_cache_payload_blocker_summary,
+                payload.upload_cache_payload_blocker_summary.empty()
+                    ? payload.blocker_summary
+                    : payload.upload_cache_payload_blocker_summary);
+        }
+    }
+}
+
+inline bool render_image_renderer_texture_quad_draw_payload_matches_upload_cache_payload_entry(
+    const render_image_renderer_texture_quad_draw_payload& payload,
+    const render_image_texture_pipeline_upload_cache_payload_entry& entry)
+{
+    if (payload.upload_generation_id != 0
+        && payload.upload_generation_id == entry.upload_generation_id) {
+        return true;
+    }
+    if (!payload.stable_texture_cache_key.empty()
+        && (payload.stable_texture_cache_key == entry.stable_cache_key
+            || payload.stable_texture_cache_key == entry.requested_stable_cache_key)) {
+        return true;
+    }
+    if (!payload.texture_key.source_key.empty()
+        && (payload.texture_key == entry.texture_key
+            || payload.texture_key == entry.requested_texture_key)) {
+        return true;
+    }
+    return payload.texture_id != 0 && payload.texture_id == entry.texture_id;
+}
+
+inline const render_image_texture_pipeline_upload_cache_payload_entry*
+render_image_renderer_texture_quad_draw_payload_upload_cache_entry_for(
+    const render_image_renderer_texture_quad_draw_payload& payload,
+    const render_image_texture_pipeline_upload_cache_payload_summary& summary)
+{
+    const render_image_texture_pipeline_upload_cache_payload_entry* stable_key_match = nullptr;
+    const render_image_texture_pipeline_upload_cache_payload_entry* texture_match = nullptr;
+    for (const render_image_texture_pipeline_upload_cache_payload_entry& entry : summary.entries) {
+        if (payload.upload_generation_id != 0
+            && payload.upload_generation_id == entry.upload_generation_id) {
+            return &entry;
+        }
+        if (!payload.stable_texture_cache_key.empty()
+            && (payload.stable_texture_cache_key == entry.stable_cache_key
+                || payload.stable_texture_cache_key == entry.requested_stable_cache_key)) {
+            stable_key_match = &entry;
+        }
+        if (texture_match == nullptr
+            && !payload.texture_key.source_key.empty()
+            && (payload.texture_key == entry.texture_key
+                || payload.texture_key == entry.requested_texture_key)) {
+            texture_match = &entry;
+        }
+        if (texture_match == nullptr
+            && payload.texture_id != 0
+            && payload.texture_id == entry.texture_id) {
+            texture_match = &entry;
+        }
+    }
+    return stable_key_match != nullptr ? stable_key_match : texture_match;
+}
+
+inline void apply_render_image_texture_pipeline_upload_cache_payload_to_renderer_texture_quad_draw_payload(
+    render_image_renderer_texture_quad_draw_payload& payload,
+    const render_image_texture_pipeline_upload_cache_payload_entry& entry)
+{
+    payload.upload_cache_payload_evidence_present = true;
+    payload.upload_cache_payload_identity_matched = true;
+    payload.upload_cache_payload_status = entry.status;
+    payload.upload_cache_payload_status_name = entry.status_name;
+    payload.upload_cache_stable_cache_key = entry.stable_cache_key;
+    payload.upload_cache_requested_stable_cache_key = entry.requested_stable_cache_key;
+    payload.upload_cache_decoded_width = entry.decoded_width;
+    payload.upload_cache_decoded_height = entry.decoded_height;
+    payload.upload_cache_decoded_byte_count = entry.decoded_byte_count;
+    payload.upload_cache_staging_byte_count = entry.staging_byte_count;
+    payload.upload_cache_uploaded_byte_count = entry.uploaded_byte_count;
+    payload.upload_cache_decoded_payload_hash = entry.decoded_payload_hash;
+    payload.upload_cache_placeholder_reason = entry.placeholder_reason;
+    payload.upload_cache_placeholder_reason_name = entry.placeholder_reason_name;
+    payload.upload_cache_payload_ready = entry.ready;
+    payload.upload_cache_placeholder_backed = entry.placeholder_backed;
+    payload.upload_cache_payload_blocked = entry.blocked;
+    payload.upload_cache_payload_summary =
+        "upload_cache_payload=" + entry.status_name
+        + "; cache_key=" + entry.stable_cache_key
+        + "; decoded_bytes=" + std::to_string(entry.decoded_byte_count)
+        + "; staging_bytes=" + std::to_string(entry.staging_byte_count)
+        + "; uploaded_bytes=" + std::to_string(entry.uploaded_byte_count);
+    payload.upload_cache_payload_blocker_summary = entry.blocker_summary;
+
+    if (payload.upload_cache_payload_blocked) {
+        payload.draw_ready = false;
+        payload.placeholder_backed = false;
+        payload.blocked = true;
+        payload.status = render_image_renderer_texture_quad_draw_payload_status::blocked;
+        payload.status_name = render_image_renderer_texture_quad_draw_payload_status_name(payload.status);
+        if (payload.upload_cache_payload_blocker_summary.empty()) {
+            payload.upload_cache_payload_blocker_summary =
+                "upload/cache payload blocked renderer texture quad draw payload";
+        }
+        payload.blocker_summary = payload.upload_cache_payload_blocker_summary;
+        payload.diagnostic = "image renderer texture quad draw payload is blocked by upload/cache payload summary";
+        return;
+    }
+
+    if (payload.upload_cache_placeholder_backed) {
+        payload.draw_ready = false;
+        payload.placeholder_backed = true;
+        payload.status = render_image_renderer_texture_quad_draw_payload_status::placeholder_backed;
+        payload.status_name = render_image_renderer_texture_quad_draw_payload_status_name(payload.status);
+        payload.blocked = false;
+    }
+    if (payload.diagnostic.empty()) {
+        payload.diagnostic = payload.placeholder_backed
+            ? "image renderer texture quad draw payload uses upload/cache placeholder evidence"
+            : "image renderer texture quad draw payload includes upload/cache payload evidence";
+    }
+}
+
+inline void apply_render_image_texture_pipeline_upload_cache_summary_blocker_to_renderer_texture_quad_draw_payload(
+    render_image_renderer_texture_quad_draw_payload& payload,
+    const render_image_texture_pipeline_upload_cache_payload_summary& summary)
+{
+    if ((!payload.blocked && !payload.fallback_placeholder) || !summary.has_blockers) {
+        return;
+    }
+    payload.upload_cache_payload_evidence_present = summary.diagnostics_available;
+    payload.upload_cache_payload_status = render_image_texture_pipeline_upload_cache_payload_status::blocked;
+    payload.upload_cache_payload_status_name = render_image_texture_pipeline_upload_cache_payload_status_name(
+        payload.upload_cache_payload_status);
+    payload.upload_cache_payload_blocked = true;
+    payload.upload_cache_payload_blocker_summary = summary.blocker_summary.empty()
+        ? "upload/cache payload summary has blockers"
+        : summary.blocker_summary;
+    if (payload.blocker_summary.empty()) {
+        payload.blocker_summary = payload.upload_cache_payload_blocker_summary;
+    }
+    payload.upload_cache_payload_summary =
+        "upload_cache_payload=blocked; " + payload.upload_cache_payload_blocker_summary;
+}
+
+inline void finalize_render_image_renderer_texture_quad_draw_payload_frame(
+    render_image_renderer_texture_quad_draw_payload_frame& frame)
+{
+    frame.payload_count = frame.payloads.size();
+    frame.draw_payloads_ready = frame.payload_count != 0 && !frame.has_blockers;
+    if (frame.payload_identity_summary.empty()) {
+        frame.payload_identity_summary = "no renderer texture quad draw payload identities";
+    }
+    if (frame.blocker_summary.empty()) {
+        frame.blocker_summary = "no renderer texture quad draw payload blockers";
+    }
+    frame.decoded_resource_summary =
+        "decoded_payloads=" + std::to_string(frame.decoded_resource_ready_payload_count)
+        + "; payload_hashes=" + std::to_string(frame.decoded_payload_hash_count)
+        + "; decoded_bytes=" + std::to_string(frame.decoded_payload_byte_count)
+        + "; staging_bytes=" + std::to_string(frame.staging_payload_byte_count);
+    if (frame.decoded_resource_blocker_summary.empty()) {
+        frame.decoded_resource_blocker_summary = "no decoded resource blockers";
+    }
+    frame.upload_cache_payload_summary =
+        "upload_cache_payloads=" + std::to_string(frame.upload_cache_payload_evidence_count)
+        + "; ready=" + std::to_string(frame.upload_cache_payload_ready_count)
+        + "; placeholders=" + std::to_string(frame.upload_cache_placeholder_payload_count)
+        + "; blocked=" + std::to_string(frame.upload_cache_payload_blocked_count)
+        + "; payload_hashes=" + std::to_string(frame.upload_cache_payload_hash_count)
+        + "; decoded_bytes=" + std::to_string(frame.upload_cache_decoded_byte_count)
+        + "; staging_bytes=" + std::to_string(frame.upload_cache_staging_byte_count)
+        + "; uploaded_bytes=" + std::to_string(frame.upload_cache_uploaded_byte_count);
+    if (frame.upload_cache_payload_blocker_summary.empty()) {
+        frame.upload_cache_payload_blocker_summary = "no upload/cache payload blockers";
+    }
+
+    frame.status = frame.payload_count == 0
+        ? render_image_renderer_texture_quad_draw_payload_frame_status::empty
+        : (frame.has_blockers
+            ? render_image_renderer_texture_quad_draw_payload_frame_status::blocked
+            : (frame.has_placeholders
+                ? render_image_renderer_texture_quad_draw_payload_frame_status::placeholder_backed
+                : render_image_renderer_texture_quad_draw_payload_frame_status::draw_ready));
+    frame.status_name = render_image_renderer_texture_quad_draw_payload_frame_status_name(frame.status);
+
+    switch (frame.status) {
+    case render_image_renderer_texture_quad_draw_payload_frame_status::empty:
+        frame.diagnostic = "image renderer texture quad draw payload frame has no payloads";
+        break;
+    case render_image_renderer_texture_quad_draw_payload_frame_status::draw_ready:
+        frame.diagnostic = "image renderer texture quad draw payload frame is ready";
+        break;
+    case render_image_renderer_texture_quad_draw_payload_frame_status::placeholder_backed:
+        frame.diagnostic = "image renderer texture quad draw payload frame is placeholder-backed";
+        break;
+    case render_image_renderer_texture_quad_draw_payload_frame_status::blocked:
+        frame.diagnostic = "image renderer texture quad draw payload frame has blocked payloads";
+        break;
+    }
 }
 
 inline render_image_renderer_texture_quad_draw_payload_frame
@@ -430,49 +676,124 @@ make_render_image_renderer_texture_quad_draw_payload_frame(
         frame.payloads.push_back(std::move(payload));
     }
 
-    frame.payload_count = frame.payloads.size();
     frame.decoded_payload_hash_count = decoded_payload_hashes.size();
-    frame.draw_payloads_ready = frame.payload_count != 0 && !frame.has_blockers;
-    if (frame.payload_identity_summary.empty()) {
-        frame.payload_identity_summary = "no renderer texture quad draw payload identities";
-    }
-    if (frame.blocker_summary.empty()) {
-        frame.blocker_summary = "no renderer texture quad draw payload blockers";
-    }
-    frame.decoded_resource_summary =
-        "decoded_payloads=" + std::to_string(frame.decoded_resource_ready_payload_count)
-        + "; payload_hashes=" + std::to_string(frame.decoded_payload_hash_count)
-        + "; decoded_bytes=" + std::to_string(frame.decoded_payload_byte_count)
-        + "; staging_bytes=" + std::to_string(frame.staging_payload_byte_count);
-    if (frame.decoded_resource_blocker_summary.empty()) {
-        frame.decoded_resource_blocker_summary = "no decoded resource blockers";
-    }
-
-    frame.status = frame.payload_count == 0
-        ? render_image_renderer_texture_quad_draw_payload_frame_status::empty
-        : (frame.has_blockers
-            ? render_image_renderer_texture_quad_draw_payload_frame_status::blocked
-            : (frame.has_placeholders
-                ? render_image_renderer_texture_quad_draw_payload_frame_status::placeholder_backed
-                : render_image_renderer_texture_quad_draw_payload_frame_status::draw_ready));
-    frame.status_name = render_image_renderer_texture_quad_draw_payload_frame_status_name(frame.status);
-
-    switch (frame.status) {
-    case render_image_renderer_texture_quad_draw_payload_frame_status::empty:
-        frame.diagnostic = "image renderer texture quad draw payload frame has no payloads";
-        break;
-    case render_image_renderer_texture_quad_draw_payload_frame_status::draw_ready:
-        frame.diagnostic = "image renderer texture quad draw payload frame is ready";
-        break;
-    case render_image_renderer_texture_quad_draw_payload_frame_status::placeholder_backed:
-        frame.diagnostic = "image renderer texture quad draw payload frame is placeholder-backed";
-        break;
-    case render_image_renderer_texture_quad_draw_payload_frame_status::blocked:
-        frame.diagnostic = "image renderer texture quad draw payload frame has blocked payloads";
-        break;
-    }
-
+    finalize_render_image_renderer_texture_quad_draw_payload_frame(frame);
     return frame;
+}
+
+inline render_image_renderer_texture_quad_draw_payload_frame
+make_render_image_renderer_texture_quad_draw_payload_frame_with_upload_cache_payload_summary(
+    const render_image_renderer_texture_quad_draw_payload_frame& frame,
+    const render_image_texture_pipeline_upload_cache_payload_summary& upload_cache_summary)
+{
+    render_image_renderer_texture_quad_draw_payload_frame enriched{
+        .frame_label = frame.frame_label,
+        .source_packet_count = frame.source_packet_count,
+        .placeholder_policy_enabled = frame.placeholder_policy_enabled,
+    };
+
+    std::map<std::string, bool> unique_payload_identities;
+    std::map<std::uint64_t, bool> decoded_payload_hashes;
+    std::map<std::uint64_t, bool> upload_cache_payload_hashes;
+    for (const render_image_renderer_texture_quad_draw_payload& source_payload : frame.payloads) {
+        render_image_renderer_texture_quad_draw_payload payload = source_payload;
+        payload.payload_index = enriched.payloads.size();
+        if (const render_image_texture_pipeline_upload_cache_payload_entry* upload_cache_entry =
+                render_image_renderer_texture_quad_draw_payload_upload_cache_entry_for(
+                    payload,
+                    upload_cache_summary);
+            upload_cache_entry != nullptr) {
+            apply_render_image_texture_pipeline_upload_cache_payload_to_renderer_texture_quad_draw_payload(
+                payload,
+                *upload_cache_entry);
+        } else {
+            apply_render_image_texture_pipeline_upload_cache_summary_blocker_to_renderer_texture_quad_draw_payload(
+                payload,
+                upload_cache_summary);
+        }
+        count_render_image_renderer_texture_quad_draw_payload(enriched, payload);
+        if (payload.decoded_resource_evidence_present && payload.decoded_payload_hash != 0) {
+            decoded_payload_hashes.emplace(payload.decoded_payload_hash, true);
+        }
+        if (payload.upload_cache_payload_evidence_present
+            && payload.upload_cache_decoded_payload_hash != 0) {
+            upload_cache_payload_hashes.emplace(payload.upload_cache_decoded_payload_hash, true);
+        }
+        append_unique_render_image_texture_frame_upload_handoff_summary_fragment(
+            unique_payload_identities,
+            enriched.payload_identity_summary,
+            payload.stable_payload_identity);
+        enriched.payloads.push_back(std::move(payload));
+    }
+
+    enriched.decoded_payload_hash_count = decoded_payload_hashes.size();
+    enriched.upload_cache_payload_hash_count = upload_cache_payload_hashes.size();
+    finalize_render_image_renderer_texture_quad_draw_payload_frame(enriched);
+    if (enriched.has_upload_cache_payload_blockers && enriched.has_blockers) {
+        enriched.diagnostic =
+            "image renderer texture quad draw payload frame has upload/cache payload blockers";
+    }
+    return enriched;
+}
+
+inline render_image_renderer_texture_quad_draw_payload_frame
+make_render_image_renderer_texture_quad_draw_payload_frame_with_upload_cache_payload_summary(
+    const render_image_renderer_texture_quad_packet_summary& summary,
+    const render_image_texture_pipeline_upload_cache_payload_summary& upload_cache_summary,
+    const render_image_renderer_texture_quad_draw_payload_options& options =
+        render_image_renderer_texture_quad_draw_payload_options{})
+{
+    return make_render_image_renderer_texture_quad_draw_payload_frame_with_upload_cache_payload_summary(
+        make_render_image_renderer_texture_quad_draw_payload_frame(summary, options),
+        upload_cache_summary);
+}
+
+inline render_image_renderer_texture_quad_draw_payload_frame
+make_render_image_renderer_texture_quad_draw_payload_frame_with_upload_cache_payload_summary(
+    const render_image_renderer_texture_quad_packet_summary& summary,
+    const image_texture_pipeline_interface& pipeline,
+    const render_image_renderer_texture_quad_draw_payload_options& options =
+        render_image_renderer_texture_quad_draw_payload_options{})
+{
+    return make_render_image_renderer_texture_quad_draw_payload_frame_with_upload_cache_payload_summary(
+        summary,
+        render_image_texture_pipeline_upload_cache_payload_diagnostic_summary(pipeline),
+        options);
+}
+
+inline render_image_renderer_texture_quad_draw_payload_frame
+make_render_image_renderer_texture_quad_draw_payload_frame_with_upload_cache_payload_summary(
+    const render_image_renderer_texture_quad_draw_payload_frame& frame,
+    const image_texture_pipeline_interface& pipeline)
+{
+    return make_render_image_renderer_texture_quad_draw_payload_frame_with_upload_cache_payload_summary(
+        frame,
+        render_image_texture_pipeline_upload_cache_payload_diagnostic_summary(pipeline));
+}
+
+inline render_image_renderer_texture_quad_draw_payload_frame
+make_render_image_renderer_texture_quad_draw_payload_frame_with_upload_cache_payload_summary(
+    const render_image_renderer_texture_quad_packet_summary& summary,
+    image_texture_pipeline_interface& pipeline,
+    const render_image_renderer_texture_quad_draw_payload_options& options =
+        render_image_renderer_texture_quad_draw_payload_options{})
+{
+    const image_texture_pipeline_interface& readonly_pipeline = pipeline;
+    return make_render_image_renderer_texture_quad_draw_payload_frame_with_upload_cache_payload_summary(
+        summary,
+        readonly_pipeline,
+        options);
+}
+
+inline render_image_renderer_texture_quad_draw_payload_frame
+make_render_image_renderer_texture_quad_draw_payload_frame_with_upload_cache_payload_summary(
+    const render_image_renderer_texture_quad_draw_payload_frame& frame,
+    image_texture_pipeline_interface& pipeline)
+{
+    const image_texture_pipeline_interface& readonly_pipeline = pipeline;
+    return make_render_image_renderer_texture_quad_draw_payload_frame_with_upload_cache_payload_summary(
+        frame,
+        readonly_pipeline);
 }
 
 } // namespace quiz_vulkan::render

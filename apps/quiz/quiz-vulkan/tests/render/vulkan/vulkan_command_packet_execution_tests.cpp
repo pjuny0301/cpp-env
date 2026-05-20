@@ -383,6 +383,9 @@ make_native_packet_evidence(
         },
         .descriptor_write_payloads = {},
         .descriptor_payload_binds = {},
+        .descriptor_write_calls = {},
+        .descriptor_bind_calls = {},
+        .descriptor_update_commands = {},
         .vertex_buffer_binds = {
             vulkan_backend::vulkan_native_command_packet_vertex_buffer_bind{
                 .packet_index = 0,
@@ -1091,6 +1094,35 @@ void test_vulkan_command_packet_execution_names_are_stable()
                 mismatched_payload_identity)
             == std::string_view{"mismatched_payload_identity"},
         "native descriptor write/bind call mismatched identity name is stable");
+    require(
+        vulkan_backend::native_descriptor_update_command_kind_name(
+            vulkan_backend::vulkan_native_descriptor_update_command_kind::
+                update_descriptor_set)
+            == std::string_view{"update_descriptor_set"},
+        "native descriptor update command kind update name is stable");
+    require(
+        vulkan_backend::native_descriptor_update_command_path_status_name(
+            vulkan_backend::vulkan_native_descriptor_update_command_path_status::ready)
+            == std::string_view{"ready"},
+        "native descriptor update command path ready name is stable");
+    require(
+        vulkan_backend::native_descriptor_update_command_path_status_name(
+            vulkan_backend::vulkan_native_descriptor_update_command_path_status::
+                native_command_symbol_unavailable)
+            == std::string_view{"native_command_symbol_unavailable"},
+        "native descriptor update command path missing symbol name is stable");
+    require(
+        vulkan_backend::native_descriptor_update_command_path_status_name(
+            vulkan_backend::vulkan_native_descriptor_update_command_path_status::
+                invalid_image_view)
+            == std::string_view{"invalid_image_view"},
+        "native descriptor update command path invalid image view name is stable");
+    require(
+        vulkan_backend::native_descriptor_update_command_path_status_name(
+            vulkan_backend::vulkan_native_descriptor_update_command_path_status::
+                stale_payload_identity)
+            == std::string_view{"stale_payload_identity"},
+        "native descriptor update command path stale identity name is stable");
     require(
         vulkan_backend::scoped_command_packet_execution_status_name(
             vulkan_backend::vulkan_scoped_command_packet_execution_status::completed)
@@ -2528,6 +2560,277 @@ void test_vulkan_native_descriptor_write_bind_calls_block_mismatched_payload_ide
         "mismatched payload identity records no successful fake write calls");
 }
 
+void test_vulkan_native_descriptor_update_command_path_accepts_ready_calls()
+{
+    using namespace quiz_vulkan::render;
+
+    ready_image_payload_descriptor_binding_fixture fixture =
+        make_ready_image_payload_descriptor_binding_fixture(
+            make_native_descriptor_write_bind_functions());
+    const vulkan_backend::vulkan_native_image_payload_descriptor_binding_result binding =
+        vulkan_backend::build_vulkan_native_image_payload_descriptor_binding_result(
+            fixture.bridge,
+            fixture.payload_recording,
+            fixture.pipeline_layout,
+            fixture.native_functions);
+    const vulkan_backend::vulkan_native_descriptor_write_bind_call_result calls =
+        vulkan_backend::build_vulkan_native_descriptor_write_bind_call_result(
+            binding,
+            fixture.native_functions);
+    const vulkan_backend::vulkan_native_descriptor_update_command_path_result path =
+        vulkan_backend::build_vulkan_native_descriptor_update_command_path_result(calls);
+
+    require(calls.completed(), "descriptor write/bind calls are complete");
+    require(path.completed(), "descriptor update command path is complete");
+    require(
+        path.status
+            == vulkan_backend::vulkan_native_descriptor_update_command_path_status::ready,
+        "descriptor update command path reports ready status");
+    require(path.fake_dispatch_ready, "descriptor update command path has fake dispatch evidence");
+    require(
+        path.real_dispatch_blocked,
+        "descriptor update command path records real dispatch blocker");
+    require(
+        path.real_dispatch_blocker.find("VkDevice") != std::string::npos,
+        "real dispatch blocker names missing device/lifetime contract");
+    require(path.planned_update_command_count == 2, "two descriptor update commands are planned");
+    require(path.planned_bind_command_count == 1, "one descriptor bind command is planned");
+    require(path.commands.size() == 3, "descriptor update path records update and bind commands");
+
+    const vulkan_backend::vulkan_native_descriptor_update_command_record& update_command =
+        path.commands.front();
+    require(
+        update_command.kind
+            == vulkan_backend::vulkan_native_descriptor_update_command_kind::
+                update_descriptor_set,
+        "first descriptor command is an update");
+    require(
+        update_command.symbol_name == "vkUpdateDescriptorSets",
+        "descriptor update command records update symbol");
+    require(
+        update_command.descriptor_set.value == 9100,
+        "descriptor update command records descriptor set handle");
+    require(
+        update_command.image_view.value == 12000,
+        "descriptor update command records image view handle");
+    require(
+        update_command.sampler.value == 13000,
+        "descriptor update command records sampler handle");
+    require(
+        update_command.payload_identity
+            == "packet:0:set:0:binding:1:kind:image_texture:resource:fixture://renderer/card.png",
+        "descriptor update command preserves payload identity");
+    require(
+        update_command.real_dispatch_blocker.find("descriptor set lifetime") != std::string::npos,
+        "descriptor update command records exact real dispatch blocker");
+
+    const vulkan_backend::vulkan_native_descriptor_update_command_record& bind_command =
+        path.commands.back();
+    require(
+        bind_command.kind
+            == vulkan_backend::vulkan_native_descriptor_update_command_kind::
+                bind_descriptor_sets,
+        "last descriptor command is a bind");
+    require(
+        bind_command.symbol_name == "vkCmdBindDescriptorSets",
+        "descriptor bind command records bind symbol");
+    require(
+        bind_command.pipeline_layout.value == 5500,
+        "descriptor bind command records pipeline layout");
+    require(
+        bind_command.descriptor_write_call_count == 2,
+        "descriptor bind command records preceding update count");
+
+    vulkan_backend::vulkan_backend_frame_result frame =
+        make_native_packet_frame_without_descriptor_handles();
+    frame.command_packets = fixture.bridge;
+    vulkan_backend::vulkan_native_command_packet_executor_evidence evidence =
+        vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
+            frame,
+            fixture.allocation,
+            fixture.native_functions);
+    require(
+        evidence.descriptor_update_commands.empty(),
+        "default executor evidence does not fabricate descriptor update commands");
+    evidence = vulkan_backend::merge_vulkan_native_descriptor_update_command_path_result(
+        std::move(evidence),
+        path);
+    require(
+        evidence.descriptor_update_commands.size() == 3,
+        "completed descriptor update command path merges command evidence");
+}
+
+void test_vulkan_native_descriptor_update_command_path_blocks_missing_native_symbol()
+{
+    using namespace quiz_vulkan::render;
+
+    ready_image_payload_descriptor_binding_fixture fixture =
+        make_ready_image_payload_descriptor_binding_fixture(make_native_functions());
+    const vulkan_backend::vulkan_native_image_payload_descriptor_binding_result binding =
+        vulkan_backend::build_vulkan_native_image_payload_descriptor_binding_result(
+            fixture.bridge,
+            fixture.payload_recording,
+            fixture.pipeline_layout,
+            fixture.native_functions);
+    const vulkan_backend::vulkan_native_descriptor_write_bind_call_result calls =
+        vulkan_backend::build_vulkan_native_descriptor_write_bind_call_result(
+            binding,
+            fixture.native_functions);
+    const vulkan_backend::vulkan_native_descriptor_update_command_path_result path =
+        vulkan_backend::build_vulkan_native_descriptor_update_command_path_result(calls);
+
+    require(!calls.completed(), "missing update symbol blocks descriptor write/bind calls");
+    require(!path.completed(), "missing update symbol blocks descriptor update path");
+    require(
+        path.status
+            == vulkan_backend::vulkan_native_descriptor_update_command_path_status::
+                native_command_symbol_unavailable,
+        "missing update symbol reports native symbol unavailable");
+    require(
+        path.missing_native_symbol_name == "vkUpdateDescriptorSets",
+        "missing update symbol records exact missing symbol");
+    require(path.commands.empty(), "missing update symbol records no descriptor commands");
+}
+
+void test_vulkan_native_descriptor_update_command_path_blocks_invalid_descriptor_set()
+{
+    using namespace quiz_vulkan::render;
+
+    ready_image_payload_descriptor_binding_fixture fixture =
+        make_ready_image_payload_descriptor_binding_fixture(
+            make_native_descriptor_write_bind_functions());
+    const vulkan_backend::vulkan_native_image_payload_descriptor_binding_result binding =
+        vulkan_backend::build_vulkan_native_image_payload_descriptor_binding_result(
+            fixture.bridge,
+            fixture.payload_recording,
+            fixture.pipeline_layout,
+            fixture.native_functions);
+    vulkan_backend::vulkan_native_descriptor_write_bind_call_result calls =
+        vulkan_backend::build_vulkan_native_descriptor_write_bind_call_result(
+            binding,
+            fixture.native_functions);
+    calls.descriptor_write_calls.front().descriptor_set = {};
+
+    const vulkan_backend::vulkan_native_descriptor_update_command_path_result path =
+        vulkan_backend::build_vulkan_native_descriptor_update_command_path_result(calls);
+
+    require(!calls.completed(), "mutated descriptor set makes calls incomplete");
+    require(!path.completed(), "invalid descriptor set blocks descriptor update path");
+    require(
+        path.status
+            == vulkan_backend::vulkan_native_descriptor_update_command_path_status::
+                invalid_descriptor_set,
+        "invalid descriptor set reports exact status");
+    require(path.failed_binding == 1, "invalid descriptor set records failed binding");
+    require(
+        !path.commands.empty() && path.commands.front().failed,
+        "invalid descriptor set records failed descriptor update command");
+}
+
+void test_vulkan_native_descriptor_update_command_path_blocks_invalid_image_view()
+{
+    using namespace quiz_vulkan::render;
+
+    ready_image_payload_descriptor_binding_fixture fixture =
+        make_ready_image_payload_descriptor_binding_fixture(
+            make_native_descriptor_write_bind_functions());
+    const vulkan_backend::vulkan_native_image_payload_descriptor_binding_result binding =
+        vulkan_backend::build_vulkan_native_image_payload_descriptor_binding_result(
+            fixture.bridge,
+            fixture.payload_recording,
+            fixture.pipeline_layout,
+            fixture.native_functions);
+    vulkan_backend::vulkan_native_descriptor_write_bind_call_result calls =
+        vulkan_backend::build_vulkan_native_descriptor_write_bind_call_result(
+            binding,
+            fixture.native_functions);
+    calls.descriptor_write_calls.front().image_view = {};
+
+    const vulkan_backend::vulkan_native_descriptor_update_command_path_result path =
+        vulkan_backend::build_vulkan_native_descriptor_update_command_path_result(calls);
+
+    require(!path.completed(), "invalid image view blocks descriptor update path");
+    require(
+        path.status
+            == vulkan_backend::vulkan_native_descriptor_update_command_path_status::
+                invalid_image_view,
+        "invalid image view reports exact status");
+    require(path.failed_binding == 1, "invalid image view records texture binding");
+    require(
+        path.diagnostic.find("image view") != std::string::npos,
+        "invalid image view diagnostic names image view");
+}
+
+void test_vulkan_native_descriptor_update_command_path_blocks_invalid_sampler()
+{
+    using namespace quiz_vulkan::render;
+
+    ready_image_payload_descriptor_binding_fixture fixture =
+        make_ready_image_payload_descriptor_binding_fixture(
+            make_native_descriptor_write_bind_functions());
+    const vulkan_backend::vulkan_native_image_payload_descriptor_binding_result binding =
+        vulkan_backend::build_vulkan_native_image_payload_descriptor_binding_result(
+            fixture.bridge,
+            fixture.payload_recording,
+            fixture.pipeline_layout,
+            fixture.native_functions);
+    vulkan_backend::vulkan_native_descriptor_write_bind_call_result calls =
+        vulkan_backend::build_vulkan_native_descriptor_write_bind_call_result(
+            binding,
+            fixture.native_functions);
+    calls.descriptor_write_calls.front().sampler = {};
+
+    const vulkan_backend::vulkan_native_descriptor_update_command_path_result path =
+        vulkan_backend::build_vulkan_native_descriptor_update_command_path_result(calls);
+
+    require(!path.completed(), "invalid sampler blocks descriptor update path");
+    require(
+        path.status
+            == vulkan_backend::vulkan_native_descriptor_update_command_path_status::
+                invalid_sampler,
+        "invalid sampler reports exact status");
+    require(path.failed_binding == 1, "invalid sampler records texture binding");
+    require(
+        path.diagnostic.find("sampler") != std::string::npos,
+        "invalid sampler diagnostic names sampler");
+}
+
+void test_vulkan_native_descriptor_update_command_path_blocks_stale_payload_identity()
+{
+    using namespace quiz_vulkan::render;
+
+    ready_image_payload_descriptor_binding_fixture fixture =
+        make_ready_image_payload_descriptor_binding_fixture(
+            make_native_descriptor_write_bind_functions());
+    const vulkan_backend::vulkan_native_image_payload_descriptor_binding_result binding =
+        vulkan_backend::build_vulkan_native_image_payload_descriptor_binding_result(
+            fixture.bridge,
+            fixture.payload_recording,
+            fixture.pipeline_layout,
+            fixture.native_functions);
+    vulkan_backend::vulkan_native_descriptor_write_bind_call_result calls =
+        vulkan_backend::build_vulkan_native_descriptor_write_bind_call_result(
+            binding,
+            fixture.native_functions);
+    calls.descriptor_write_calls.front().payload_identity = "stale-update-payload";
+
+    const vulkan_backend::vulkan_native_descriptor_update_command_path_result path =
+        vulkan_backend::build_vulkan_native_descriptor_update_command_path_result(calls);
+
+    require(!path.completed(), "stale payload identity blocks descriptor update path");
+    require(
+        path.status
+            == vulkan_backend::vulkan_native_descriptor_update_command_path_status::
+                stale_payload_identity,
+        "stale payload identity reports exact status");
+    require(
+        path.failed_payload_identity == "stale-update-payload",
+        "stale payload identity records failed identity");
+    require(
+        path.commands.empty(),
+        "stale payload identity records no successful descriptor update commands");
+}
+
 void test_vulkan_native_descriptor_payload_command_recording_blocks_blocked_payload_handoff()
 {
     using namespace quiz_vulkan::render;
@@ -3920,6 +4223,12 @@ int main()
     test_vulkan_native_descriptor_write_bind_calls_block_missing_write_symbol();
     test_vulkan_native_descriptor_write_bind_calls_block_invalid_descriptor_handle();
     test_vulkan_native_descriptor_write_bind_calls_block_mismatched_payload_identity();
+    test_vulkan_native_descriptor_update_command_path_accepts_ready_calls();
+    test_vulkan_native_descriptor_update_command_path_blocks_missing_native_symbol();
+    test_vulkan_native_descriptor_update_command_path_blocks_invalid_descriptor_set();
+    test_vulkan_native_descriptor_update_command_path_blocks_invalid_image_view();
+    test_vulkan_native_descriptor_update_command_path_blocks_invalid_sampler();
+    test_vulkan_native_descriptor_update_command_path_blocks_stale_payload_identity();
     test_vulkan_native_descriptor_payload_command_recording_blocks_blocked_payload_handoff();
     test_vulkan_native_descriptor_payload_command_recording_blocks_missing_payload();
     test_vulkan_native_descriptor_payload_command_recording_blocks_duplicate_payload();

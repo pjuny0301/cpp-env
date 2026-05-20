@@ -590,6 +590,7 @@ static_assert(requires(
 static_assert(std::is_enum_v<asset_shader_byte_pipeline_source_kind>);
 static_assert(std::is_enum_v<asset_shader_byte_pipeline_blocker_kind>);
 static_assert(std::is_enum_v<asset_shader_payload_runtime_stage>);
+static_assert(std::is_enum_v<asset_shader_payload_runtime_delta_kind>);
 
 static_assert(requires(
     asset_shader_byte_pipeline_source_entry entry,
@@ -689,6 +690,57 @@ static_assert(requires(
     { const_summary.find_entry(id) } -> std::same_as<const asset_shader_payload_runtime_entry*>;
     { const_summary.find_runtime_identity(runtime_identity) } ->
         std::same_as<const asset_shader_payload_runtime_entry*>;
+});
+
+static_assert(requires(
+    asset_shader_payload_runtime_diff_entry entry,
+    const asset_shader_payload_runtime_diff_entry& const_entry) {
+    { entry.kind } -> std::same_as<asset_shader_payload_runtime_delta_kind&>;
+    { entry.id } -> std::same_as<std::string&>;
+    { entry.stage } -> std::same_as<asset_shader_payload_runtime_stage&>;
+    { entry.before } -> std::same_as<std::optional<asset_shader_payload_runtime_entry>&>;
+    { entry.after } -> std::same_as<std::optional<asset_shader_payload_runtime_entry>&>;
+    { entry.stage_changed } -> std::same_as<bool&>;
+    { entry.cache_key_changed } -> std::same_as<bool&>;
+    { entry.cache_revision_changed } -> std::same_as<bool&>;
+    { entry.missing_revision_changed } -> std::same_as<bool&>;
+    { entry.byte_count_changed } -> std::same_as<bool&>;
+    { entry.payload_byte_count_changed } -> std::same_as<bool&>;
+    { entry.content_hash_changed } -> std::same_as<bool&>;
+    { entry.runtime_identity_changed } -> std::same_as<bool&>;
+    { entry.materialized_path_changed } -> std::same_as<bool&>;
+    { entry.readiness_changed } -> std::same_as<bool&>;
+    { entry.blocker_changed } -> std::same_as<bool&>;
+    { entry.before_missing_revision } -> std::same_as<bool&>;
+    { entry.after_missing_revision } -> std::same_as<bool&>;
+    { entry.invalidated_runtime_identity } -> std::same_as<std::string&>;
+    { entry.replacement_runtime_identity } -> std::same_as<std::string&>;
+    { entry.diagnostic } -> std::same_as<std::string&>;
+    { const_entry.invalidates() } -> std::same_as<bool>;
+    { const_entry.has_field_delta() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_shader_payload_runtime_diff_summary summary,
+    const asset_shader_payload_runtime_diff_summary& const_summary,
+    std::string_view id) {
+    { summary.reused } -> std::same_as<std::vector<asset_shader_payload_runtime_diff_entry>&>;
+    { summary.added } -> std::same_as<std::vector<asset_shader_payload_runtime_diff_entry>&>;
+    { summary.removed } -> std::same_as<std::vector<asset_shader_payload_runtime_diff_entry>&>;
+    { summary.replaced } -> std::same_as<std::vector<asset_shader_payload_runtime_diff_entry>&>;
+    { summary.invalidated } -> std::same_as<std::vector<asset_shader_payload_runtime_diff_entry>&>;
+    { summary.requested_delta } -> std::same_as<std::ptrdiff_t&>;
+    { summary.ready_delta } -> std::same_as<std::ptrdiff_t&>;
+    { summary.blocked_delta } -> std::same_as<std::ptrdiff_t&>;
+    { summary.missing_revision_delta } -> std::same_as<std::ptrdiff_t&>;
+    { const_summary.empty() } -> std::same_as<bool>;
+    { const_summary.change_count() } -> std::same_as<std::size_t>;
+    { const_summary.invalidation_count() } -> std::same_as<std::size_t>;
+    { const_summary.find_reused(id) } -> std::same_as<const asset_shader_payload_runtime_diff_entry*>;
+    { const_summary.find_added(id) } -> std::same_as<const asset_shader_payload_runtime_diff_entry*>;
+    { const_summary.find_removed(id) } -> std::same_as<const asset_shader_payload_runtime_diff_entry*>;
+    { const_summary.find_replaced(id) } -> std::same_as<const asset_shader_payload_runtime_diff_entry*>;
+    { const_summary.find_invalidated(id) } -> std::same_as<const asset_shader_payload_runtime_diff_entry*>;
 });
 
 static_assert(std::is_enum_v<asset_render_resource_payload_bridge_status>);
@@ -872,8 +924,10 @@ static_assert(requires(
     asset_shader_byte_pipeline_source_kind shader_source_kind,
     asset_shader_byte_pipeline_blocker_kind shader_blocker_kind,
     asset_shader_payload_runtime_stage shader_runtime_stage,
+    asset_shader_payload_runtime_delta_kind shader_runtime_delta_kind,
     const asset_shader_materialized_byte_pipeline_summary& shader_pipeline,
     const asset_shader_byte_pipeline_source_summary& shader_source_summary,
+    const asset_shader_payload_runtime_summary& shader_runtime_summary,
     const asset_runtime_resolver_policy_summary& resolver_policy,
     const asset_pack_index_root_selection_summary& root_selection,
     const std::vector<std::string>& expected_shader_ids,
@@ -944,6 +998,8 @@ static_assert(requires(
         std::same_as<asset_shader_byte_pipeline_source_summary>;
     { summarize_shader_payload_runtime(shader_source_summary) } ->
         std::same_as<asset_shader_payload_runtime_summary>;
+    { diff_shader_payload_runtime_summaries(shader_runtime_summary, shader_runtime_summary) } ->
+        std::same_as<asset_shader_payload_runtime_diff_summary>;
     { asset_render_resource_payload_bridge_status_from_selection(payload_selection_status) } ->
         std::same_as<asset_render_resource_payload_bridge_status>;
     { make_asset_render_resource_payload_selection_request(render_resource_address) } ->
@@ -994,6 +1050,7 @@ static_assert(requires(
     { asset_shader_byte_pipeline_source_kind_name(shader_source_kind) } -> std::same_as<std::string>;
     { asset_shader_byte_pipeline_blocker_kind_name(shader_blocker_kind) } -> std::same_as<std::string>;
     { asset_shader_payload_runtime_stage_name(shader_runtime_stage) } -> std::same_as<std::string>;
+    { asset_shader_payload_runtime_delta_kind_name(shader_runtime_delta_kind) } -> std::same_as<std::string>;
 });
 
 } // namespace

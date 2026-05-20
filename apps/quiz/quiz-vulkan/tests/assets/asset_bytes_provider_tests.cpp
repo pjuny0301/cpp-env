@@ -2240,6 +2240,8 @@ void test_shader_payload_runtime_summary_tracks_stage_revision_and_cache_identit
         make_runtime_summary(before_root, "shader-rev1");
     const asset_shader_payload_runtime_summary after =
         make_runtime_summary(after_root, "shader-rev2");
+    const asset_shader_payload_runtime_diff_summary diff =
+        diff_shader_payload_runtime_summaries(before, after);
 
     require(before.ok(), "shader runtime summary starts with ready shader byte entries");
     require(after.ok(), "updated shader runtime summary starts with ready shader byte entries");
@@ -2322,6 +2324,231 @@ void test_shader_payload_runtime_summary_tracks_stage_revision_and_cache_identit
     require(
         asset_shader_payload_runtime_stage_name(compute->stage) == "compute",
         "shader runtime stage names are stable");
+
+    require(!diff.empty(), "shader runtime diff reports revision and content invalidation evidence");
+    require(diff.change_count() == 2U, "shader runtime diff counts changed shader payload identities");
+    require(diff.invalidation_count() == 2U, "shader runtime diff counts invalidating shader payload changes");
+    require(diff.reused.size() == 2U, "shader runtime diff records unchanged shader payloads as reused");
+    require(diff.replaced.size() == 2U, "shader runtime diff records revision and content changes as replacements");
+    require(diff.added.empty(), "shader runtime diff has no added entries for stable id sets");
+    require(diff.removed.empty(), "shader runtime diff has no removed entries for stable id sets");
+    require(diff.invalidated.empty(), "shader runtime diff has no blocked transitions for ready-only fixtures");
+    require(diff.ready_delta == 0, "shader runtime diff keeps ready count delta stable");
+    require(diff.blocked_delta == 0, "shader runtime diff keeps blocked count delta stable");
+    require(diff.missing_revision_delta == 0, "shader runtime diff keeps missing revision count delta stable");
+
+    const asset_shader_payload_runtime_diff_entry* stable = diff.find_reused("stable_vertex");
+    require(stable != nullptr, "shader runtime diff finds stable shader payloads");
+    require(
+        stable->kind == asset_shader_payload_runtime_delta_kind::reused,
+        "shader runtime diff marks unchanged runtime identities as reused");
+    require(!stable->invalidates(), "reused shader runtime entries do not invalidate cache identity");
+    require(stable->before_missing_revision, "reused shader diff records missing revision before");
+    require(stable->after_missing_revision, "reused shader diff records missing revision after");
+    require(!stable->missing_revision_changed, "unchanged missing revision state is not a replacement");
+    require(stable->materialized_path_changed, "reused shader diff records host path movement separately");
+    require(!stable->cache_key_changed, "host path movement does not alter shader cache key");
+    require(!stable->content_hash_changed, "unchanged shader bytes keep content hash evidence");
+    require(!stable->runtime_identity_changed, "unchanged shader bytes keep runtime identity");
+    require(
+        stable->before->runtime_identity.find(fixture_root.string()) == std::string::npos
+            && stable->after->runtime_identity.find(fixture_root.string()) == std::string::npos,
+        "reused shader runtime identities do not leak absolute fixture paths");
+
+    const asset_shader_payload_runtime_diff_entry* revision = diff.find_replaced("revision_vertex");
+    require(revision != nullptr, "shader runtime diff finds revision changes");
+    require(revision->invalidates(), "shader revision changes invalidate runtime identity");
+    require(revision->cache_key_changed, "shader revision diff records cache key change");
+    require(revision->cache_revision_changed, "shader revision diff records revision token change");
+    require(!revision->missing_revision_changed, "revision replacement keeps revision presence stable");
+    require(!revision->content_hash_changed, "shader revision diff can keep byte content unchanged");
+    require(revision->runtime_identity_changed, "shader revision changes runtime identity");
+    require(
+        revision->invalidated_runtime_identity == revision->before->runtime_identity,
+        "shader revision diff records invalidated runtime identity");
+    require(
+        revision->replacement_runtime_identity == revision->after->runtime_identity,
+        "shader revision diff records replacement runtime identity");
+
+    const asset_shader_payload_runtime_diff_entry* fragment = diff.find_replaced("changed_fragment");
+    require(fragment != nullptr, "shader runtime diff finds content changes");
+    require(fragment->invalidates(), "shader content changes invalidate runtime identity");
+    require(!fragment->cache_key_changed, "shader content change can keep cache key stable");
+    require(!fragment->cache_revision_changed, "shader content change can keep revision token stable");
+    require(fragment->content_hash_changed, "shader content diff records hash change");
+    require(fragment->payload_byte_count_changed, "shader content diff records payload byte-count change");
+    require(fragment->runtime_identity_changed, "shader content diff records runtime identity change");
+    require(
+        asset_shader_payload_runtime_delta_kind_name(fragment->kind) == "replaced",
+        "shader runtime diff delta names are stable");
+}
+
+void test_shader_payload_runtime_diff_tracks_stage_revision_and_readiness_changes()
+{
+    using namespace quiz_vulkan::assets;
+
+    const auto make_ready_entry = [](
+        std::string id,
+        asset_shader_payload_runtime_stage stage,
+        std::string source_uri,
+        std::string cache_revision) {
+        asset_cache_key cache_key = make_asset_cache_key(asset_type::shader, source_uri);
+        if (!cache_revision.empty()) {
+            cache_key += "|rev=" + cache_revision;
+        }
+        const std::string content_hash = "hash:" + id;
+        const std::string runtime_identity = "shader-runtime|stage="
+            + asset_shader_payload_runtime_stage_name(stage) + "|key=" + cache_key + "|hash="
+            + content_hash + "|bytes=8";
+        return asset_shader_payload_runtime_entry{
+            .id = std::move(id),
+            .stage = stage,
+            .source_kind = asset_shader_byte_pipeline_source_kind::manifest,
+            .blocker = asset_shader_byte_pipeline_blocker_kind::none,
+            .cache_key = std::move(cache_key),
+            .source_uri = std::move(source_uri),
+            .materialized_path = "/tmp/asset-test/shaders/runtime.spv",
+            .byte_count = 8U,
+            .payload_byte_count = 8U,
+            .content_hash = content_hash,
+            .cache_revision = std::move(cache_revision),
+            .materialized_byte_identity = "materialized:" + content_hash,
+            .runtime_identity = runtime_identity,
+            .ready = true,
+            .diagnostic = "test shader runtime entry ready",
+        };
+    };
+    const auto make_blocked_entry = [&make_ready_entry](
+        std::string id,
+        asset_shader_payload_runtime_stage stage,
+        std::string source_uri,
+        std::string cache_revision) {
+        asset_shader_payload_runtime_entry entry = make_ready_entry(
+            std::move(id),
+            stage,
+            std::move(source_uri),
+            std::move(cache_revision));
+        entry.blocker = asset_shader_byte_pipeline_blocker_kind::byte_load_blocked;
+        entry.runtime_identity.clear();
+        entry.ready = false;
+        entry.diagnostic = "test shader runtime entry blocked";
+        return entry;
+    };
+
+    asset_shader_payload_runtime_summary before{
+        .ready = {
+            make_ready_entry(
+                "stage_shader",
+                asset_shader_payload_runtime_stage::vertex,
+                "asset://shaders/stage.vert.spv",
+                "stage-rev1"),
+            make_ready_entry(
+                "ready_to_blocked",
+                asset_shader_payload_runtime_stage::fragment,
+                "asset://shaders/ready-to-block.frag.spv",
+                ""),
+            make_ready_entry(
+                "revision_added",
+                asset_shader_payload_runtime_stage::compute,
+                "asset://shaders/revision-added.comp.spv",
+                ""),
+        },
+        .blocked = {
+            make_blocked_entry(
+                "blocked_to_ready",
+                asset_shader_payload_runtime_stage::vertex,
+                "asset://shaders/repaired.vert.spv",
+                ""),
+        },
+        .input_shader_count = 4U,
+        .requested_shader_count = 4U,
+        .vertex_stage_count = 2U,
+        .fragment_stage_count = 1U,
+        .compute_stage_count = 1U,
+        .revisioned_count = 1U,
+        .missing_revision_count = 3U,
+    };
+    asset_shader_payload_runtime_summary after{
+        .ready = {
+            make_ready_entry(
+                "stage_shader",
+                asset_shader_payload_runtime_stage::fragment,
+                "asset://shaders/stage.frag.spv",
+                "stage-rev1"),
+            make_ready_entry(
+                "blocked_to_ready",
+                asset_shader_payload_runtime_stage::vertex,
+                "asset://shaders/repaired.vert.spv",
+                ""),
+            make_ready_entry(
+                "revision_added",
+                asset_shader_payload_runtime_stage::compute,
+                "asset://shaders/revision-added.comp.spv",
+                "compute-rev1"),
+        },
+        .blocked = {
+            make_blocked_entry(
+                "ready_to_blocked",
+                asset_shader_payload_runtime_stage::fragment,
+                "asset://shaders/ready-to-block.frag.spv",
+                ""),
+        },
+        .input_shader_count = 4U,
+        .requested_shader_count = 4U,
+        .vertex_stage_count = 1U,
+        .fragment_stage_count = 2U,
+        .compute_stage_count = 1U,
+        .revisioned_count = 2U,
+        .missing_revision_count = 2U,
+    };
+
+    const asset_shader_payload_runtime_diff_summary diff =
+        diff_shader_payload_runtime_summaries(before, after);
+
+    require(!diff.empty(), "shader runtime diff reports stage revision and readiness changes");
+    require(diff.change_count() == 4U, "shader runtime diff counts all changing entries");
+    require(diff.invalidation_count() == 3U, "shader runtime diff counts replacements and invalidations");
+    require(diff.reused.empty(), "synthetic shader runtime diff has no reused entries");
+    require(diff.added.size() == 1U, "shader runtime diff reports blocked to ready as added readiness");
+    require(diff.replaced.size() == 2U, "shader runtime diff reports stage and revision-presence replacements");
+    require(diff.invalidated.size() == 1U, "shader runtime diff reports ready to blocked invalidation");
+    require(diff.removed.empty(), "shader runtime diff has no removed entries");
+    require(diff.ready_delta == 0, "shader runtime diff keeps ready count delta stable across transitions");
+    require(diff.blocked_delta == 0, "shader runtime diff keeps blocked count delta stable across transitions");
+    require(diff.missing_revision_delta == -1, "shader runtime diff records missing revision count changes");
+
+    const asset_shader_payload_runtime_diff_entry* stage = diff.find_replaced("stage_shader");
+    require(stage != nullptr, "shader runtime diff finds stage changes");
+    require(stage->stage_changed, "shader runtime diff records stage changes");
+    require(stage->cache_key_changed, "shader runtime diff records stage source cache key changes");
+    require(!stage->cache_revision_changed, "stage changes can keep revision token stable");
+    require(stage->runtime_identity_changed, "stage changes replace runtime identity");
+    require(!stage->before_missing_revision && !stage->after_missing_revision, "stage change keeps revision present");
+
+    const asset_shader_payload_runtime_diff_entry* revision = diff.find_replaced("revision_added");
+    require(revision != nullptr, "shader runtime diff finds missing revision changes");
+    require(revision->cache_key_changed, "missing revision change updates cache key");
+    require(revision->cache_revision_changed, "missing revision change records revision token change");
+    require(revision->missing_revision_changed, "shader runtime diff detects missing revision changes");
+    require(revision->before_missing_revision && !revision->after_missing_revision, "revision presence is explicit");
+    require(revision->runtime_identity_changed, "revision presence change replaces runtime identity");
+
+    const asset_shader_payload_runtime_diff_entry* repaired = diff.find_added("blocked_to_ready");
+    require(repaired != nullptr, "shader runtime diff finds blocked to ready transitions");
+    require(!repaired->invalidates(), "blocked to ready transition does not invalidate a previous runtime identity");
+    require(repaired->readiness_changed, "blocked to ready diff records readiness change");
+    require(repaired->blocker_changed, "blocked to ready diff records blocker change");
+    require(repaired->replacement_runtime_identity == repaired->after->runtime_identity, "ready transition records new identity");
+
+    const asset_shader_payload_runtime_diff_entry* blocked = diff.find_invalidated("ready_to_blocked");
+    require(blocked != nullptr, "shader runtime diff finds ready to blocked transitions");
+    require(blocked->invalidates(), "ready to blocked transition invalidates previous runtime identity");
+    require(blocked->readiness_changed, "ready to blocked diff records readiness change");
+    require(blocked->blocker_changed, "ready to blocked diff records blocker change");
+    require(
+        blocked->invalidated_runtime_identity == blocked->before->runtime_identity,
+        "ready to blocked transition records invalidated runtime identity");
+    require(blocked->replacement_runtime_identity.empty(), "blocked replacement has no runtime identity");
 }
 
 void test_render_resource_payload_bridge_matches_addresses_to_materialized_payloads()
@@ -3872,6 +4099,7 @@ int main()
     test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads();
     test_shader_byte_pipeline_source_summary_combines_manifest_fallback_and_payload_evidence();
     test_shader_payload_runtime_summary_tracks_stage_revision_and_cache_identity();
+    test_shader_payload_runtime_diff_tracks_stage_revision_and_readiness_changes();
     test_render_resource_payload_bridge_matches_addresses_to_materialized_payloads();
     test_render_resource_manifest_to_payload_bridge_e2e_uses_materialized_bytes();
     test_render_resource_materialized_cache_summary_reuses_manifest_payload_identity();

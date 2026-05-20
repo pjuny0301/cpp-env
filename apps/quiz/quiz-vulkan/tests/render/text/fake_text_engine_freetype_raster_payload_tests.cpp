@@ -267,6 +267,15 @@ quiz_vulkan::render::render_text_renderer_glyph_quad_packet_snapshot glyph_quads
         });
 }
 
+quiz_vulkan::render::render_text_renderer_draw_payload_snapshot draw_payloads_for_quads(
+    quiz_vulkan::render::render_text_renderer_glyph_quad_packet_snapshot quads)
+{
+    return quiz_vulkan::render::make_render_text_renderer_draw_payloads(
+        quiz_vulkan::render::render_text_renderer_draw_payload_request{
+            .glyph_quads = std::move(quads),
+        });
+}
+
 quiz_vulkan::render::render_text_render_frame_handoff_summary_snapshot
 summary_for_diagnostics(
     const quiz_vulkan::render::fake_text_engine_diagnostics& diagnostics,
@@ -826,6 +835,30 @@ void test_harfbuzz_shaped_glyph_ids_drive_freetype_atlas_residency()
         require(!quad.atlas_consumption.missing_glyph, "first-frame real glyph quad has glyph coverage");
     }
 
+    const render_text_renderer_draw_payload_snapshot first_payloads =
+        draw_payloads_for_quads(first_quads);
+    require(first_payloads.ok(), "first real frame produces renderer-ready draw payloads");
+    require(first_payloads.policy.payload_count == 2U, "first frame produces one draw payload per glyph quad");
+    require(first_payloads.policy.ready_payload_count == 2U, "first frame draw payloads are ready");
+    require(first_payloads.policy.uploaded_payload_count == 2U, "first frame draw payloads carry uploads");
+    require(first_payloads.policy.clean_reuse_payload_count == 0U, "first frame draw payloads are not clean reuse");
+    require(first_payloads.policy.used_real_backend, "first frame draw payloads preserve real backend evidence");
+    require(
+        !first_payloads.policy.used_deterministic_fallback,
+        "first frame draw payloads avoid deterministic fallback evidence");
+    for (const render_text_renderer_draw_payload_record& payload : first_payloads.payloads) {
+        require(payload.drawable(), "first-frame real draw payload is drawable");
+        require(payload.status == render_text_renderer_draw_payload_status::payload_ready, "first-frame draw payload is ready");
+        require(payload.uploaded, "first-frame draw payload records uploaded atlas data");
+        require(!payload.clean_reuse, "first-frame draw payload is not clean reuse");
+        require(payload.upload_consumed, "first-frame draw payload records upload consumption");
+        require(payload.upload_rgba_bytes > 0U, "first-frame draw payload preserves upload byte count");
+        require(payload.quad_bounds.width > 0.0f, "first-frame draw payload preserves quad bounds");
+        require(payload.uv_bounds.valid, "first-frame draw payload preserves UV bounds");
+        require(contains_atlas_key(first_keys, payload.cache_key), "first-frame draw payload preserves atlas key");
+        require(payload.atlas_consumption.cache_key == payload.cache_key, "first-frame draw payload preserves atlas consumption key");
+    }
+
     const render_text_layout second_layout = engine.layout_text(latin_residency_request("AB"));
     const fake_text_engine_diagnostics second = engine.last_diagnostics();
     require(second_layout.glyphs.size() == 2U, "second HarfBuzz/FreeType frame lays out repeated glyphs");
@@ -904,6 +937,26 @@ void test_harfbuzz_shaped_glyph_ids_drive_freetype_atlas_residency()
         require(
             quad.atlas_consumption.cache_key == quad.cache_key,
             "second-frame clean-reuse quad atlas consumption preserves cache key");
+    }
+
+    const render_text_renderer_draw_payload_snapshot second_payloads =
+        draw_payloads_for_quads(second_quads);
+    require(second_payloads.ok(), "second real frame produces renderer-ready clean-reuse draw payloads");
+    require(second_payloads.policy.payload_count == 2U, "second frame produces one draw payload per glyph quad");
+    require(second_payloads.policy.ready_payload_count == 2U, "second frame draw payloads are ready");
+    require(second_payloads.policy.uploaded_payload_count == 0U, "second frame draw payloads carry no fresh uploads");
+    require(second_payloads.policy.clean_reuse_payload_count == 2U, "second frame draw payloads carry clean reuse");
+    require(second_payloads.policy.total_upload_rgba_bytes == 0U, "second frame draw payloads add no upload bytes");
+    require(second_payloads.policy.used_real_backend, "second frame draw payloads preserve real backend evidence");
+    for (const render_text_renderer_draw_payload_record& payload : second_payloads.payloads) {
+        require(payload.drawable(), "second-frame clean-reuse draw payload is drawable");
+        require(!payload.uploaded, "second-frame clean-reuse draw payload has no fresh upload");
+        require(payload.clean_reuse, "second-frame draw payload records clean atlas reuse");
+        require(!payload.upload_consumed, "second-frame clean-reuse draw payload consumes no fresh upload");
+        require(payload.upload_rgba_bytes == 0U, "second-frame clean-reuse draw payload has no upload bytes");
+        require(payload.uv_bounds.valid, "second-frame clean-reuse draw payload keeps UV bounds");
+        require(contains_atlas_key(first_keys, payload.cache_key), "second-frame draw payload preserves atlas key");
+        require(payload.atlas_consumption.clean_reuse, "second-frame draw payload preserves atlas reuse evidence");
     }
 }
 
@@ -1458,6 +1511,20 @@ void test_missing_file_backed_freetype_payload_falls_back_and_skips()
     require(
         !quads.packets.front().blocker_summary.empty(),
         "missing bytes glyph quad preserves blocker summary");
+
+    const render_text_renderer_draw_payload_snapshot payloads =
+        draw_payloads_for_quads(quads);
+    require(!payloads.ok(), "missing bytes draw payload snapshot is blocked");
+    require(payloads.has_blockers(), "missing bytes draw payload snapshot exposes blockers");
+    require(payloads.policy.blocked_payload_count == 1U, "missing bytes draw payload is counted as blocked");
+    require(payloads.policy.glyph_quad_blocked_count == 1U, "missing bytes draw payload counts source glyph quad blocker");
+    require(!payloads.payloads.front().drawable(), "missing bytes draw payload is not drawable");
+    require(
+        payloads.payloads.front().status == render_text_renderer_draw_payload_status::blocked_glyph_quad,
+        "missing bytes draw payload preserves blocked glyph quad status");
+    require(
+        !payloads.payloads.front().blocker_summary.empty(),
+        "missing bytes draw payload preserves blocker summary");
 }
 
 } // namespace

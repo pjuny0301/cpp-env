@@ -134,6 +134,111 @@ struct render_text_renderer_glyph_quad_packet_snapshot {
   }
 };
 
+enum class render_text_renderer_draw_payload_status {
+  payload_ready,
+  blocked_glyph_quad,
+  blocked_missing_payload_id,
+};
+
+struct render_text_renderer_draw_payload_record {
+  std::string payload_id{};
+  std::string quad_packet_id{};
+  std::string resource_packet_id{};
+  std::string stable_packet_key{};
+  std::string source_label{};
+  render_node_id source_node_id_hint{};
+  std::string draw_packet_id{};
+  std::string upload_handoff_id{};
+  std::string upload_operation_id{};
+  std::string upload_request_id{};
+  std::string stable_page_id{};
+  std::string sampler_key{};
+  std::string sampler_summary{};
+  std::size_t payload_index{};
+  std::size_t packet_index{};
+  std::size_t materialization_index{};
+  std::size_t run_index{};
+  std::size_t cluster_byte_offset{};
+  std::size_t cluster_byte_count{};
+  glyph_atlas_key cache_key{};
+  std::uint32_t resolved_glyph_id{};
+  font_face_id resolved_face_id{};
+  render_text_atlas_page_id page_id{};
+  render_text_revision page_revision{};
+  std::size_t page_width{};
+  std::size_t page_height{};
+  render_rect quad_bounds{};
+  render_rect atlas_bounds{};
+  render_text_frame_draw_uv_rect uv_bounds{};
+  render_text_renderer_glyph_quad_packet_status quad_status{
+      render_text_renderer_glyph_quad_packet_status::blocked_resource_packet};
+  render_text_renderer_draw_payload_status status{
+      render_text_renderer_draw_payload_status::blocked_glyph_quad};
+  bool ready{};
+  bool blocked{true};
+  bool renderer_boundary_ready{};
+  bool uploaded{};
+  bool clean_reuse{};
+  bool used_deterministic_fallback{};
+  bool used_real_backend{};
+  bool glyph_supported{};
+  bool upload_consumed{};
+  std::size_t upload_rgba_bytes{};
+  render_text_atlas_packet_consumption_evidence atlas_consumption{};
+  std::string blocker_summary{};
+  std::string diagnostic{};
+
+  [[nodiscard]] constexpr bool drawable() const noexcept {
+    return ready && !blocked;
+  }
+};
+
+struct render_text_renderer_draw_payload_policy_snapshot {
+  std::size_t glyph_quad_packet_count{};
+  std::size_t payload_count{};
+  std::size_t ready_payload_count{};
+  std::size_t blocked_payload_count{};
+  std::size_t uploaded_payload_count{};
+  std::size_t clean_reuse_payload_count{};
+  std::size_t missing_payload_id_count{};
+  std::size_t glyph_quad_blocked_count{};
+  std::size_t missing_glyph_count{};
+  std::size_t fallback_glyph_count{};
+  std::size_t deterministic_fallback_count{};
+  std::size_t real_backend_count{};
+  std::size_t consumed_upload_count{};
+  std::size_t total_upload_rgba_bytes{};
+  bool frame_ready_for_renderer{};
+  bool has_blockers{};
+  bool used_deterministic_fallback{};
+  bool used_real_backend{};
+};
+
+struct render_text_renderer_draw_payload_request {
+  render_text_renderer_glyph_quad_packet_snapshot glyph_quads{};
+};
+
+struct render_text_renderer_draw_payload_snapshot {
+  std::string frame_id{};
+  std::string source_label{};
+  bool frame_ready_for_renderer{};
+  render_text_renderer_draw_payload_policy_snapshot policy{};
+  std::vector<render_text_renderer_draw_payload_record> payloads{};
+  std::vector<std::string> ready_payload_ids{};
+  std::vector<std::string> blocker_payload_ids{};
+  std::vector<std::string> missing_payload_ids{};
+  std::string blocker_summary{};
+  std::string diagnostic{};
+
+  [[nodiscard]] constexpr bool ok() const noexcept {
+    return frame_ready_for_renderer && !policy.has_blockers;
+  }
+
+  [[nodiscard]] constexpr bool has_blockers() const noexcept {
+    return policy.has_blockers;
+  }
+};
+
 struct render_text_renderer_glyph_quad_packet_diff_policy {
   std::ptrdiff_t quad_packet_count_delta{};
   std::ptrdiff_t ready_quad_count_delta{};
@@ -585,6 +690,205 @@ make_render_text_renderer_glyph_quad_packets(
     snapshot.blocker_summary =
         std::to_string(snapshot.policy.blocked_quad_count) +
         " glyph quad packet(s) blocked";
+  }
+  return snapshot;
+}
+
+[[nodiscard]] inline std::string render_text_renderer_draw_payload_status_name(
+    const render_text_renderer_draw_payload_status status) {
+  switch (status) {
+    case render_text_renderer_draw_payload_status::payload_ready:
+      return "payload_ready";
+    case render_text_renderer_draw_payload_status::blocked_glyph_quad:
+      return "blocked_glyph_quad";
+    case render_text_renderer_draw_payload_status::blocked_missing_payload_id:
+      return "blocked_missing_payload_id";
+  }
+  return "unknown";
+}
+
+[[nodiscard]] inline std::string render_text_renderer_draw_payload_id_for(
+    const render_text_renderer_glyph_quad_packet_record& quad,
+    const std::size_t payload_index) {
+  if (!quad.quad_packet_id.empty()) {
+    return "text-renderer-draw-payload:v1:quad=" + quad.quad_packet_id;
+  }
+  if (!quad.stable_packet_key.empty()) {
+    return "text-renderer-draw-payload:v1:stable=" + quad.stable_packet_key;
+  }
+  return "text-renderer-draw-payload:v1:frame=" + quad.source_label +
+         ":missing-quad-id:index=" + std::to_string(payload_index);
+}
+
+[[nodiscard]] inline render_text_renderer_draw_payload_status
+render_text_renderer_draw_payload_status_for(
+    const render_text_renderer_glyph_quad_packet_record& quad) {
+  if (quad.quad_packet_id.empty() && quad.stable_packet_key.empty()) {
+    return render_text_renderer_draw_payload_status::blocked_missing_payload_id;
+  }
+  if (!quad.drawable()) {
+    return render_text_renderer_draw_payload_status::blocked_glyph_quad;
+  }
+  return render_text_renderer_draw_payload_status::payload_ready;
+}
+
+[[nodiscard]] inline std::string render_text_renderer_draw_payload_blocker_summary_for(
+    const render_text_renderer_glyph_quad_packet_record& quad,
+    const render_text_renderer_draw_payload_status status) {
+  switch (status) {
+    case render_text_renderer_draw_payload_status::payload_ready:
+      return {};
+    case render_text_renderer_draw_payload_status::blocked_missing_payload_id:
+      return "renderer draw payload is missing glyph quad packet identity";
+    case render_text_renderer_draw_payload_status::blocked_glyph_quad:
+      if (!quad.blocker_summary.empty()) {
+        return quad.blocker_summary;
+      }
+      return "glyph quad packet is not drawable";
+  }
+  return "unknown renderer draw payload blocker";
+}
+
+[[nodiscard]] inline render_text_renderer_draw_payload_record
+make_render_text_renderer_draw_payload(
+    const render_text_renderer_glyph_quad_packet_record& quad,
+    const std::size_t payload_index) {
+  const render_text_renderer_draw_payload_status status =
+      render_text_renderer_draw_payload_status_for(quad);
+  const bool ready =
+      status == render_text_renderer_draw_payload_status::payload_ready;
+  const std::string blocker =
+      render_text_renderer_draw_payload_blocker_summary_for(quad, status);
+  return {
+      .payload_id = render_text_renderer_draw_payload_id_for(quad, payload_index),
+      .quad_packet_id = quad.quad_packet_id,
+      .resource_packet_id = quad.resource_packet_id,
+      .stable_packet_key = quad.stable_packet_key,
+      .source_label = quad.source_label,
+      .source_node_id_hint = quad.source_node_id_hint,
+      .draw_packet_id = quad.draw_packet_id,
+      .upload_handoff_id = quad.upload_handoff_id,
+      .upload_operation_id = quad.upload_operation_id,
+      .upload_request_id = quad.upload_request_id,
+      .stable_page_id = quad.stable_page_id,
+      .sampler_key = quad.sampler_key,
+      .sampler_summary = quad.sampler_summary,
+      .payload_index = payload_index,
+      .packet_index = quad.packet_index,
+      .materialization_index = quad.materialization_index,
+      .run_index = quad.run_index,
+      .cluster_byte_offset = quad.cluster_byte_offset,
+      .cluster_byte_count = quad.cluster_byte_count,
+      .cache_key = quad.cache_key,
+      .resolved_glyph_id = quad.resolved_glyph_id,
+      .resolved_face_id = quad.resolved_face_id,
+      .page_id = quad.page_id,
+      .page_revision = quad.page_revision,
+      .page_width = quad.page_width,
+      .page_height = quad.page_height,
+      .quad_bounds = quad.layout_bounds,
+      .atlas_bounds = quad.atlas_bounds,
+      .uv_bounds = quad.uv_bounds,
+      .quad_status = quad.status,
+      .status = status,
+      .ready = ready,
+      .blocked = !ready,
+      .renderer_boundary_ready = ready,
+      .uploaded = quad.uploaded,
+      .clean_reuse = quad.clean_reuse,
+      .used_deterministic_fallback = quad.used_deterministic_fallback,
+      .used_real_backend = quad.used_real_backend,
+      .glyph_supported = quad.glyph_supported,
+      .upload_consumed = quad.upload_consumed,
+      .upload_rgba_bytes = quad.upload_rgba_bytes,
+      .atlas_consumption = quad.atlas_consumption,
+      .blocker_summary = blocker,
+      .diagnostic = ready
+          ? "renderer text draw payload is ready"
+          : blocker,
+  };
+}
+
+inline void append_render_text_renderer_draw_payload(
+    render_text_renderer_draw_payload_snapshot& snapshot,
+    render_text_renderer_draw_payload_record payload) {
+  auto& policy = snapshot.policy;
+  ++policy.payload_count;
+  if (payload.ready) {
+    ++policy.ready_payload_count;
+    snapshot.ready_payload_ids.push_back(payload.payload_id);
+  } else {
+    ++policy.blocked_payload_count;
+    snapshot.blocker_payload_ids.push_back(payload.payload_id);
+    policy.has_blockers = true;
+  }
+  if (payload.status ==
+      render_text_renderer_draw_payload_status::blocked_missing_payload_id) {
+    ++policy.missing_payload_id_count;
+    detail::append_unique_string(snapshot.missing_payload_ids,
+                                 payload.payload_id);
+  }
+  if (payload.status ==
+      render_text_renderer_draw_payload_status::blocked_glyph_quad) {
+    ++policy.glyph_quad_blocked_count;
+  }
+  if (payload.uploaded) {
+    ++policy.uploaded_payload_count;
+  }
+  if (payload.clean_reuse) {
+    ++policy.clean_reuse_payload_count;
+  }
+  if (payload.atlas_consumption.missing_glyph) {
+    ++policy.missing_glyph_count;
+  }
+  if (payload.atlas_consumption.used_fallback_glyph_id) {
+    ++policy.fallback_glyph_count;
+  }
+  if (payload.used_deterministic_fallback) {
+    ++policy.deterministic_fallback_count;
+    policy.used_deterministic_fallback = true;
+  }
+  if (payload.used_real_backend) {
+    ++policy.real_backend_count;
+    policy.used_real_backend = true;
+  }
+  if (payload.upload_consumed) {
+    ++policy.consumed_upload_count;
+  }
+  policy.total_upload_rgba_bytes += payload.upload_rgba_bytes;
+  snapshot.payloads.push_back(std::move(payload));
+}
+
+[[nodiscard]] inline render_text_renderer_draw_payload_snapshot
+make_render_text_renderer_draw_payloads(
+    render_text_renderer_draw_payload_request request) {
+  render_text_renderer_draw_payload_snapshot snapshot{
+      .frame_id = request.glyph_quads.frame_id,
+      .source_label = request.glyph_quads.source_label,
+      .frame_ready_for_renderer = request.glyph_quads.frame_ready_for_renderer,
+      .diagnostic =
+          "renderer text draw payloads built from glyph quad packet evidence",
+  };
+  snapshot.policy.glyph_quad_packet_count = request.glyph_quads.packets.size();
+  snapshot.policy.frame_ready_for_renderer =
+      request.glyph_quads.frame_ready_for_renderer;
+  snapshot.payloads.reserve(request.glyph_quads.packets.size());
+  for (std::size_t index = 0; index < request.glyph_quads.packets.size();
+       ++index) {
+    append_render_text_renderer_draw_payload(
+        snapshot,
+        make_render_text_renderer_draw_payload(request.glyph_quads.packets[index],
+                                               index));
+  }
+
+  if (!snapshot.frame_ready_for_renderer && snapshot.payloads.empty()) {
+    snapshot.policy.has_blockers = true;
+    snapshot.blocker_summary =
+        "glyph quad packets are not ready for renderer text draw payloads";
+  } else if (snapshot.policy.has_blockers) {
+    snapshot.blocker_summary =
+        std::to_string(snapshot.policy.blocked_payload_count) +
+        " renderer text draw payload(s) blocked";
   }
   return snapshot;
 }

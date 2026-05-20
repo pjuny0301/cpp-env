@@ -127,6 +127,15 @@ quiz_vulkan::render::render_text_renderer_glyph_quad_packet_snapshot make_quads(
         });
 }
 
+quiz_vulkan::render::render_text_renderer_draw_payload_snapshot make_payloads(
+    quiz_vulkan::render::render_text_renderer_glyph_quad_packet_snapshot quads)
+{
+    return quiz_vulkan::render::make_render_text_renderer_draw_payloads(
+        quiz_vulkan::render::render_text_renderer_draw_payload_request{
+            .glyph_quads = std::move(quads),
+        });
+}
+
 quiz_vulkan::render::render_text_frame_draw_packet_snapshot draw_packet_for_resource(
     const quiz_vulkan::render::render_text_frame_resource_packet_materialization_entry& entry)
 {
@@ -314,6 +323,91 @@ void test_ready_resource_packets_become_glyph_quads()
         "fallback glyph evidence is preserved as false");
 }
 
+void test_ready_glyph_quads_become_renderer_draw_payloads()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_resource_packet_materialization_entry entry =
+        ready_resource_packet("resource-payload", U'R', 0);
+    const render_text_renderer_glyph_quad_packet_snapshot quads =
+        make_quads(resources_for({entry}));
+    const render_text_renderer_draw_payload_snapshot payloads =
+        make_payloads(quads);
+
+    require(payloads.ok(), "ready glyph quad produces ready renderer draw payload snapshot");
+    require(payloads.policy.glyph_quad_packet_count == 1U, "payload snapshot counts source glyph quad");
+    require(payloads.policy.payload_count == 1U, "one draw payload is emitted");
+    require(payloads.policy.ready_payload_count == 1U, "ready draw payload is counted");
+    require(payloads.policy.uploaded_payload_count == 1U, "uploaded draw payload is counted");
+    require(payloads.policy.clean_reuse_payload_count == 0U, "uploaded draw payload is not clean reuse");
+    require(payloads.policy.total_upload_rgba_bytes == 256U, "draw payload preserves upload bytes");
+    require(payloads.policy.used_real_backend, "draw payload policy preserves real backend evidence");
+    require(!payloads.policy.has_blockers, "ready draw payload snapshot has no blockers");
+    require(payloads.ready_payload_ids.size() == 1U, "ready draw payload id is exposed");
+
+    const render_text_renderer_draw_payload_record& payload = payloads.payloads.front();
+    const render_text_renderer_glyph_quad_packet_record& quad = quads.packets.front();
+    require(payload.drawable(), "draw payload is drawable");
+    require(
+        payload.status == render_text_renderer_draw_payload_status::payload_ready,
+        "draw payload status is ready");
+    require(payload.payload_id.find(quad.quad_packet_id) != std::string::npos, "payload id includes quad identity");
+    require(payload.quad_packet_id == quad.quad_packet_id, "quad packet identity is preserved");
+    require(payload.resource_packet_id == quad.resource_packet_id, "resource packet identity is preserved");
+    require(payload.draw_packet_id == quad.draw_packet_id, "draw packet identity is preserved");
+    require(payload.cache_key == quad.cache_key, "atlas cache key is preserved");
+    require(payload.page_id == quad.page_id, "atlas page id is preserved");
+    require(payload.page_revision == quad.page_revision, "atlas page revision is preserved");
+    require(payload.quad_bounds.x == quad.layout_bounds.x, "quad layout bounds are preserved");
+    require(payload.atlas_bounds.y == quad.atlas_bounds.y, "atlas bounds are preserved");
+    require(payload.uv_bounds.u1 == quad.uv_bounds.u1, "UV bounds are preserved");
+    require(payload.sampler_key == quad.sampler_key, "sampler key is preserved");
+    require(payload.upload_request_id == quad.upload_request_id, "upload request id is preserved");
+    require(payload.upload_operation_id == quad.upload_operation_id, "upload operation id is preserved");
+    require(payload.uploaded, "uploaded evidence is preserved");
+    require(!payload.clean_reuse, "clean reuse is false for uploaded payload");
+    require(payload.upload_consumed, "upload consumption is preserved");
+    require(payload.upload_rgba_bytes == quad.upload_rgba_bytes, "upload byte count is preserved");
+    require(payload.atlas_consumption.cache_key == quad.cache_key, "atlas consumption cache key is preserved");
+    require(
+        payload.atlas_consumption.upload_generation == payload.page_revision,
+        "upload generation is preserved");
+}
+
+void test_clean_reuse_glyph_quads_become_renderer_draw_payloads()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_frame_resource_packet_materialization_entry entry =
+        ready_resource_packet("resource-reuse-payload", U'R', 0);
+    entry.handoff_status = render_text_frame_upload_handoff_packet_status::ready_clean_reuse;
+    entry.upload_result_status = render_text_glyph_atlas_upload_result_status::accepted_clean_reuse;
+    entry.status = render_text_frame_resource_packet_materialization_status::materialized_clean_reuse;
+    entry.uploaded = false;
+    entry.clean_reuse = true;
+    entry.upload_consumed = false;
+    entry.upload_rgba_bytes = 0U;
+    entry.atlas_consumption.clean_reuse = true;
+
+    const render_text_renderer_draw_payload_snapshot payloads =
+        make_payloads(make_quads(resources_for({entry})));
+
+    require(payloads.ok(), "clean-reuse glyph quad produces ready draw payload snapshot");
+    require(payloads.policy.ready_payload_count == 1U, "clean-reuse draw payload is ready");
+    require(payloads.policy.uploaded_payload_count == 0U, "clean-reuse draw payload has no fresh upload");
+    require(payloads.policy.clean_reuse_payload_count == 1U, "clean-reuse draw payload is counted");
+    require(payloads.policy.total_upload_rgba_bytes == 0U, "clean-reuse draw payload carries no upload bytes");
+
+    const render_text_renderer_draw_payload_record& payload = payloads.payloads.front();
+    require(payload.drawable(), "clean-reuse draw payload is drawable");
+    require(!payload.uploaded, "clean-reuse draw payload has no fresh upload");
+    require(payload.clean_reuse, "clean-reuse evidence is preserved");
+    require(!payload.upload_consumed, "clean-reuse payload does not consume a fresh upload");
+    require(payload.upload_rgba_bytes == 0U, "clean-reuse payload has no upload byte count");
+    require(payload.atlas_consumption.clean_reuse, "atlas consumption records clean reuse");
+    require(payload.uv_bounds.valid, "clean-reuse payload still preserves UVs");
+}
+
 void test_blocked_resource_packet_stays_blocked()
 {
     using namespace quiz_vulkan::render;
@@ -341,6 +435,43 @@ void test_blocked_resource_packet_stays_blocked()
     require(
         quads.packets.front().blocker_summary == "draw packet has no ready upload handoff evidence",
         "resource blocker summary is preserved");
+}
+
+void test_blocked_glyph_quads_stay_blocked_as_draw_payloads()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_frame_resource_packet_materialization_entry blocked =
+        ready_resource_packet("resource-blocked-payload", U'B', 0);
+    blocked.status = render_text_frame_resource_packet_materialization_status::blocked_upload_rejected;
+    blocked.ready = false;
+    blocked.blocked = true;
+    blocked.renderer_boundary_ready = false;
+    blocked.uploaded = false;
+    blocked.upload_consumed = false;
+    blocked.upload_rgba_bytes = 0;
+    blocked.blocker_summary = "upload handoff rejected the draw packet upload";
+
+    const render_text_renderer_draw_payload_snapshot payloads =
+        make_payloads(make_quads(resources_for({blocked})));
+
+    require(!payloads.ok(), "blocked glyph quad keeps draw payload snapshot blocked");
+    require(payloads.has_blockers(), "blocked draw payload snapshot exposes blockers");
+    require(payloads.policy.blocked_payload_count == 1U, "blocked draw payload is counted");
+    require(payloads.policy.glyph_quad_blocked_count == 1U, "blocked source glyph quad is counted");
+    require(payloads.blocker_payload_ids.size() == 1U, "blocked draw payload id is exposed");
+
+    const render_text_renderer_draw_payload_record& payload = payloads.payloads.front();
+    require(!payload.drawable(), "blocked draw payload is not drawable");
+    require(
+        payload.status == render_text_renderer_draw_payload_status::blocked_glyph_quad,
+        "blocked draw payload preserves glyph quad blocker status");
+    require(
+        payload.quad_status == render_text_renderer_glyph_quad_packet_status::blocked_resource_packet,
+        "blocked draw payload preserves source glyph quad status");
+    require(
+        payload.blocker_summary == "upload handoff rejected the draw packet upload",
+        "blocked draw payload preserves blocker summary");
 }
 
 void test_glyph_quad_packet_order_is_deterministic()
@@ -680,7 +811,10 @@ void test_glyph_quad_diff_reports_added_removed_duplicate_and_missing_identity()
 int main()
 {
     test_ready_resource_packets_become_glyph_quads();
+    test_ready_glyph_quads_become_renderer_draw_payloads();
+    test_clean_reuse_glyph_quads_become_renderer_draw_payloads();
     test_blocked_resource_packet_stays_blocked();
+    test_blocked_glyph_quads_stay_blocked_as_draw_payloads();
     test_glyph_quad_packet_order_is_deterministic();
     test_duplicate_and_missing_identities_are_diagnosed();
     test_render_frame_handoff_summary_preserves_ready_quad_facts();

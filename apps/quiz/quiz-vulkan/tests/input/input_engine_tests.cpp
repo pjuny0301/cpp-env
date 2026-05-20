@@ -1340,6 +1340,193 @@ void test_text_focus_route_state_diff_replays_edit_ime_and_focus_loss()
         "route diff replay never dispatches app/domain submit action");
 }
 
+void test_text_route_replay_transcript_summarizes_consecutive_diffs()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("route-target");
+
+    std::vector<input_routing_diagnostics> snapshots;
+    snapshots.push_back(engine.routing_diagnostics());
+
+    const std::string inserted_text = std::string("A") + utf8(u8"한") + "B";
+    std::vector<input_event> events = engine.process_raw_event(text(100, inserted_text));
+    require(events.size() == 1, "route transcript insert emits text event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(key(110, "Home"));
+    require(events.size() == 1, "route transcript home emits caret event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(key(120, "ArrowRight"));
+    require(events.size() == 1, "route transcript right emits caret event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(key(
+        130,
+        "ArrowRight",
+        false,
+        raw_platform_key_phase::down,
+        false,
+        true));
+    require(events.size() == 1, "route transcript shift right emits selection event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(text(140, "Z"));
+    require(events.size() == 1, "route transcript replacement emits text event");
+    snapshots.push_back(engine.routing_diagnostics());
+    require(engine.text_model().text() == "AZB", "route transcript replacement updates committed text");
+
+    const std::string preedit_start = utf8(u8"ㄱ");
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 150, preedit_start));
+    require(events.size() == 1, "route transcript ime preedit start emits ime event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    const std::string preedit_update = utf8(u8"가");
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 160, preedit_update));
+    require(events.size() == 1, "route transcript ime preedit update emits ime event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::commit, 170, preedit_update));
+    require(events.size() == 1, "route transcript ime commit emits ime event");
+    snapshots.push_back(engine.routing_diagnostics());
+    require(engine.text_model().text() == std::string("AZ") + utf8(u8"가") + "B",
+        "route transcript ime commit updates committed text");
+
+    const std::string cancel_preedit = utf8(u8"ㅎ");
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 180, cancel_preedit));
+    require(events.size() == 1, "route transcript second ime preedit emits ime event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::cancel, 190));
+    require(events.size() == 1, "route transcript ime cancel emits ime event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    const std::string focus_loss_preedit = utf8(u8"ㅂ");
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 200, focus_loss_preedit));
+    require(events.size() == 1, "route transcript focus-loss preedit emits ime event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(focus(raw_platform_focus_phase::lost, 210));
+    require(events.size() == 2, "route transcript focus loss emits ime cancel and focus lost events");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    const input_routing_text_route_replay_summary transcript =
+        summarize_input_routing_text_route_replay(snapshots);
+    require(transcript.compared_diagnostic_count == snapshots.size() - 1,
+        "route transcript compares every consecutive diagnostic pair");
+    require(transcript.transcript.size() == snapshots.size() - 1,
+        "route transcript stores every consecutive diff entry");
+    require(transcript.changed_step_count == transcript.transcript.size(),
+        "route transcript records every replay step as changed");
+    require(transcript.text_route_changed, "route transcript reports text route changes");
+    require(!transcript.pointer_capture_changed,
+        "route transcript text replay does not disturb pointer capture");
+    require(!transcript.emits_app_domain_action,
+        "route transcript emits input-owned diagnostics only");
+    require(transcript.normalized_input_event_count == 0,
+        "route transcript text replay emits no gesture or wheel normalized events");
+
+    require(transcript.counts.text_commit == 2,
+        "route transcript counts insert and selection replacement commits");
+    require(transcript.counts.selection_replacement == 1,
+        "route transcript counts one selection replacement");
+    require(transcript.counts.caret_moved == 2,
+        "route transcript counts utf8-safe caret moves");
+    require(transcript.counts.selection_changed == 1,
+        "route transcript counts one selection change");
+    require(transcript.counts.ime_preedit_start == 3,
+        "route transcript counts ime preedit starts");
+    require(transcript.counts.ime_preedit_update == 1,
+        "route transcript counts ime preedit update");
+    require(transcript.counts.ime_commit == 1,
+        "route transcript counts ime commit");
+    require(transcript.counts.ime_cancel == 2,
+        "route transcript counts explicit and focus-loss ime cancel");
+    require(transcript.counts.focus_loss_cleanup == 1,
+        "route transcript counts focus loss cleanup");
+    require(transcript.emitted_route_input_event_count == 13,
+        "route transcript counts normalized route event emissions");
+    require(transcript.diagnostic_only_route_count == 0,
+        "route transcript records no diagnostic-only routes in this text replay");
+
+    const input_routing_text_route_replay_entry& insert_entry = transcript.transcript[0];
+    require(insert_entry.text_commit, "route transcript first entry is text commit");
+    require(!insert_entry.selection_replacement,
+        "route transcript first entry is not a selection replacement");
+    require_range(
+        insert_entry.diff.text_route_state.after_state.caret,
+        inserted_text.size(),
+        inserted_text.size(),
+        "route transcript insert caret lands on utf8 boundary");
+
+    const input_routing_text_route_replay_entry& right_entry = transcript.transcript[2];
+    require(right_entry.caret_moved, "route transcript records caret right movement");
+    require_range(
+        right_entry.diff.text_route_state.after_state.caret,
+        1,
+        1,
+        "route transcript caret right stops after ascii byte before hangul");
+
+    const std::size_t hangul_byte_count = utf8(u8"한").size();
+    const input_routing_text_route_replay_entry& selection_entry = transcript.transcript[3];
+    require(selection_entry.selection_changed, "route transcript records hangul selection");
+    require_range(
+        selection_entry.diff.text_route_state.after_state.selection,
+        1,
+        1 + hangul_byte_count,
+        "route transcript selection bounds wrap complete hangul bytes");
+
+    const input_routing_text_route_replay_entry& replacement_entry = transcript.transcript[4];
+    require(replacement_entry.text_commit, "route transcript replacement emits text commit route");
+    require(replacement_entry.selection_replacement,
+        "route transcript replacement records selection replacement");
+    require(replacement_entry.diff.text_route_state.before_state.has_selection,
+        "route transcript replacement preserves selection-before evidence");
+    require(!replacement_entry.diff.text_route_state.after_state.has_selection,
+        "route transcript replacement clears selection after commit");
+    require(replacement_entry.diff.text_route_state.text_byte_count.after_count == 3,
+        "route transcript replacement records ascii byte count");
+
+    const input_routing_text_route_replay_entry& preedit_start_entry = transcript.transcript[5];
+    require(preedit_start_entry.ime_preedit_start,
+        "route transcript records ime preedit start");
+    require(preedit_start_entry.diff.text_route_state.after_state.composition.preedit_text == preedit_start,
+        "route transcript preedit start preserves preedit text");
+
+    const input_routing_text_route_replay_entry& preedit_update_entry = transcript.transcript[6];
+    require(preedit_update_entry.ime_preedit_update,
+        "route transcript records ime preedit update");
+    require(preedit_update_entry.diff.text_route_state.after_state.composition.preedit_text == preedit_update,
+        "route transcript preedit update preserves new preedit text");
+
+    const input_routing_text_route_replay_entry& ime_commit_entry = transcript.transcript[7];
+    require(ime_commit_entry.ime_commit, "route transcript records ime commit");
+    require(!ime_commit_entry.diff.text_route_state.after_state.composition.active,
+        "route transcript ime commit clears active composition");
+
+    const input_routing_text_route_replay_entry& ime_cancel_entry = transcript.transcript[9];
+    require(ime_cancel_entry.ime_cancel, "route transcript records explicit ime cancel");
+    require(!ime_cancel_entry.diff.text_route_state.after_state.composition.active,
+        "route transcript explicit cancel clears active composition");
+
+    const input_routing_text_route_replay_entry& focus_loss_entry = transcript.transcript[11];
+    require(focus_loss_entry.ime_cancel,
+        "route transcript focus loss carries ime cleanup");
+    require(focus_loss_entry.focus_loss_cleanup,
+        "route transcript focus loss carries focus cleanup");
+    require(focus_loss_entry.emitted_route_input_event_count == 2,
+        "route transcript focus loss emits ime cancel and focus lost route events");
+    require(!focus_loss_entry.diff.text_route_state.after_state.has_focus,
+        "route transcript focus loss clears focused target");
+    require(!focus_loss_entry.diff.text_route_state.after_state.composition.active,
+        "route transcript focus loss clears active preedit");
+    require(!engine.text_model().has_submit_text(),
+        "route transcript replay never dispatches app/domain submit action");
+}
+
 void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
 {
     using namespace quiz_vulkan;
@@ -2306,6 +2493,7 @@ int main()
     test_wheel_modifiers_normalize_without_pointer_text_or_domain_routes();
     test_text_focus_caret_route_state_tracks_edits_ime_and_tap_focus();
     test_text_focus_route_state_diff_replays_edit_ime_and_focus_loss();
+    test_text_route_replay_transcript_summarizes_consecutive_diffs();
     test_gesture_routing_diagnostics_summarize_gestures_and_wheel();
     test_gesture_policy_diagnostics_record_rejected_swipes();
     test_gesture_routing_diagnostics_cancel_and_focus_loss();

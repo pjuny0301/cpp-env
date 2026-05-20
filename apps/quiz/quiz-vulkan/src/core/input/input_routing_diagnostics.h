@@ -573,6 +573,54 @@ struct input_routing_diagnostics_diff {
     bool changed = false;
 };
 
+struct input_routing_text_route_replay_counts {
+    std::size_t text_commit = 0;
+    std::size_t selection_replacement = 0;
+    std::size_t text_backspace = 0;
+    std::size_t text_delete_forward = 0;
+    std::size_t caret_moved = 0;
+    std::size_t selection_changed = 0;
+    std::size_t ime_preedit_start = 0;
+    std::size_t ime_preedit_update = 0;
+    std::size_t ime_commit = 0;
+    std::size_t ime_cancel = 0;
+    std::size_t focus_loss_cleanup = 0;
+};
+
+struct input_routing_text_route_replay_entry {
+    std::size_t step_index = 0;
+    input_routing_diagnostics_diff diff;
+    bool text_route_changed = false;
+    bool text_commit = false;
+    bool selection_replacement = false;
+    bool text_backspace = false;
+    bool text_delete_forward = false;
+    bool caret_moved = false;
+    bool selection_changed = false;
+    bool ime_preedit_start = false;
+    bool ime_preedit_update = false;
+    bool ime_commit = false;
+    bool ime_cancel = false;
+    bool focus_loss_cleanup = false;
+    std::size_t emitted_route_input_event_count = 0;
+    std::size_t diagnostic_only_route_count = 0;
+    std::size_t normalized_input_event_count = 0;
+    bool emits_app_domain_action = false;
+};
+
+struct input_routing_text_route_replay_summary {
+    std::vector<input_routing_text_route_replay_entry> transcript;
+    input_routing_text_route_replay_counts counts;
+    std::size_t compared_diagnostic_count = 0;
+    std::size_t changed_step_count = 0;
+    std::size_t emitted_route_input_event_count = 0;
+    std::size_t diagnostic_only_route_count = 0;
+    std::size_t normalized_input_event_count = 0;
+    bool text_route_changed = false;
+    bool pointer_capture_changed = false;
+    bool emits_app_domain_action = false;
+};
+
 [[nodiscard]] inline std::int64_t input_routing_size_delta(
     std::size_t before_count,
     std::size_t after_count)
@@ -1419,6 +1467,147 @@ inline void accumulate_input_routing_gesture_policy_threshold_counts(
         || diff.text_route_state_changed
         || diff.clean_state_changed;
     return diff;
+}
+
+[[nodiscard]] inline std::size_t count_input_routing_emitting_policy_routes(
+    const input_routing_diagnostics& diagnostics)
+{
+    std::size_t count = 0;
+    for (const action_route_policy_diagnostic& route : diagnostics.action_routes) {
+        if (route.emits_input_event) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+[[nodiscard]] inline input_routing_text_route_replay_entry make_input_routing_text_route_replay_entry(
+    std::size_t step_index,
+    const input_routing_diagnostics& before,
+    const input_routing_diagnostics& after)
+{
+    input_routing_diagnostics_diff diff = diff_input_routing_diagnostics(before, after);
+    const bool has_preedit_route =
+        diff.action_routes.ime_preedit.after_count > 0
+        || diff.action_routes.ime_composition_start.after_count > 0;
+    const std::size_t emitting_route_count = count_input_routing_emitting_policy_routes(after);
+    const std::size_t diagnostic_route_count =
+        after.action_routes.size() >= emitting_route_count
+            ? after.action_routes.size() - emitting_route_count
+            : 0;
+    const bool text_route_changed = diff.text_route_state_changed;
+    const bool text_commit = diff.action_routes.text_commit_boundary.after_count > 0;
+    const bool selection_replacement =
+        text_commit
+        && diff.text_route_state.before_state.has_selection
+        && !diff.text_route_state.after_state.has_selection;
+    const bool text_backspace = diff.action_routes.text_backspace_boundary.after_count > 0;
+    const bool text_delete_forward = diff.action_routes.text_delete_forward_boundary.after_count > 0;
+    const bool caret_moved = diff.action_routes.caret_moved.after_count > 0;
+    const bool selection_changed = diff.action_routes.selection_changed.after_count > 0;
+    const bool ime_preedit_start =
+        has_preedit_route
+        && !diff.text_route_state.before_state.composition.active
+        && diff.text_route_state.after_state.composition.active;
+    const bool ime_preedit_update =
+        has_preedit_route
+        && diff.text_route_state.before_state.composition.active
+        && diff.text_route_state.after_state.composition.active;
+    const bool ime_commit = diff.action_routes.ime_commit.after_count > 0;
+    const bool ime_cancel = diff.action_routes.ime_cancel.after_count > 0;
+    const bool focus_loss_cleanup =
+        diff.action_routes.focus_loss.after_count > 0
+        && !diff.text_route_state.after_state.has_focus;
+
+    return input_routing_text_route_replay_entry{
+        .step_index = step_index,
+        .diff = std::move(diff),
+        .text_route_changed = text_route_changed,
+        .text_commit = text_commit,
+        .selection_replacement = selection_replacement,
+        .text_backspace = text_backspace,
+        .text_delete_forward = text_delete_forward,
+        .caret_moved = caret_moved,
+        .selection_changed = selection_changed,
+        .ime_preedit_start = ime_preedit_start,
+        .ime_preedit_update = ime_preedit_update,
+        .ime_commit = ime_commit,
+        .ime_cancel = ime_cancel,
+        .focus_loss_cleanup = focus_loss_cleanup,
+        .emitted_route_input_event_count = emitting_route_count,
+        .diagnostic_only_route_count = diagnostic_route_count,
+        .normalized_input_event_count = after.summary.normalized_event_count,
+        .emits_app_domain_action = false,
+    };
+}
+
+inline void accumulate_input_routing_text_route_replay_counts(
+    input_routing_text_route_replay_summary& summary,
+    const input_routing_text_route_replay_entry& entry)
+{
+    if (entry.text_commit) {
+        ++summary.counts.text_commit;
+    }
+    if (entry.selection_replacement) {
+        ++summary.counts.selection_replacement;
+    }
+    if (entry.text_backspace) {
+        ++summary.counts.text_backspace;
+    }
+    if (entry.text_delete_forward) {
+        ++summary.counts.text_delete_forward;
+    }
+    if (entry.caret_moved) {
+        ++summary.counts.caret_moved;
+    }
+    if (entry.selection_changed) {
+        ++summary.counts.selection_changed;
+    }
+    if (entry.ime_preedit_start) {
+        ++summary.counts.ime_preedit_start;
+    }
+    if (entry.ime_preedit_update) {
+        ++summary.counts.ime_preedit_update;
+    }
+    if (entry.ime_commit) {
+        ++summary.counts.ime_commit;
+    }
+    if (entry.ime_cancel) {
+        ++summary.counts.ime_cancel;
+    }
+    if (entry.focus_loss_cleanup) {
+        ++summary.counts.focus_loss_cleanup;
+    }
+}
+
+[[nodiscard]] inline input_routing_text_route_replay_summary summarize_input_routing_text_route_replay(
+    const std::vector<input_routing_diagnostics>& diagnostics)
+{
+    input_routing_text_route_replay_summary summary{};
+    if (diagnostics.size() < 2) {
+        return summary;
+    }
+
+    summary.compared_diagnostic_count = diagnostics.size() - 1;
+    summary.transcript.reserve(summary.compared_diagnostic_count);
+    for (std::size_t index = 0; index < summary.compared_diagnostic_count; ++index) {
+        input_routing_text_route_replay_entry entry =
+            make_input_routing_text_route_replay_entry(index, diagnostics[index], diagnostics[index + 1]);
+        if (entry.diff.changed) {
+            ++summary.changed_step_count;
+        }
+        summary.emitted_route_input_event_count += entry.emitted_route_input_event_count;
+        summary.diagnostic_only_route_count += entry.diagnostic_only_route_count;
+        summary.normalized_input_event_count += entry.normalized_input_event_count;
+        summary.text_route_changed = summary.text_route_changed || entry.text_route_changed;
+        summary.pointer_capture_changed =
+            summary.pointer_capture_changed || entry.diff.pointer_capture_changed;
+        summary.emits_app_domain_action =
+            summary.emits_app_domain_action || entry.emits_app_domain_action;
+        accumulate_input_routing_text_route_replay_counts(summary, entry);
+        summary.transcript.push_back(std::move(entry));
+    }
+    return summary;
 }
 
 } // namespace quiz_vulkan::input

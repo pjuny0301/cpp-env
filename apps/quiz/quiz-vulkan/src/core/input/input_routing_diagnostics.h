@@ -621,6 +621,68 @@ struct input_routing_text_route_replay_summary {
     bool emits_app_domain_action = false;
 };
 
+struct input_routing_gesture_route_replay_counts {
+    std::size_t pointer_capture_started = 0;
+    std::size_t pointer_capture_updated = 0;
+    std::size_t pointer_capture_released = 0;
+    std::size_t pointer_capture_reset = 0;
+    std::size_t ignored_by_capture = 0;
+    std::size_t mouse_arbitration = 0;
+    std::size_t touch_arbitration = 0;
+    std::size_t tap = 0;
+    std::size_t long_press = 0;
+    std::size_t swipe_left = 0;
+    std::size_t swipe_right = 0;
+    std::size_t drag_start = 0;
+    std::size_t drag_update = 0;
+    std::size_t drag_end = 0;
+    std::size_t drag_cancel = 0;
+    std::size_t wheel = 0;
+    std::size_t gesture_canceled = 0;
+};
+
+struct input_routing_gesture_route_replay_entry {
+    std::size_t step_index = 0;
+    input_routing_diagnostics_diff diff;
+    std::int32_t pointer_id = 0;
+    pointer_contact_kind pointer_contact = pointer_contact_kind::unknown;
+    pointer_arbitration_decision pointer_decision = pointer_arbitration_decision::none;
+    bool pointer_capture_changed = false;
+    bool pointer_capture_started = false;
+    bool pointer_capture_updated = false;
+    bool pointer_capture_released = false;
+    bool pointer_capture_reset = false;
+    bool ignored_by_capture = false;
+    bool mouse_arbitration = false;
+    bool touch_arbitration = false;
+    bool tap = false;
+    bool long_press = false;
+    bool swipe_left = false;
+    bool swipe_right = false;
+    bool drag_start = false;
+    bool drag_update = false;
+    bool drag_end = false;
+    bool drag_cancel = false;
+    bool wheel = false;
+    bool gesture_canceled = false;
+    std::size_t emitted_route_input_event_count = 0;
+    std::size_t diagnostic_only_route_count = 0;
+    std::size_t normalized_input_event_count = 0;
+    bool emits_app_domain_action = false;
+};
+
+struct input_routing_gesture_route_replay_summary {
+    std::vector<input_routing_gesture_route_replay_entry> transcript;
+    input_routing_gesture_route_replay_counts counts;
+    std::size_t compared_diagnostic_count = 0;
+    std::size_t changed_step_count = 0;
+    std::size_t emitted_route_input_event_count = 0;
+    std::size_t diagnostic_only_route_count = 0;
+    std::size_t normalized_input_event_count = 0;
+    bool pointer_capture_changed = false;
+    bool emits_app_domain_action = false;
+};
+
 [[nodiscard]] inline std::int64_t input_routing_size_delta(
     std::size_t before_count,
     std::size_t after_count)
@@ -1605,6 +1667,196 @@ inline void accumulate_input_routing_text_route_replay_counts(
         summary.emits_app_domain_action =
             summary.emits_app_domain_action || entry.emits_app_domain_action;
         accumulate_input_routing_text_route_replay_counts(summary, entry);
+        summary.transcript.push_back(std::move(entry));
+    }
+    return summary;
+}
+
+[[nodiscard]] inline input_routing_gesture_route_replay_entry make_input_routing_gesture_route_replay_entry(
+    std::size_t step_index,
+    const input_routing_diagnostics& before,
+    const input_routing_diagnostics& after)
+{
+    input_routing_diagnostics_diff diff = diff_input_routing_diagnostics(before, after);
+    const std::size_t emitting_route_count = count_input_routing_emitting_policy_routes(after);
+    const std::size_t diagnostic_route_count =
+        after.action_routes.size() >= emitting_route_count
+            ? after.action_routes.size() - emitting_route_count
+            : 0;
+
+    std::int32_t pointer_id = 0;
+    pointer_contact_kind pointer_contact = pointer_contact_kind::unknown;
+    pointer_arbitration_decision pointer_decision = pointer_arbitration_decision::none;
+    bool mouse_arbitration = false;
+    bool touch_arbitration = false;
+    bool ignored_by_capture = false;
+    bool gesture_canceled = after.summary.normalized_events.drag_cancel > 0;
+    for (const action_route_policy_diagnostic& route : after.action_routes) {
+        if (pointer_id == 0 && route.pointer_id != 0) {
+            pointer_id = route.pointer_id;
+        }
+        if (pointer_id == 0 && route.normalized_event.pointer_id != 0) {
+            pointer_id = route.normalized_event.pointer_id;
+        }
+        if (pointer_id == 0 && route.gesture_policy.pointer_id != 0) {
+            pointer_id = route.gesture_policy.pointer_id;
+        }
+        if (pointer_contact == pointer_contact_kind::unknown
+            && route.pointer_contact != pointer_contact_kind::unknown) {
+            pointer_contact = route.pointer_contact;
+        }
+        if (pointer_decision == pointer_arbitration_decision::none
+            && route.pointer_decision != pointer_arbitration_decision::none) {
+            pointer_decision = route.pointer_decision;
+        }
+        if (route.kind == action_route_policy_kind::pointer_capture_arbitration
+            && route.pointer_contact == pointer_contact_kind::mouse_like) {
+            mouse_arbitration = true;
+        }
+        if (route.kind == action_route_policy_kind::pointer_capture_arbitration
+            && route.pointer_contact == pointer_contact_kind::touch_like) {
+            touch_arbitration = true;
+        }
+        if (route.pointer_decision == pointer_arbitration_decision::ignored_by_capture) {
+            ignored_by_capture = true;
+        }
+        if (route.pointer_decision == pointer_arbitration_decision::canceled
+            || route.pointer_decision == pointer_arbitration_decision::restarted) {
+            gesture_canceled = true;
+        }
+    }
+
+    const bool before_has_capture = diff.pointer_capture.before_has_state;
+    const bool after_has_capture = diff.pointer_capture.after_has_state;
+    const bool pointer_capture_started = !before_has_capture && after_has_capture;
+    const bool pointer_capture_released = before_has_capture && !after_has_capture;
+    const bool pointer_capture_updated =
+        before_has_capture && after_has_capture && diff.pointer_capture.changed;
+    const bool pointer_capture_changed = diff.pointer_capture_changed;
+    const bool pointer_capture_reset = diff.action_routes.pointer_capture_reset.after_count > 0;
+    const bool tap = after.summary.normalized_events.tap > 0;
+    const bool long_press = after.summary.normalized_events.long_press > 0;
+    const bool swipe_left = after.summary.normalized_events.swipe_left > 0;
+    const bool swipe_right = after.summary.normalized_events.swipe_right > 0;
+    const bool drag_start = after.summary.normalized_events.drag_start > 0;
+    const bool drag_update = after.summary.normalized_events.drag_update > 0;
+    const bool drag_end = after.summary.normalized_events.drag_end > 0;
+    const bool drag_cancel = after.summary.normalized_events.drag_cancel > 0;
+    const bool wheel = after.summary.normalized_events.wheel > 0;
+    const std::size_t normalized_input_event_count = after.summary.normalized_event_count;
+
+    return input_routing_gesture_route_replay_entry{
+        .step_index = step_index,
+        .diff = std::move(diff),
+        .pointer_id = pointer_id,
+        .pointer_contact = pointer_contact,
+        .pointer_decision = pointer_decision,
+        .pointer_capture_changed = pointer_capture_changed,
+        .pointer_capture_started = pointer_capture_started,
+        .pointer_capture_updated = pointer_capture_updated,
+        .pointer_capture_released = pointer_capture_released,
+        .pointer_capture_reset = pointer_capture_reset,
+        .ignored_by_capture = ignored_by_capture,
+        .mouse_arbitration = mouse_arbitration,
+        .touch_arbitration = touch_arbitration,
+        .tap = tap,
+        .long_press = long_press,
+        .swipe_left = swipe_left,
+        .swipe_right = swipe_right,
+        .drag_start = drag_start,
+        .drag_update = drag_update,
+        .drag_end = drag_end,
+        .drag_cancel = drag_cancel,
+        .wheel = wheel,
+        .gesture_canceled = gesture_canceled,
+        .emitted_route_input_event_count = emitting_route_count,
+        .diagnostic_only_route_count = diagnostic_route_count,
+        .normalized_input_event_count = normalized_input_event_count,
+        .emits_app_domain_action = false,
+    };
+}
+
+inline void accumulate_input_routing_gesture_route_replay_counts(
+    input_routing_gesture_route_replay_summary& summary,
+    const input_routing_gesture_route_replay_entry& entry)
+{
+    if (entry.pointer_capture_started) {
+        ++summary.counts.pointer_capture_started;
+    }
+    if (entry.pointer_capture_updated) {
+        ++summary.counts.pointer_capture_updated;
+    }
+    if (entry.pointer_capture_released) {
+        ++summary.counts.pointer_capture_released;
+    }
+    if (entry.pointer_capture_reset) {
+        ++summary.counts.pointer_capture_reset;
+    }
+    if (entry.ignored_by_capture) {
+        ++summary.counts.ignored_by_capture;
+    }
+    if (entry.mouse_arbitration) {
+        ++summary.counts.mouse_arbitration;
+    }
+    if (entry.touch_arbitration) {
+        ++summary.counts.touch_arbitration;
+    }
+    if (entry.tap) {
+        ++summary.counts.tap;
+    }
+    if (entry.long_press) {
+        ++summary.counts.long_press;
+    }
+    if (entry.swipe_left) {
+        ++summary.counts.swipe_left;
+    }
+    if (entry.swipe_right) {
+        ++summary.counts.swipe_right;
+    }
+    if (entry.drag_start) {
+        ++summary.counts.drag_start;
+    }
+    if (entry.drag_update) {
+        ++summary.counts.drag_update;
+    }
+    if (entry.drag_end) {
+        ++summary.counts.drag_end;
+    }
+    if (entry.drag_cancel) {
+        ++summary.counts.drag_cancel;
+    }
+    if (entry.wheel) {
+        ++summary.counts.wheel;
+    }
+    if (entry.gesture_canceled) {
+        ++summary.counts.gesture_canceled;
+    }
+}
+
+[[nodiscard]] inline input_routing_gesture_route_replay_summary summarize_input_routing_gesture_route_replay(
+    const std::vector<input_routing_diagnostics>& diagnostics)
+{
+    input_routing_gesture_route_replay_summary summary{};
+    if (diagnostics.size() < 2) {
+        return summary;
+    }
+
+    summary.compared_diagnostic_count = diagnostics.size() - 1;
+    summary.transcript.reserve(summary.compared_diagnostic_count);
+    for (std::size_t index = 0; index < summary.compared_diagnostic_count; ++index) {
+        input_routing_gesture_route_replay_entry entry =
+            make_input_routing_gesture_route_replay_entry(index, diagnostics[index], diagnostics[index + 1]);
+        if (entry.diff.changed) {
+            ++summary.changed_step_count;
+        }
+        summary.emitted_route_input_event_count += entry.emitted_route_input_event_count;
+        summary.diagnostic_only_route_count += entry.diagnostic_only_route_count;
+        summary.normalized_input_event_count += entry.normalized_input_event_count;
+        summary.pointer_capture_changed =
+            summary.pointer_capture_changed || entry.pointer_capture_changed;
+        summary.emits_app_domain_action =
+            summary.emits_app_domain_action || entry.emits_app_domain_action;
+        accumulate_input_routing_gesture_route_replay_counts(summary, entry);
         summary.transcript.push_back(std::move(entry));
     }
     return summary;

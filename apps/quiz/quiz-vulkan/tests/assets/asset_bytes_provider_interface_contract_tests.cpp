@@ -350,6 +350,93 @@ static_assert(requires(
     { const_summary.find_changed(id) } -> std::same_as<const asset_materialized_byte_payload_diff_entry*>;
 });
 
+static_assert(std::is_enum_v<asset_runtime_payload_manifest_delta_kind>);
+
+static_assert(requires(
+    asset_runtime_payload_manifest_entry entry,
+    const asset_runtime_payload_manifest_entry& const_entry) {
+    { entry.id } -> std::same_as<std::string&>;
+    { entry.type } -> std::same_as<asset_type&>;
+    { entry.source_uri } -> std::same_as<std::string&>;
+    { entry.cache_key } -> std::same_as<asset_cache_key&>;
+    { entry.cache_revision } -> std::same_as<std::string&>;
+    { entry.content_hash } -> std::same_as<std::string&>;
+    { entry.byte_count } -> std::same_as<std::size_t&>;
+    { entry.payload_byte_count } -> std::same_as<std::size_t&>;
+    { entry.status } -> std::same_as<asset_materialized_bytes_handoff_status&>;
+    { entry.materialized_status } -> std::same_as<runtime_materialized_asset_lookup_status&>;
+    { entry.load_status } -> std::same_as<asset_bytes_load_status&>;
+    { entry.ready } -> std::same_as<bool&>;
+    { entry.blocker_summary } -> std::same_as<std::string&>;
+    { entry.stable_manifest_identity } -> std::same_as<std::string&>;
+    { entry.diagnostic } -> std::same_as<std::string&>;
+    { const_entry.ok() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_runtime_payload_manifest_summary summary,
+    const asset_runtime_payload_manifest_summary& const_summary,
+    std::string_view id,
+    std::string_view stable_manifest_identity) {
+    { summary.entries } -> std::same_as<std::vector<asset_runtime_payload_manifest_entry>&>;
+    { summary.skipped_generic_count } -> std::same_as<std::size_t&>;
+    { summary.ready_count } -> std::same_as<std::size_t&>;
+    { summary.blocked_count } -> std::same_as<std::size_t&>;
+    { summary.font_count } -> std::same_as<std::size_t&>;
+    { summary.image_count } -> std::same_as<std::size_t&>;
+    { summary.sound_count } -> std::same_as<std::size_t&>;
+    { summary.shader_count } -> std::same_as<std::size_t&>;
+    { summary.deck_count } -> std::same_as<std::size_t&>;
+    { summary.revisioned_count } -> std::same_as<std::size_t&>;
+    { summary.missing_revision_count } -> std::same_as<std::size_t&>;
+    { const_summary.ok() } -> std::same_as<bool>;
+    { const_summary.entry_count() } -> std::same_as<std::size_t>;
+    { const_summary.find_entry(id) } -> std::same_as<const asset_runtime_payload_manifest_entry*>;
+    { const_summary.find_stable_manifest_identity(stable_manifest_identity) } ->
+        std::same_as<const asset_runtime_payload_manifest_entry*>;
+});
+
+static_assert(requires(
+    asset_runtime_payload_manifest_diff_entry entry,
+    const asset_runtime_payload_manifest_diff_entry& const_entry) {
+    { entry.kind } -> std::same_as<asset_runtime_payload_manifest_delta_kind&>;
+    { entry.id } -> std::same_as<std::string&>;
+    { entry.type } -> std::same_as<asset_type&>;
+    { entry.before } -> std::same_as<std::optional<asset_runtime_payload_manifest_entry>&>;
+    { entry.after } -> std::same_as<std::optional<asset_runtime_payload_manifest_entry>&>;
+    { entry.type_changed } -> std::same_as<bool&>;
+    { entry.source_uri_changed } -> std::same_as<bool&>;
+    { entry.cache_key_changed } -> std::same_as<bool&>;
+    { entry.cache_revision_changed } -> std::same_as<bool&>;
+    { entry.missing_revision_changed } -> std::same_as<bool&>;
+    { entry.content_hash_changed } -> std::same_as<bool&>;
+    { entry.byte_count_changed } -> std::same_as<bool&>;
+    { entry.payload_byte_count_changed } -> std::same_as<bool&>;
+    { entry.status_changed } -> std::same_as<bool&>;
+    { entry.readiness_changed } -> std::same_as<bool&>;
+    { entry.blocker_summary_changed } -> std::same_as<bool&>;
+    { entry.stable_manifest_identity_changed } -> std::same_as<bool&>;
+    { const_entry.has_field_delta() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_runtime_payload_manifest_diff_summary summary,
+    const asset_runtime_payload_manifest_diff_summary& const_summary,
+    std::string_view id) {
+    { summary.added } -> std::same_as<std::vector<asset_runtime_payload_manifest_diff_entry>&>;
+    { summary.removed } -> std::same_as<std::vector<asset_runtime_payload_manifest_diff_entry>&>;
+    { summary.changed } -> std::same_as<std::vector<asset_runtime_payload_manifest_diff_entry>&>;
+    { summary.ready_delta } -> std::same_as<std::ptrdiff_t&>;
+    { summary.blocked_delta } -> std::same_as<std::ptrdiff_t&>;
+    { summary.revisioned_delta } -> std::same_as<std::ptrdiff_t&>;
+    { summary.missing_revision_delta } -> std::same_as<std::ptrdiff_t&>;
+    { const_summary.empty() } -> std::same_as<bool>;
+    { const_summary.change_count() } -> std::same_as<std::size_t>;
+    { const_summary.find_added(id) } -> std::same_as<const asset_runtime_payload_manifest_diff_entry*>;
+    { const_summary.find_removed(id) } -> std::same_as<const asset_runtime_payload_manifest_diff_entry*>;
+    { const_summary.find_changed(id) } -> std::same_as<const asset_runtime_payload_manifest_diff_entry*>;
+});
+
 static_assert(std::is_enum_v<asset_materialized_byte_payload_selection_status>);
 
 static_assert(requires(asset_materialized_byte_payload_selection_request request) {
@@ -915,6 +1002,8 @@ static_assert(requires(
     const asset_materialized_byte_payload_bundle& payload_bundle,
     const asset_materialized_byte_payload_snapshot& payload_entry_snapshot,
     const asset_materialized_byte_payload_bundle_snapshot& payload_snapshot,
+    const asset_runtime_payload_manifest_summary& payload_manifest,
+    asset_runtime_payload_manifest_delta_kind payload_manifest_delta_kind,
     const asset_materialized_byte_payload_selection_request& selection_request,
     const asset_materialized_byte_payload_filter& payload_filter,
     const std::vector<asset_materialized_byte_payload_selection_request>& selection_requests,
@@ -976,6 +1065,14 @@ static_assert(requires(
         std::same_as<asset_materialized_byte_payload_diff_summary>;
     { diff_materialized_asset_byte_payload_bundles(payload_bundle, payload_bundle) } ->
         std::same_as<asset_materialized_byte_payload_diff_summary>;
+    { summarize_asset_runtime_payload_manifest(payload_bundle) } ->
+        std::same_as<asset_runtime_payload_manifest_summary>;
+    { diff_asset_runtime_payload_manifests(payload_manifest, payload_manifest) } ->
+        std::same_as<asset_runtime_payload_manifest_diff_summary>;
+    { diff_asset_runtime_payload_manifests(payload_bundle, payload_bundle) } ->
+        std::same_as<asset_runtime_payload_manifest_diff_summary>;
+    { asset_runtime_payload_manifest_delta_kind_name(payload_manifest_delta_kind) } ->
+        std::same_as<std::string>;
     { asset_materialized_byte_payload_selection_status_name(selection_status) } -> std::same_as<std::string>;
     { materialized_asset_byte_payload_integrity_ok(payload) } -> std::same_as<bool>;
     { select_materialized_asset_byte_payload(payload_bundle, selection_request) } ->

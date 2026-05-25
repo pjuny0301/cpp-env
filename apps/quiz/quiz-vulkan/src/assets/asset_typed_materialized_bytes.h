@@ -623,6 +623,161 @@ struct asset_materialized_byte_payload_diff_summary {
     }
 };
 
+enum class asset_runtime_payload_manifest_delta_kind {
+    added,
+    removed,
+    changed,
+};
+
+struct asset_runtime_payload_manifest_entry {
+    std::string id;
+    asset_type type = asset_type::generic;
+    std::string source_uri;
+    asset_cache_key cache_key;
+    std::string cache_revision;
+    std::string content_hash;
+    std::size_t byte_count = 0U;
+    std::size_t payload_byte_count = 0U;
+    asset_materialized_bytes_handoff_status status =
+        asset_materialized_bytes_handoff_status::materialization_blocked;
+    runtime_materialized_asset_lookup_status materialized_status =
+        runtime_materialized_asset_lookup_status::missing_id;
+    asset_bytes_load_status load_status = asset_bytes_load_status::missing_bytes;
+    bool ready = false;
+    std::string blocker_summary;
+    std::string stable_manifest_identity;
+    std::string diagnostic;
+
+    [[nodiscard]] bool ok() const
+    {
+        return ready && status == asset_materialized_bytes_handoff_status::ready;
+    }
+};
+
+struct asset_runtime_payload_manifest_summary {
+    std::vector<asset_runtime_payload_manifest_entry> entries;
+    std::size_t skipped_generic_count = 0U;
+    std::size_t ready_count = 0U;
+    std::size_t blocked_count = 0U;
+    std::size_t font_count = 0U;
+    std::size_t image_count = 0U;
+    std::size_t sound_count = 0U;
+    std::size_t shader_count = 0U;
+    std::size_t deck_count = 0U;
+    std::size_t revisioned_count = 0U;
+    std::size_t missing_revision_count = 0U;
+
+    [[nodiscard]] bool ok() const
+    {
+        return blocked_count == 0U;
+    }
+
+    [[nodiscard]] std::size_t entry_count() const
+    {
+        return entries.size();
+    }
+
+    [[nodiscard]] const asset_runtime_payload_manifest_entry* find_entry(std::string_view id) const
+    {
+        for (const asset_runtime_payload_manifest_entry& entry : entries) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_runtime_payload_manifest_entry* find_stable_manifest_identity(
+        std::string_view stable_manifest_identity) const
+    {
+        for (const asset_runtime_payload_manifest_entry& entry : entries) {
+            if (entry.stable_manifest_identity == stable_manifest_identity) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+};
+
+struct asset_runtime_payload_manifest_diff_entry {
+    asset_runtime_payload_manifest_delta_kind kind =
+        asset_runtime_payload_manifest_delta_kind::changed;
+    std::string id;
+    asset_type type = asset_type::generic;
+    std::optional<asset_runtime_payload_manifest_entry> before;
+    std::optional<asset_runtime_payload_manifest_entry> after;
+    bool type_changed = false;
+    bool source_uri_changed = false;
+    bool cache_key_changed = false;
+    bool cache_revision_changed = false;
+    bool missing_revision_changed = false;
+    bool content_hash_changed = false;
+    bool byte_count_changed = false;
+    bool payload_byte_count_changed = false;
+    bool status_changed = false;
+    bool readiness_changed = false;
+    bool blocker_summary_changed = false;
+    bool stable_manifest_identity_changed = false;
+
+    [[nodiscard]] bool has_field_delta() const
+    {
+        return type_changed || source_uri_changed || cache_key_changed || cache_revision_changed
+            || missing_revision_changed || content_hash_changed || byte_count_changed
+            || payload_byte_count_changed || status_changed || readiness_changed
+            || blocker_summary_changed || stable_manifest_identity_changed;
+    }
+};
+
+struct asset_runtime_payload_manifest_diff_summary {
+    std::vector<asset_runtime_payload_manifest_diff_entry> added;
+    std::vector<asset_runtime_payload_manifest_diff_entry> removed;
+    std::vector<asset_runtime_payload_manifest_diff_entry> changed;
+    std::ptrdiff_t ready_delta = 0;
+    std::ptrdiff_t blocked_delta = 0;
+    std::ptrdiff_t revisioned_delta = 0;
+    std::ptrdiff_t missing_revision_delta = 0;
+
+    [[nodiscard]] bool empty() const
+    {
+        return added.empty() && removed.empty() && changed.empty();
+    }
+
+    [[nodiscard]] std::size_t change_count() const
+    {
+        return added.size() + removed.size() + changed.size();
+    }
+
+    [[nodiscard]] const asset_runtime_payload_manifest_diff_entry* find_added(std::string_view id) const
+    {
+        for (const asset_runtime_payload_manifest_diff_entry& entry : added) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_runtime_payload_manifest_diff_entry* find_removed(std::string_view id) const
+    {
+        for (const asset_runtime_payload_manifest_diff_entry& entry : removed) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_runtime_payload_manifest_diff_entry* find_changed(std::string_view id) const
+    {
+        for (const asset_runtime_payload_manifest_diff_entry& entry : changed) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+};
+
 enum class asset_materialized_byte_payload_selection_status {
     selected,
     missing_id,
@@ -1816,6 +1971,166 @@ inline asset_materialized_byte_payload_diff_entry make_changed_materialized_byte
     };
 }
 
+inline std::string runtime_payload_manifest_status_token(asset_materialized_bytes_handoff_status status)
+{
+    switch (status) {
+        case asset_materialized_bytes_handoff_status::ready:
+            return "ready";
+        case asset_materialized_bytes_handoff_status::materialization_blocked:
+            return "materialization_blocked";
+        case asset_materialized_bytes_handoff_status::load_blocked:
+            return "load_blocked";
+        case asset_materialized_bytes_handoff_status::integrity_blocked:
+            return "integrity_blocked";
+    }
+    return "materialization_blocked";
+}
+
+inline std::string runtime_payload_manifest_cache_revision(const asset_cache_key& cache_key)
+{
+    const asset_cache_key_classification classification = classify_asset_cache_key(cache_key);
+    return classification.cache_revision;
+}
+
+inline std::string make_runtime_payload_manifest_identity(
+    asset_type type,
+    const asset_cache_key& cache_key,
+    std::string_view content_hash,
+    std::size_t payload_byte_count,
+    asset_materialized_bytes_handoff_status status)
+{
+    return "runtime-payload-manifest|type=" + std::string(asset_type_token(type)) + "|key="
+        + cache_key + "|hash=" + std::string(content_hash) + "|bytes="
+        + std::to_string(payload_byte_count) + "|status=" + runtime_payload_manifest_status_token(status);
+}
+
+inline asset_runtime_payload_manifest_entry make_runtime_payload_manifest_entry(
+    const asset_materialized_byte_payload& payload)
+{
+    const std::size_t payload_byte_count = payload.bytes.size();
+    const std::string cache_revision = runtime_payload_manifest_cache_revision(payload.cache_key);
+    const std::string blocker_summary = payload.ready()
+        ? std::string{"ready"}
+        : runtime_payload_manifest_status_token(payload.status);
+
+    return asset_runtime_payload_manifest_entry{
+        .id = payload.id,
+        .type = payload.type,
+        .source_uri = payload.source_uri,
+        .cache_key = payload.cache_key,
+        .cache_revision = cache_revision,
+        .content_hash = payload.content_hash,
+        .byte_count = payload.byte_count,
+        .payload_byte_count = payload_byte_count,
+        .status = payload.status,
+        .materialized_status = payload.materialized_status,
+        .load_status = payload.load_status,
+        .ready = payload.ready(),
+        .blocker_summary = blocker_summary,
+        .stable_manifest_identity = make_runtime_payload_manifest_identity(
+            payload.type,
+            payload.cache_key,
+            payload.content_hash,
+            payload_byte_count,
+            payload.status),
+        .diagnostic = payload.diagnostic,
+    };
+}
+
+inline void count_runtime_payload_manifest_entry(
+    asset_runtime_payload_manifest_summary& summary,
+    const asset_runtime_payload_manifest_entry& entry)
+{
+    if (entry.ready) {
+        ++summary.ready_count;
+    } else {
+        ++summary.blocked_count;
+    }
+
+    switch (entry.type) {
+        case asset_type::font:
+            ++summary.font_count;
+            break;
+        case asset_type::image:
+            ++summary.image_count;
+            break;
+        case asset_type::sound:
+            ++summary.sound_count;
+            break;
+        case asset_type::shader:
+            ++summary.shader_count;
+            break;
+        case asset_type::deck:
+            ++summary.deck_count;
+            break;
+        case asset_type::generic:
+            break;
+    }
+
+    if (entry.cache_revision.empty()) {
+        ++summary.missing_revision_count;
+    } else {
+        ++summary.revisioned_count;
+    }
+}
+
+inline void add_runtime_payload_manifest_entry(
+    asset_runtime_payload_manifest_summary& summary,
+    asset_runtime_payload_manifest_entry entry)
+{
+    count_runtime_payload_manifest_entry(summary, entry);
+    summary.entries.push_back(std::move(entry));
+}
+
+inline asset_runtime_payload_manifest_diff_entry make_added_runtime_payload_manifest_diff_entry(
+    const asset_runtime_payload_manifest_entry& after)
+{
+    return asset_runtime_payload_manifest_diff_entry{
+        .kind = asset_runtime_payload_manifest_delta_kind::added,
+        .id = after.id,
+        .type = after.type,
+        .after = after,
+    };
+}
+
+inline asset_runtime_payload_manifest_diff_entry make_removed_runtime_payload_manifest_diff_entry(
+    const asset_runtime_payload_manifest_entry& before)
+{
+    return asset_runtime_payload_manifest_diff_entry{
+        .kind = asset_runtime_payload_manifest_delta_kind::removed,
+        .id = before.id,
+        .type = before.type,
+        .before = before,
+    };
+}
+
+inline asset_runtime_payload_manifest_diff_entry make_changed_runtime_payload_manifest_diff_entry(
+    const asset_runtime_payload_manifest_entry& before,
+    const asset_runtime_payload_manifest_entry& after)
+{
+    return asset_runtime_payload_manifest_diff_entry{
+        .kind = asset_runtime_payload_manifest_delta_kind::changed,
+        .id = after.id,
+        .type = after.type,
+        .before = before,
+        .after = after,
+        .type_changed = before.type != after.type,
+        .source_uri_changed = before.source_uri != after.source_uri,
+        .cache_key_changed = before.cache_key != after.cache_key,
+        .cache_revision_changed = before.cache_revision != after.cache_revision,
+        .missing_revision_changed = before.cache_revision.empty() != after.cache_revision.empty(),
+        .content_hash_changed = before.content_hash != after.content_hash,
+        .byte_count_changed = before.byte_count != after.byte_count,
+        .payload_byte_count_changed = before.payload_byte_count != after.payload_byte_count,
+        .status_changed = before.status != after.status || before.materialized_status != after.materialized_status
+            || before.load_status != after.load_status,
+        .readiness_changed = before.ready != after.ready,
+        .blocker_summary_changed = before.blocker_summary != after.blocker_summary,
+        .stable_manifest_identity_changed =
+            before.stable_manifest_identity != after.stable_manifest_identity,
+    };
+}
+
 inline asset_materialized_byte_payload_request_transaction_diff_entry make_added_materialized_byte_payload_transaction_diff_entry(
     const asset_materialized_byte_payload_request_transaction_item& after,
     std::size_t after_index,
@@ -1996,6 +2311,90 @@ inline asset_materialized_byte_payload_diff_summary diff_materialized_asset_byte
     return diff_materialized_asset_byte_payload_snapshots(
         snapshot_materialized_asset_byte_payload_bundle(before),
         snapshot_materialized_asset_byte_payload_bundle(after));
+}
+
+inline asset_runtime_payload_manifest_summary summarize_asset_runtime_payload_manifest(
+    const asset_materialized_byte_payload_bundle& bundle)
+{
+    asset_runtime_payload_manifest_summary summary{
+        .skipped_generic_count = bundle.skipped_generic_count,
+    };
+    summary.entries.reserve(bundle.payload_count());
+
+    detail::for_each_materialized_byte_payload(
+        bundle,
+        [&](const asset_materialized_byte_payload& payload) {
+            detail::add_runtime_payload_manifest_entry(
+                summary,
+                detail::make_runtime_payload_manifest_entry(payload));
+        });
+
+    return summary;
+}
+
+inline asset_runtime_payload_manifest_diff_summary diff_asset_runtime_payload_manifests(
+    const asset_runtime_payload_manifest_summary& before,
+    const asset_runtime_payload_manifest_summary& after)
+{
+    asset_runtime_payload_manifest_diff_summary diff{
+        .ready_delta = detail::materialized_byte_payload_count_delta(
+            before.ready_count,
+            after.ready_count),
+        .blocked_delta = detail::materialized_byte_payload_count_delta(
+            before.blocked_count,
+            after.blocked_count),
+        .revisioned_delta = detail::materialized_byte_payload_count_delta(
+            before.revisioned_count,
+            after.revisioned_count),
+        .missing_revision_delta = detail::materialized_byte_payload_count_delta(
+            before.missing_revision_count,
+            after.missing_revision_count),
+    };
+
+    for (const asset_runtime_payload_manifest_entry& before_entry : before.entries) {
+        const asset_runtime_payload_manifest_entry* after_entry = after.find_entry(before_entry.id);
+        if (after_entry == nullptr) {
+            diff.removed.push_back(detail::make_removed_runtime_payload_manifest_diff_entry(before_entry));
+            continue;
+        }
+
+        asset_runtime_payload_manifest_diff_entry changed =
+            detail::make_changed_runtime_payload_manifest_diff_entry(before_entry, *after_entry);
+        if (changed.has_field_delta()) {
+            diff.changed.push_back(std::move(changed));
+        }
+    }
+
+    for (const asset_runtime_payload_manifest_entry& after_entry : after.entries) {
+        if (before.find_entry(after_entry.id) == nullptr) {
+            diff.added.push_back(detail::make_added_runtime_payload_manifest_diff_entry(after_entry));
+        }
+    }
+
+    return diff;
+}
+
+inline asset_runtime_payload_manifest_diff_summary diff_asset_runtime_payload_manifests(
+    const asset_materialized_byte_payload_bundle& before,
+    const asset_materialized_byte_payload_bundle& after)
+{
+    return diff_asset_runtime_payload_manifests(
+        summarize_asset_runtime_payload_manifest(before),
+        summarize_asset_runtime_payload_manifest(after));
+}
+
+inline std::string asset_runtime_payload_manifest_delta_kind_name(
+    asset_runtime_payload_manifest_delta_kind kind)
+{
+    switch (kind) {
+        case asset_runtime_payload_manifest_delta_kind::added:
+            return "added";
+        case asset_runtime_payload_manifest_delta_kind::removed:
+            return "removed";
+        case asset_runtime_payload_manifest_delta_kind::changed:
+            return "changed";
+    }
+    return "changed";
 }
 
 inline asset_shader_materialized_byte_pipeline_summary summarize_shader_materialized_byte_pipeline(

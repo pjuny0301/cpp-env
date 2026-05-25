@@ -1728,6 +1728,192 @@ void test_materialized_asset_byte_payload_bundle_diff_tracks_snapshot_changes()
         "payload bundle diff keeps before and after status");
 }
 
+void test_runtime_payload_manifest_summary_lists_engine_payload_identities()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+
+    asset_materialized_byte_payload_bundle before;
+    before.skipped_generic_count = 2U;
+    before.fonts.ready.push_back(make_payload_bundle_entry(
+        "body_font",
+        asset_type::font,
+        "asset://fonts/body.ttf",
+        fixture_root / "before" / "fonts" / "body.ttf",
+        "font bytes",
+        "hash:font"));
+    asset_materialized_byte_payload before_image = make_payload_bundle_entry(
+        "card_front",
+        asset_type::image,
+        "asset://cards/front.png",
+        fixture_root / "before" / "cards" / "front.png",
+        "image bytes",
+        "hash:image-old");
+    before_image.cache_key = "image|asset://cards/front.png|rev=1";
+    before.images.ready.push_back(std::move(before_image));
+    before.shaders.blocked.push_back(make_payload_bundle_entry(
+        "ui_shader",
+        asset_type::shader,
+        "asset://shaders/ui.vert.spv",
+        fixture_root / "before" / "shaders" / "ui.vert.spv",
+        "",
+        "hash:shader-missing",
+        asset_materialized_bytes_handoff_status::materialization_blocked));
+    before.decks.ready.push_back(make_payload_bundle_entry(
+        "main_deck",
+        asset_type::deck,
+        "asset://decks/main.quiz",
+        fixture_root / "before" / "decks" / "main.quiz",
+        "deck bytes",
+        "hash:deck"));
+
+    asset_materialized_byte_payload_bundle after;
+    after.skipped_generic_count = 2U;
+    after.fonts.ready.push_back(make_payload_bundle_entry(
+        "body_font",
+        asset_type::font,
+        "asset://fonts/body.ttf",
+        fixture_root / "after" / "fonts" / "body.ttf",
+        "font bytes",
+        "hash:font"));
+    asset_materialized_byte_payload after_image = make_payload_bundle_entry(
+        "card_front",
+        asset_type::image,
+        "asset://cards/front.png",
+        fixture_root / "after" / "cards" / "front.png",
+        "image bytes!",
+        "hash:image-new");
+    after_image.cache_key = "image|asset://cards/front.png|rev=2";
+    after.images.ready.push_back(std::move(after_image));
+    after.shaders.ready.push_back(make_payload_bundle_entry(
+        "ui_shader",
+        asset_type::shader,
+        "asset://shaders/ui.vert.spv",
+        fixture_root / "after" / "shaders" / "ui.vert.spv",
+        "shader bytes",
+        "hash:shader-ready"));
+    after.sounds.ready.push_back(make_payload_bundle_entry(
+        "answer_sound",
+        asset_type::sound,
+        "asset://sounds/correct.ogg",
+        fixture_root / "after" / "sounds" / "correct.ogg",
+        "sound bytes",
+        "hash:sound"));
+
+    const asset_runtime_payload_manifest_summary before_manifest =
+        summarize_asset_runtime_payload_manifest(before);
+    const asset_runtime_payload_manifest_summary after_manifest =
+        summarize_asset_runtime_payload_manifest(after);
+    const asset_runtime_payload_manifest_diff_summary diff =
+        diff_asset_runtime_payload_manifests(before_manifest, after_manifest);
+    const asset_runtime_payload_manifest_diff_summary bundle_diff =
+        diff_asset_runtime_payload_manifests(before, after);
+
+    require(!before_manifest.ok(), "runtime payload manifest reports blocked payloads");
+    require(after_manifest.ok(), "runtime payload manifest accepts ready payloads");
+    require(before_manifest.entry_count() == 4U, "runtime payload manifest lists before payloads");
+    require(after_manifest.entry_count() == 4U, "runtime payload manifest lists after payloads");
+    require(before_manifest.ready_count == 3U, "runtime payload manifest counts ready payloads");
+    require(before_manifest.blocked_count == 1U, "runtime payload manifest counts blocked payloads");
+    require(before_manifest.font_count == 1U, "runtime payload manifest counts font payloads");
+    require(before_manifest.image_count == 1U, "runtime payload manifest counts image payloads");
+    require(before_manifest.shader_count == 1U, "runtime payload manifest counts shader payloads");
+    require(before_manifest.deck_count == 1U, "runtime payload manifest counts deck payloads");
+    require(before_manifest.sound_count == 0U, "runtime payload manifest handles absent sound payloads");
+    require(before_manifest.revisioned_count == 1U, "runtime payload manifest counts revisioned cache keys");
+    require(before_manifest.missing_revision_count == 3U, "runtime payload manifest counts missing revisions");
+    require(before_manifest.skipped_generic_count == 2U, "runtime payload manifest preserves skipped generics");
+
+    const asset_runtime_payload_manifest_entry* font = before_manifest.find_entry("body_font");
+    require(font != nullptr, "runtime payload manifest can find font entries");
+    require(font->ok(), "runtime payload manifest marks ready font entries ok");
+    require(font->type == asset_type::font, "runtime payload manifest preserves asset type");
+    require(font->source_uri == "asset://fonts/body.ttf", "runtime payload manifest preserves source uri");
+    require(font->cache_key == "font|asset://fonts/body.ttf", "runtime payload manifest preserves cache key");
+    require(font->cache_revision.empty(), "runtime payload manifest exposes missing revision");
+    require(font->content_hash == "hash:font", "runtime payload manifest preserves content hash");
+    require(font->byte_count == 10U, "runtime payload manifest preserves reported byte count");
+    require(font->payload_byte_count == 10U, "runtime payload manifest preserves owned byte count");
+    require(font->blocker_summary == "ready", "runtime payload manifest records ready blocker summary");
+    require(
+        before_manifest.find_stable_manifest_identity(font->stable_manifest_identity) == font,
+        "runtime payload manifest can find entries by stable identity");
+    require(
+        font->stable_manifest_identity.find(fixture_root.string()) == std::string::npos,
+        "runtime payload manifest identity omits absolute host paths");
+
+    const asset_runtime_payload_manifest_entry* image = before_manifest.find_entry("card_front");
+    require(image != nullptr, "runtime payload manifest can find image entries");
+    require(image->cache_revision == "1", "runtime payload manifest parses image cache revision");
+    require(
+        image->stable_manifest_identity.find(fixture_root.string()) == std::string::npos,
+        "revised runtime payload manifest identity omits absolute host paths");
+
+    const asset_runtime_payload_manifest_entry* shader = before_manifest.find_entry("ui_shader");
+    require(shader != nullptr, "runtime payload manifest can find shader entries");
+    require(!shader->ready, "runtime payload manifest records blocked shader readiness");
+    require(shader->blocker_summary == "materialization_blocked", "runtime payload manifest summarizes blockers");
+    require(
+        shader->status == asset_materialized_bytes_handoff_status::materialization_blocked,
+        "runtime payload manifest preserves blocked status");
+
+    require(!diff.empty(), "runtime payload manifest diff reports changed payload identities");
+    require(diff.change_count() == 4U, "runtime payload manifest diff counts added removed and changed entries");
+    require(bundle_diff.change_count() == diff.change_count(), "bundle manifest diff matches summary diff");
+    require(diff.added.size() == 1U, "runtime payload manifest diff records added payloads");
+    require(diff.removed.size() == 1U, "runtime payload manifest diff records removed payloads");
+    require(diff.changed.size() == 2U, "runtime payload manifest diff records changed payloads");
+    require(diff.ready_delta == 1, "runtime payload manifest diff records ready count changes");
+    require(diff.blocked_delta == -1, "runtime payload manifest diff records blocked count changes");
+    require(diff.revisioned_delta == 0, "runtime payload manifest diff keeps revision count stable");
+    require(diff.missing_revision_delta == 0, "runtime payload manifest diff keeps missing revision count stable");
+
+    const asset_runtime_payload_manifest_diff_entry* added = diff.find_added("answer_sound");
+    require(added != nullptr, "runtime payload manifest diff finds added sounds");
+    require(
+        added->kind == asset_runtime_payload_manifest_delta_kind::added,
+        "runtime payload manifest diff marks additions");
+    require(added->type == asset_type::sound, "runtime payload manifest diff records added type");
+    require(!added->before.has_value() && added->after.has_value(), "added manifest diff only keeps after entry");
+    require(added->after->stable_manifest_identity.find(fixture_root.string()) == std::string::npos,
+        "added runtime payload manifest identity omits absolute host paths");
+
+    const asset_runtime_payload_manifest_diff_entry* removed = diff.find_removed("main_deck");
+    require(removed != nullptr, "runtime payload manifest diff finds removed decks");
+    require(
+        asset_runtime_payload_manifest_delta_kind_name(removed->kind) == "removed",
+        "runtime payload manifest delta names are stable");
+    require(removed->type == asset_type::deck, "runtime payload manifest diff records removed type");
+    require(removed->before.has_value() && !removed->after.has_value(), "removed manifest diff only keeps before entry");
+
+    const asset_runtime_payload_manifest_diff_entry* changed_image = diff.find_changed("card_front");
+    require(changed_image != nullptr, "runtime payload manifest diff finds changed image payloads");
+    require(changed_image->cache_key_changed, "runtime payload manifest diff records cache-key changes");
+    require(changed_image->cache_revision_changed, "runtime payload manifest diff records revision changes");
+    require(changed_image->content_hash_changed, "runtime payload manifest diff records hash changes");
+    require(changed_image->byte_count_changed, "runtime payload manifest diff records byte-count changes");
+    require(changed_image->payload_byte_count_changed, "runtime payload manifest diff records payload byte-count changes");
+    require(
+        changed_image->stable_manifest_identity_changed,
+        "runtime payload manifest diff records stable identity changes");
+    require(!changed_image->readiness_changed, "runtime payload manifest diff leaves stable readiness unchanged");
+
+    const asset_runtime_payload_manifest_diff_entry* changed_shader = diff.find_changed("ui_shader");
+    require(changed_shader != nullptr, "runtime payload manifest diff finds blocked-to-ready shader payloads");
+    require(changed_shader->status_changed, "runtime payload manifest diff records status changes");
+    require(changed_shader->readiness_changed, "runtime payload manifest diff records readiness changes");
+    require(changed_shader->blocker_summary_changed, "runtime payload manifest diff records blocker summary changes");
+    require(changed_shader->content_hash_changed, "runtime payload manifest diff records shader content hash changes");
+    require(changed_shader->stable_manifest_identity_changed, "runtime payload manifest diff records shader identity changes");
+    require(changed_shader->before->blocker_summary == "materialization_blocked", "runtime payload manifest keeps old blocker");
+    require(changed_shader->after->blocker_summary == "ready", "runtime payload manifest keeps new blocker");
+    require(changed_shader->has_field_delta(), "runtime payload manifest diff reports field changes");
+
+    const asset_runtime_payload_manifest_diff_entry* unchanged_font = diff.find_changed("body_font");
+    require(unchanged_font == nullptr, "host path movement alone does not change runtime manifest identity");
+}
+
 void test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads()
 {
     using namespace quiz_vulkan::assets;
@@ -4096,6 +4282,7 @@ int main()
     test_materialized_asset_bytes_handoff_summary_groups_ready_and_blocked_payloads();
     test_materialized_asset_byte_payload_bundle_groups_loaded_bytes_by_type();
     test_materialized_asset_byte_payload_bundle_diff_tracks_snapshot_changes();
+    test_runtime_payload_manifest_summary_lists_engine_payload_identities();
     test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads();
     test_shader_byte_pipeline_source_summary_combines_manifest_fallback_and_payload_evidence();
     test_shader_payload_runtime_summary_tracks_stage_revision_and_cache_identity();

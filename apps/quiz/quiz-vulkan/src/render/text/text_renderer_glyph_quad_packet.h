@@ -239,6 +239,106 @@ struct render_text_renderer_draw_payload_snapshot {
   }
 };
 
+struct render_text_renderer_draw_payload_diff_policy {
+  std::ptrdiff_t payload_count_delta{};
+  std::ptrdiff_t ready_payload_count_delta{};
+  std::ptrdiff_t blocked_payload_count_delta{};
+  std::ptrdiff_t uploaded_payload_count_delta{};
+  std::ptrdiff_t clean_reuse_payload_count_delta{};
+  std::ptrdiff_t total_upload_rgba_bytes_delta{};
+  std::size_t added_payload_count{};
+  std::size_t removed_payload_count{};
+  std::size_t changed_payload_count{};
+  std::size_t unchanged_payload_count{};
+  std::size_t uploaded_to_clean_reuse_count{};
+  std::size_t clean_reuse_to_uploaded_count{};
+  std::size_t readiness_regression_count{};
+  std::size_t readiness_recovery_count{};
+  std::size_t quad_bounds_changed_count{};
+  std::size_t atlas_bounds_changed_count{};
+  std::size_t uv_bounds_changed_count{};
+  std::size_t atlas_page_changed_count{};
+  std::size_t page_revision_changed_count{};
+  std::size_t sampler_key_changed_count{};
+  std::size_t upload_request_id_changed_count{};
+  std::size_t upload_operation_id_changed_count{};
+  std::size_t uploaded_byte_count_changed_count{};
+  std::size_t readiness_changed_count{};
+  std::size_t status_changed_count{};
+  std::size_t blocker_summary_changed_count{};
+  std::size_t missing_identity_count{};
+  bool frame_id_changed{};
+  bool frame_ready_changed{};
+  bool blockers_changed{};
+  bool stable_no_change{};
+};
+
+struct render_text_renderer_draw_payload_diff_record {
+  std::string payload_id{};
+  std::string previous_quad_packet_id{};
+  std::string current_quad_packet_id{};
+  std::string previous_blocker_summary{};
+  std::string current_blocker_summary{};
+  bool added{};
+  bool removed{};
+  bool changed{};
+  bool unchanged{};
+  bool missing_identity{};
+  bool uploaded_to_clean_reuse{};
+  bool clean_reuse_to_uploaded{};
+  bool readiness_changed{};
+  bool readiness_regressed{};
+  bool readiness_recovered{};
+  bool quad_bounds_changed{};
+  bool atlas_bounds_changed{};
+  bool uv_bounds_changed{};
+  bool atlas_page_changed{};
+  bool page_revision_changed{};
+  bool sampler_key_changed{};
+  bool upload_request_id_changed{};
+  bool upload_operation_id_changed{};
+  bool uploaded_byte_count_changed{};
+  bool status_changed{};
+  bool blocker_summary_changed{};
+  std::ptrdiff_t upload_rgba_bytes_delta{};
+  bool previous_ready{};
+  bool current_ready{};
+  render_text_renderer_draw_payload_status previous_status{
+      render_text_renderer_draw_payload_status::blocked_glyph_quad};
+  render_text_renderer_draw_payload_status current_status{
+      render_text_renderer_draw_payload_status::blocked_glyph_quad};
+  render_text_atlas_page_id previous_page_id{};
+  render_text_atlas_page_id current_page_id{};
+  render_text_revision previous_page_revision{};
+  render_text_revision current_page_revision{};
+};
+
+struct render_text_renderer_draw_payload_diff_snapshot {
+  std::string previous_frame_id{};
+  std::string current_frame_id{};
+  bool previous_ready_for_renderer{};
+  bool current_ready_for_renderer{};
+  render_text_renderer_draw_payload_diff_policy policy{};
+  std::vector<render_text_renderer_draw_payload_diff_record> payload_diffs{};
+  std::vector<std::string> added_payload_ids{};
+  std::vector<std::string> removed_payload_ids{};
+  std::vector<std::string> changed_payload_ids{};
+  std::vector<std::string> unchanged_payload_ids{};
+  std::vector<std::string> uploaded_to_clean_reuse_payload_ids{};
+  std::vector<std::string> readiness_regressed_payload_ids{};
+  std::vector<std::string> readiness_recovered_payload_ids{};
+  std::vector<std::string> missing_identity_payload_ids{};
+  std::string summary{};
+
+  [[nodiscard]] constexpr bool has_changes() const noexcept {
+    return !policy.stable_no_change;
+  }
+
+  [[nodiscard]] constexpr bool stable_no_change() const noexcept {
+    return policy.stable_no_change;
+  }
+};
+
 struct render_text_renderer_glyph_quad_packet_diff_policy {
   std::ptrdiff_t quad_packet_count_delta{};
   std::ptrdiff_t ready_quad_count_delta{};
@@ -898,6 +998,338 @@ make_render_text_renderer_draw_payloads(
     const std::size_t after) {
   return static_cast<std::ptrdiff_t>(after) -
          static_cast<std::ptrdiff_t>(before);
+}
+
+[[nodiscard]] inline bool render_text_renderer_draw_payload_identity_duplicate(
+    const std::vector<render_text_renderer_draw_payload_record>& payloads,
+    const std::string& payload_id) {
+  if (payload_id.empty()) {
+    return false;
+  }
+  return std::count_if(
+             payloads.begin(), payloads.end(),
+             [&](const render_text_renderer_draw_payload_record& payload) {
+               return payload.payload_id == payload_id;
+             }) > 1;
+}
+
+[[nodiscard]] inline const render_text_renderer_draw_payload_record*
+find_unmatched_render_text_renderer_draw_payload(
+    const std::vector<render_text_renderer_draw_payload_record>& payloads,
+    const std::vector<bool>& matched,
+    const std::string& payload_id) {
+  if (payload_id.empty()) {
+    return nullptr;
+  }
+  for (std::size_t index = 0; index < payloads.size(); ++index) {
+    if (index < matched.size() && matched[index]) {
+      continue;
+    }
+    if (payloads[index].payload_id == payload_id) {
+      return &payloads[index];
+    }
+  }
+  return nullptr;
+}
+
+[[nodiscard]] inline std::size_t render_text_renderer_draw_payload_index(
+    const std::vector<render_text_renderer_draw_payload_record>& payloads,
+    const render_text_renderer_draw_payload_record* payload) {
+  if (payload == nullptr || payloads.empty()) {
+    return payloads.size();
+  }
+  const auto index = static_cast<std::size_t>(payload - payloads.data());
+  return index < payloads.size() ? index : payloads.size();
+}
+
+[[nodiscard]] inline render_text_renderer_draw_payload_diff_record
+diff_render_text_renderer_draw_payload_records(
+    const render_text_renderer_draw_payload_record* before,
+    const render_text_renderer_draw_payload_record* after) {
+  const bool added = before == nullptr && after != nullptr;
+  const bool removed = before != nullptr && after == nullptr;
+  const auto* identity_source = after == nullptr ? before : after;
+  const bool missing_identity =
+      identity_source == nullptr || identity_source->payload_id.empty();
+  const bool uploaded_to_clean_reuse =
+      before != nullptr && after != nullptr && before->uploaded &&
+      after->clean_reuse && !after->uploaded;
+  const bool clean_reuse_to_uploaded =
+      before != nullptr && after != nullptr && before->clean_reuse &&
+      after->uploaded && !before->uploaded;
+  const bool readiness_changed =
+      before != nullptr && after != nullptr && before->ready != after->ready;
+  const bool readiness_regressed =
+      before != nullptr && after != nullptr && before->ready && after->blocked;
+  const bool readiness_recovered =
+      before != nullptr && after != nullptr && before->blocked && after->ready;
+  const bool quad_bounds_changed =
+      before != nullptr && after != nullptr &&
+      !render_text_frame_snapshot_rects_equal(before->quad_bounds,
+                                              after->quad_bounds);
+  const bool atlas_bounds_changed =
+      before != nullptr && after != nullptr &&
+      !render_text_frame_snapshot_rects_equal(before->atlas_bounds,
+                                              after->atlas_bounds);
+  const bool uv_bounds_changed =
+      before != nullptr && after != nullptr &&
+      !render_text_frame_draw_uv_rects_equal(before->uv_bounds, after->uv_bounds);
+  const bool atlas_page_changed =
+      before != nullptr && after != nullptr && before->page_id != after->page_id;
+  const bool page_revision_changed =
+      before != nullptr && after != nullptr &&
+      before->page_revision != after->page_revision;
+  const bool sampler_key_changed =
+      before != nullptr && after != nullptr &&
+      before->sampler_key != after->sampler_key;
+  const bool upload_request_id_changed =
+      before != nullptr && after != nullptr &&
+      before->upload_request_id != after->upload_request_id;
+  const bool upload_operation_id_changed =
+      before != nullptr && after != nullptr &&
+      before->upload_operation_id != after->upload_operation_id;
+  const bool uploaded_byte_count_changed =
+      before != nullptr && after != nullptr &&
+      before->upload_rgba_bytes != after->upload_rgba_bytes;
+  const bool status_changed =
+      before != nullptr && after != nullptr && before->status != after->status;
+  const bool blocker_summary_changed =
+      before != nullptr && after != nullptr &&
+      before->blocker_summary != after->blocker_summary;
+  const bool changed =
+      !added && !removed &&
+      (missing_identity || uploaded_to_clean_reuse || clean_reuse_to_uploaded ||
+       readiness_changed || quad_bounds_changed || atlas_bounds_changed ||
+       uv_bounds_changed || atlas_page_changed || page_revision_changed ||
+       sampler_key_changed || upload_request_id_changed ||
+       upload_operation_id_changed || uploaded_byte_count_changed ||
+       status_changed || blocker_summary_changed);
+  const bool unchanged = !added && !removed && !changed;
+
+  return {
+      .payload_id =
+          identity_source == nullptr ? std::string{} : identity_source->payload_id,
+      .previous_quad_packet_id =
+          before == nullptr ? std::string{} : before->quad_packet_id,
+      .current_quad_packet_id =
+          after == nullptr ? std::string{} : after->quad_packet_id,
+      .previous_blocker_summary =
+          before == nullptr ? std::string{} : before->blocker_summary,
+      .current_blocker_summary =
+          after == nullptr ? std::string{} : after->blocker_summary,
+      .added = added,
+      .removed = removed,
+      .changed = changed,
+      .unchanged = unchanged,
+      .missing_identity = missing_identity,
+      .uploaded_to_clean_reuse = uploaded_to_clean_reuse,
+      .clean_reuse_to_uploaded = clean_reuse_to_uploaded,
+      .readiness_changed = readiness_changed,
+      .readiness_regressed = readiness_regressed,
+      .readiness_recovered = readiness_recovered,
+      .quad_bounds_changed = quad_bounds_changed,
+      .atlas_bounds_changed = atlas_bounds_changed,
+      .uv_bounds_changed = uv_bounds_changed,
+      .atlas_page_changed = atlas_page_changed,
+      .page_revision_changed = page_revision_changed,
+      .sampler_key_changed = sampler_key_changed,
+      .upload_request_id_changed = upload_request_id_changed,
+      .upload_operation_id_changed = upload_operation_id_changed,
+      .uploaded_byte_count_changed = uploaded_byte_count_changed,
+      .status_changed = status_changed,
+      .blocker_summary_changed = blocker_summary_changed,
+      .upload_rgba_bytes_delta =
+          render_text_renderer_glyph_quad_packet_count_delta(
+              before == nullptr ? 0U : before->upload_rgba_bytes,
+              after == nullptr ? 0U : after->upload_rgba_bytes),
+      .previous_ready = before != nullptr && before->ready,
+      .current_ready = after != nullptr && after->ready,
+      .previous_status =
+          before == nullptr
+              ? render_text_renderer_draw_payload_status::blocked_glyph_quad
+              : before->status,
+      .current_status =
+          after == nullptr
+              ? render_text_renderer_draw_payload_status::blocked_glyph_quad
+              : after->status,
+      .previous_page_id = before == nullptr ? 0U : before->page_id,
+      .current_page_id = after == nullptr ? 0U : after->page_id,
+      .previous_page_revision = before == nullptr ? 0U : before->page_revision,
+      .current_page_revision = after == nullptr ? 0U : after->page_revision,
+  };
+}
+
+inline void append_render_text_renderer_draw_payload_diff(
+    render_text_renderer_draw_payload_diff_snapshot& diff,
+    render_text_renderer_draw_payload_diff_record payload_diff) {
+  auto& policy = diff.policy;
+  const std::size_t payload_diff_index = diff.payload_diffs.size();
+  if (payload_diff.added) {
+    ++policy.added_payload_count;
+    detail::append_unique_string(diff.added_payload_ids,
+                                 payload_diff.payload_id);
+  }
+  if (payload_diff.removed) {
+    ++policy.removed_payload_count;
+    detail::append_unique_string(diff.removed_payload_ids,
+                                 payload_diff.payload_id);
+  }
+  if (payload_diff.changed) {
+    ++policy.changed_payload_count;
+    detail::append_unique_string(diff.changed_payload_ids,
+                                 payload_diff.payload_id);
+  }
+  if (payload_diff.unchanged) {
+    ++policy.unchanged_payload_count;
+    detail::append_unique_string(diff.unchanged_payload_ids,
+                                 payload_diff.payload_id);
+  }
+  if (payload_diff.uploaded_to_clean_reuse) {
+    ++policy.uploaded_to_clean_reuse_count;
+    detail::append_unique_string(diff.uploaded_to_clean_reuse_payload_ids,
+                                 payload_diff.payload_id);
+  }
+  if (payload_diff.clean_reuse_to_uploaded) {
+    ++policy.clean_reuse_to_uploaded_count;
+  }
+  if (payload_diff.readiness_regressed) {
+    ++policy.readiness_regression_count;
+    detail::append_unique_string(diff.readiness_regressed_payload_ids,
+                                 payload_diff.payload_id);
+  }
+  if (payload_diff.readiness_recovered) {
+    ++policy.readiness_recovery_count;
+    detail::append_unique_string(diff.readiness_recovered_payload_ids,
+                                 payload_diff.payload_id);
+  }
+  if (payload_diff.quad_bounds_changed) {
+    ++policy.quad_bounds_changed_count;
+  }
+  if (payload_diff.atlas_bounds_changed) {
+    ++policy.atlas_bounds_changed_count;
+  }
+  if (payload_diff.uv_bounds_changed) {
+    ++policy.uv_bounds_changed_count;
+  }
+  if (payload_diff.atlas_page_changed) {
+    ++policy.atlas_page_changed_count;
+  }
+  if (payload_diff.page_revision_changed) {
+    ++policy.page_revision_changed_count;
+  }
+  if (payload_diff.sampler_key_changed) {
+    ++policy.sampler_key_changed_count;
+  }
+  if (payload_diff.upload_request_id_changed) {
+    ++policy.upload_request_id_changed_count;
+  }
+  if (payload_diff.upload_operation_id_changed) {
+    ++policy.upload_operation_id_changed_count;
+  }
+  if (payload_diff.uploaded_byte_count_changed) {
+    ++policy.uploaded_byte_count_changed_count;
+  }
+  if (payload_diff.readiness_changed) {
+    ++policy.readiness_changed_count;
+  }
+  if (payload_diff.status_changed) {
+    ++policy.status_changed_count;
+  }
+  if (payload_diff.blocker_summary_changed) {
+    ++policy.blocker_summary_changed_count;
+  }
+  if (payload_diff.missing_identity) {
+    ++policy.missing_identity_count;
+    const std::string missing_identity_label =
+        payload_diff.payload_id.empty()
+            ? "missing-draw-payload-identity:" +
+                  std::to_string(payload_diff_index)
+            : payload_diff.payload_id;
+    detail::append_unique_string(diff.missing_identity_payload_ids,
+                                 missing_identity_label);
+  }
+  diff.payload_diffs.push_back(std::move(payload_diff));
+}
+
+[[nodiscard]] inline render_text_renderer_draw_payload_diff_snapshot
+diff_render_text_renderer_draw_payloads(
+    const render_text_renderer_draw_payload_snapshot& before,
+    const render_text_renderer_draw_payload_snapshot& after) {
+  render_text_renderer_draw_payload_diff_snapshot diff{
+      .previous_frame_id = before.frame_id,
+      .current_frame_id = after.frame_id,
+      .previous_ready_for_renderer = before.frame_ready_for_renderer,
+      .current_ready_for_renderer = after.frame_ready_for_renderer,
+  };
+  diff.policy = {
+      .payload_count_delta = render_text_renderer_glyph_quad_packet_count_delta(
+          before.policy.payload_count, after.policy.payload_count),
+      .ready_payload_count_delta =
+          render_text_renderer_glyph_quad_packet_count_delta(
+              before.policy.ready_payload_count, after.policy.ready_payload_count),
+      .blocked_payload_count_delta =
+          render_text_renderer_glyph_quad_packet_count_delta(
+              before.policy.blocked_payload_count,
+              after.policy.blocked_payload_count),
+      .uploaded_payload_count_delta =
+          render_text_renderer_glyph_quad_packet_count_delta(
+              before.policy.uploaded_payload_count,
+              after.policy.uploaded_payload_count),
+      .clean_reuse_payload_count_delta =
+          render_text_renderer_glyph_quad_packet_count_delta(
+              before.policy.clean_reuse_payload_count,
+              after.policy.clean_reuse_payload_count),
+      .total_upload_rgba_bytes_delta =
+          render_text_renderer_glyph_quad_packet_count_delta(
+              before.policy.total_upload_rgba_bytes,
+              after.policy.total_upload_rgba_bytes),
+      .frame_id_changed = before.frame_id != after.frame_id,
+      .frame_ready_changed =
+          before.frame_ready_for_renderer != after.frame_ready_for_renderer,
+      .blockers_changed = before.policy.has_blockers != after.policy.has_blockers,
+  };
+
+  std::vector<bool> matched_after(after.payloads.size(), false);
+  diff.payload_diffs.reserve(before.payloads.size() + after.payloads.size());
+  for (const auto& previous_payload : before.payloads) {
+    const auto* current_payload = find_unmatched_render_text_renderer_draw_payload(
+        after.payloads, matched_after, previous_payload.payload_id);
+    if (current_payload != nullptr) {
+      const std::size_t current_index =
+          render_text_renderer_draw_payload_index(after.payloads, current_payload);
+      if (current_index < matched_after.size()) {
+        matched_after[current_index] = true;
+      }
+    }
+    append_render_text_renderer_draw_payload_diff(
+        diff,
+        diff_render_text_renderer_draw_payload_records(
+            &previous_payload, current_payload));
+  }
+
+  for (std::size_t index = 0; index < after.payloads.size(); ++index) {
+    if (matched_after[index]) {
+      continue;
+    }
+    append_render_text_renderer_draw_payload_diff(
+        diff,
+        diff_render_text_renderer_draw_payload_records(nullptr,
+                                                       &after.payloads[index]));
+  }
+
+  diff.policy.stable_no_change =
+      !diff.policy.frame_id_changed && !diff.policy.frame_ready_changed &&
+      !diff.policy.blockers_changed && diff.policy.added_payload_count == 0U &&
+      diff.policy.removed_payload_count == 0U &&
+      diff.policy.changed_payload_count == 0U &&
+      diff.policy.missing_identity_count == 0U;
+  diff.summary = diff.policy.stable_no_change
+      ? "renderer text draw payload diff is stable with no changes"
+      : std::to_string(diff.policy.added_payload_count) + " added, " +
+            std::to_string(diff.policy.removed_payload_count) + " removed, " +
+            std::to_string(diff.policy.changed_payload_count) +
+            " changed renderer text draw payload(s)";
+  return diff;
 }
 
 [[nodiscard]] inline bool render_text_renderer_glyph_quad_packet_identity_duplicate(

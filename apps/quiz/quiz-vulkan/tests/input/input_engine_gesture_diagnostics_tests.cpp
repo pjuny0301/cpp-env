@@ -1748,7 +1748,7 @@ void test_gesture_route_replay_transcript_summarizes_pointer_streams()
         "gesture transcript records every step as changed");
     require(transcript.pointer_capture_changed,
         "gesture transcript reports pointer capture transitions");
-    require(!transcript.emits_app_domain_action,
+    require(!transcript.emits_external_route_action,
         "gesture transcript emits input-owned diagnostics only");
     require(transcript.normalized_input_event_count == 6,
         "gesture transcript counts normalized gesture and wheel events");

@@ -1424,7 +1424,7 @@ void test_text_route_replay_transcript_summarizes_consecutive_diffs()
     require(transcript.text_route_changed, "route transcript reports text route changes");
     require(!transcript.pointer_capture_changed,
         "route transcript text replay does not disturb pointer capture");
-    require(!transcript.emits_app_domain_action,
+    require(!transcript.emits_external_route_action,
         "route transcript emits input-owned diagnostics only");
     require(transcript.normalized_input_event_count == 0,
         "route transcript text replay emits no gesture or wheel normalized events");

@@ -605,7 +605,7 @@ struct input_routing_text_route_replay_entry {
     std::size_t emitted_route_input_event_count = 0;
     std::size_t diagnostic_only_route_count = 0;
     std::size_t normalized_input_event_count = 0;
-    bool emits_app_domain_action = false;
+    bool emits_external_route_action = false;
 };
 
 struct input_routing_text_route_replay_summary {
@@ -618,7 +618,7 @@ struct input_routing_text_route_replay_summary {
     std::size_t normalized_input_event_count = 0;
     bool text_route_changed = false;
     bool pointer_capture_changed = false;
-    bool emits_app_domain_action = false;
+    bool emits_external_route_action = false;
 };
 
 struct input_routing_gesture_route_replay_counts {
@@ -668,7 +668,7 @@ struct input_routing_gesture_route_replay_entry {
     std::size_t emitted_route_input_event_count = 0;
     std::size_t diagnostic_only_route_count = 0;
     std::size_t normalized_input_event_count = 0;
-    bool emits_app_domain_action = false;
+    bool emits_external_route_action = false;
 };
 
 struct input_routing_gesture_route_replay_summary {
@@ -680,7 +680,7 @@ struct input_routing_gesture_route_replay_summary {
     std::size_t diagnostic_only_route_count = 0;
     std::size_t normalized_input_event_count = 0;
     bool pointer_capture_changed = false;
-    bool emits_app_domain_action = false;
+    bool emits_external_route_action = false;
 };
 
 [[nodiscard]] inline std::int64_t input_routing_size_delta(
@@ -1599,7 +1599,7 @@ inline void accumulate_input_routing_gesture_policy_threshold_counts(
         .emitted_route_input_event_count = emitting_route_count,
         .diagnostic_only_route_count = diagnostic_route_count,
         .normalized_input_event_count = after.summary.normalized_event_count,
-        .emits_app_domain_action = false,
+        .emits_external_route_action = false,
     };
 }
 
@@ -1664,8 +1664,8 @@ inline void accumulate_input_routing_text_route_replay_counts(
         summary.text_route_changed = summary.text_route_changed || entry.text_route_changed;
         summary.pointer_capture_changed =
             summary.pointer_capture_changed || entry.diff.pointer_capture_changed;
-        summary.emits_app_domain_action =
-            summary.emits_app_domain_action || entry.emits_app_domain_action;
+        summary.emits_external_route_action =
+            summary.emits_external_route_action || entry.emits_external_route_action;
         accumulate_input_routing_text_route_replay_counts(summary, entry);
         summary.transcript.push_back(std::move(entry));
     }
@@ -1772,7 +1772,7 @@ inline void accumulate_input_routing_text_route_replay_counts(
         .emitted_route_input_event_count = emitting_route_count,
         .diagnostic_only_route_count = diagnostic_route_count,
         .normalized_input_event_count = normalized_input_event_count,
-        .emits_app_domain_action = false,
+        .emits_external_route_action = false,
     };
 }
 
@@ -1854,8 +1854,8 @@ inline void accumulate_input_routing_gesture_route_replay_counts(
         summary.normalized_input_event_count += entry.normalized_input_event_count;
         summary.pointer_capture_changed =
             summary.pointer_capture_changed || entry.pointer_capture_changed;
-        summary.emits_app_domain_action =
-            summary.emits_app_domain_action || entry.emits_app_domain_action;
+        summary.emits_external_route_action =
+            summary.emits_external_route_action || entry.emits_external_route_action;
         accumulate_input_routing_gesture_route_replay_counts(summary, entry);
         summary.transcript.push_back(std::move(entry));
     }

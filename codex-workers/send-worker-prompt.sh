@@ -51,7 +51,9 @@ queue_prompt() {
   mkdir -p "${session_queue}"
   local stamp
   stamp="$(date +%Y%m%d-%H%M%S)"
-  local queued="${session_queue}/${stamp}-$(basename "${prompt_file}")"
+  local prompt_basename
+  prompt_basename="$(basename "${prompt_file}")"
+  local queued="${session_queue}/${stamp}-${prompt_basename}"
   cp "${prompt_file}" "${queued}"
   echo "worker is busy; queued prompt at ${queued}"
 }

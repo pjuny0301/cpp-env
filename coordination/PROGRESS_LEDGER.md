@@ -86,3 +86,13 @@ status: pending | active | blocked | waiting | done
 - commit SHA: pending
 - 다음 단계: B1 worker ledger schema/file
 - blocker(있으면): 없음
+
+### [CP-track-b-current-002]
+- 시각 UTC: 2026-06-08T19:33:31Z
+- 태스크: B1-B7 workflow tooling implementation
+- status: active
+- 변경 파일: codex-workers/, apps/quiz/quiz-vulkan/cmake/quiz-vulkan-source-manifest.txt
+- commit SHA: pending
+- 다음 단계: run verify-worker.sh focused Linux pass, then commit verification checkpoint
+- blocker(있으면): 없음
+- 검증: bash -n passed; shellcheck passed; worker ledger/source manifest/external artifact manifest checks passed; preflight linux-ninja passed; with-build-lock smoke passed

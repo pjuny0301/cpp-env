@@ -19,9 +19,23 @@ The workers are meant to implement behind existing quiz-vulkan interfaces, not r
   while pointing CMake at the central approved dependency checkout under
   `/mnt/c/aa/build/external/lib/cpp/desktop`.
 - `quiz-vulkan-worker-build-dir.sh`: prints the worker-local build directory in
-  a path format accepted by Windows CTest.
-- `with-build-lock.sh`: serializes shared Windows CMake/CTest access so
-  parallel workers do not race on the same build directory.
+  the path style required by the selected preset.
+- `with-build-lock.sh`: serializes CMake/CTest access per build directory and
+  takes a global dependency lock for configure steps that inspect shared
+  external dependency trees.
+- `start-worker-task.sh`: creates or resumes a clean worker worktree from a
+  fetched base ref, creates a unique branch, and appends the resolved base SHA
+  to `worker-ledger.tsv`.
+- `worker-ledger.schema.md` and `worker-ledger.tsv`: define and store worker
+  session/prompt/role/worktree/branch/base/status/task/blocker/heartbeat rows.
+- `preflight-worker-env.sh`: reports CMake/Ninja/compiler/path conversion,
+  external dependency snapshot, and preset readiness before configure.
+- `verify-source-manifest.sh`: maintains and verifies the generated
+  quiz-vulkan source manifest under `apps/quiz/quiz-vulkan/cmake/`.
+- `verify-external-artifacts.sh`: enforces URL/version/license/hash/local-path
+  and reason fields in the external dependency manifest.
+- `verify-worker.sh`: runs preflight, configure, contract compile, focused
+  CTest, ledger/source/external manifest checks, and `git diff --check`.
 - `worker-status.sh`: summarizes live Codex tmux sessions, current paths, branch
   names, dirty-file counts, and ahead/behind counts versus the integration
   baseline.
@@ -127,6 +141,37 @@ build_dir="$(/mnt/c/aa/codex-workers/quiz-vulkan-worker-build-dir.sh \
   -R "<focused_test_regex>" \
   --output-on-failure
 ```
+
+For a full worker verification pass:
+
+```bash
+/mnt/c/aa/codex-workers/verify-worker.sh \
+  text-engine \
+  '^quiz_vulkan_text_.*tests$' \
+  /mnt/c/aa-workers/text-engine \
+  windows-mingw-ascii
+```
+
+For Linux/WSL verification, pass the Linux preset. The helper scripts will keep
+paths in POSIX form:
+
+```bash
+/mnt/c/aa/codex-workers/verify-worker.sh \
+  track-b \
+  '^quiz_vulkan_interface_contract_compile_tests$' \
+  /mnt/c/aa-workers/track-b \
+  linux-ninja
+```
+
+Start a new task worktree from the fetched base ref:
+
+```bash
+QUIZ_CODEX_BASE_REF=origin/codex/ui-engine-phase12-secured-20260608T190736Z \
+/mnt/c/aa/codex-workers/start-worker-task.sh track-b WORK_ORDER_72H-B /mnt/c/aa-workers
+```
+
+If a role worktree already exists, use `--resume`; without it the script fails
+instead of silently reusing stale state.
 
 For a compact coordinator view:
 

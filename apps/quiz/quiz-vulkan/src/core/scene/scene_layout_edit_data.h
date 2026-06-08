@@ -77,6 +77,12 @@ public:
         return *this;
     }
 
+    scene_layout_edit_data& bind_event_handler(scene_node_id node_id, scene_event_handler handler)
+    {
+        patch_.bind_event_handler(std::move(node_id), std::move(handler));
+        return *this;
+    }
+
     scene_layout_edit_data& set_semantics(scene_node_id node_id, scene_node_semantics semantics)
     {
         patch_.set_semantics(std::move(node_id), std::move(semantics));

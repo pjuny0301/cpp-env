@@ -13,6 +13,7 @@ All times use UTC ISO8601. Append session work declarations and request notes; d
 | main-impl | integration, src/app, CMakeLists.txt, tests, reports | 2026-06-08T17:13:12Z | active |
 | s-cmdtype | apps/quiz/quiz-vulkan/src/core/scene, focused scene tests if required | 2026-06-08T17:15:04Z | active |
 | main-orchestration | branch backup, ledger, subagent monitoring, integration only | 2026-06-08T19:13:20Z | active |
+| track-b-current | codex-workers/, build/workflow scripts, workflow docs, coordination ledger schema files, tooling manifests | 2026-06-08T19:15:39Z | active |
 
 ## Intrusion Requests
 

@@ -96,3 +96,14 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: A5 screen migration can start because G1 is proven; do not merge without review
 - blocker(있으면): 없음
 - 검증: `cmake --preset linux-ninja` passed; `cmake --build ... --target quiz_vulkan_app_action_router_tests quiz_vulkan_app_scene_script_tests quiz_vulkan_interface_contract_compile_tests` passed; `cmake --build ... --target quiz_vulkan_app_quiz_screens_tests quiz_vulkan_architecture_boundary_tests` passed; `ctest -R 'quiz_vulkan_(app_action_router_tests|app_scene_script_tests|app_quiz_screens_tests|architecture_boundary_tests)$'` passed 4/4; `git diff --check` passed
+
+### [CP-track-a-current-003]
+- 시각 UTC: 2026-06-08T19:51:36Z
+- 태스크: Track A G1 branch backup and PR
+- status: done
+- 변경 파일: coordination/PROGRESS_LEDGER.md
+- commit SHA: pending
+- 다음 단계: A5 can begin from PR #24 branch after G1 review
+- blocker(있으면): 없음
+- 원격 백업: `git push -u origin codex/track-a-ui-engine-20260608T1912Z` passed
+- PR: https://github.com/pjuny0301/cpp-env/pull/24

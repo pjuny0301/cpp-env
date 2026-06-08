@@ -23,6 +23,7 @@
 | s-B / Hypatia / 019ea8a8-33d8-78c3-8c97-fea0c36bfe3e | B | B1-B7 | active | codex/track-b-workflow-20260608T1912Z | 2026-06-08T19:13:20Z |
 | s-C / Confucius / 019ea8a8-3639-7673-8a3a-1122c1c5e3f7 | C | C1-C5 | active | codex/track-c-structure-20260608T1912Z | 2026-06-08T19:13:20Z |
 | main | orchestration | progress rollup | active | codex/ui-engine-phase12-secured-20260608T190736Z | 2026-06-08T19:38:13Z |
+| s-B / Hypatia / 019ea8a8-33d8-78c3-8c97-fea0c36bfe3e | B | B1-B7 | done | codex/track-b-workflow-20260608T1912Z | 2026-06-08T19:50:10Z |
 
 status: pending | active | blocked | waiting | done
 
@@ -86,3 +87,16 @@ status: pending | active | blocked | waiting | done
 - commit SHA: pending
 - 다음 단계: continue monitoring A/B/C; integrate completed track branches; start D after A6
 - blocker(있으면): 없음
+
+### [CP-main-005]
+- 시각 UTC: 2026-06-08T19:50:10Z
+- 태스크: Track B completion recorded
+- status: done
+- 변경 파일: coordination/PROGRESS_LEDGER.md, reports/progress/2026-06-08T19-38Z.md
+- commit SHA: pending
+- 다음 단계: keep Track B PR open for human merge; continue monitoring Track A/C
+- blocker(있으면): 없음
+- branch: `codex/track-b-workflow-20260608T1912Z`
+- commits: `bbc21c7`, `47af816`, `d3591c3`
+- PR: https://github.com/pjuny0301/cpp-env/pull/23 (`OPEN`, `CLEAN`)
+- verification: worker reported bash/shellcheck/ledger/source-manifest/external-artifact/preflight/build-lock/verify-worker checks passed; local confirmation showed worktree clean and local/origin tip both `d3591c375ed9fac11455ef2f43a7dd949fcc779a`

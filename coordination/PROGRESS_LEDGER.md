@@ -24,6 +24,7 @@
 | s-C / Confucius / 019ea8a8-3639-7673-8a3a-1122c1c5e3f7 | C | C1-C5 | active | codex/track-c-structure-20260608T1912Z | 2026-06-08T19:13:20Z |
 | main | orchestration | progress rollup | active | codex/ui-engine-phase12-secured-20260608T190736Z | 2026-06-08T19:38:13Z |
 | s-B / Hypatia / 019ea8a8-33d8-78c3-8c97-fea0c36bfe3e | B | B1-B7 | done | codex/track-b-workflow-20260608T1912Z | 2026-06-08T19:50:10Z |
+| s-A / Boyle / 019ea8a8-319c-7793-a536-3f7fc4652364 | A | A5-A6 | active | codex/track-a-ui-engine-20260608T1912Z | 2026-06-08T19:54:00Z |
 
 status: pending | active | blocked | waiting | done
 
@@ -100,3 +101,16 @@ status: pending | active | blocked | waiting | done
 - commits: `bbc21c7`, `47af816`, `d3591c3`
 - PR: https://github.com/pjuny0301/cpp-env/pull/23 (`OPEN`, `CLEAN`)
 - verification: worker reported bash/shellcheck/ledger/source-manifest/external-artifact/preflight/build-lock/verify-worker checks passed; local confirmation showed worktree clean and local/origin tip both `d3591c375ed9fac11455ef2f43a7dd949fcc779a`
+
+### [CP-main-006]
+- 시각 UTC: 2026-06-08T19:54:00Z
+- 태스크: Track A G1 reviewed, A5/A6 continuation requested
+- status: active
+- 변경 파일: coordination/PROGRESS_LEDGER.md
+- commit SHA: pending
+- 다음 단계: monitor Track A A5/A6 and Track C C1-C5; start Track D only after A6/G2
+- blocker(있으면): 없음
+- branch: `codex/track-a-ui-engine-20260608T1912Z`
+- commits reviewed: `203f73e`, `d3e8a16`, `fc66d19`, `d34acd4`, `95f1e9c`
+- PR: https://github.com/pjuny0301/cpp-env/pull/24 (`OPEN`, merge state `UNKNOWN` at check time)
+- G1 evidence: Track A report `reports/progress/2026-06-08T194825Z-track-a-g1.md`; local confirmation showed worktree clean and local/origin tip both `95f1e9c92e9a65270fd422a66a3150e26bfea16b`; worker verification passed configure, focused builds, 4/4 focused ctest, and `git diff --check`

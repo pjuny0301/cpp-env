@@ -18,6 +18,10 @@
 | s-D | D | (A6 대기) | waiting | | |
 | main-p0 | Phase 0 | P0.1-P0.3 | active | codex/ui-engine-phase12-secured-20260608T190736Z | 2026-06-08T19:10:06Z |
 | main-p0 | Phase 0 | P0.3 | done | codex/ui-engine-phase12-secured-20260608T190736Z | 2026-06-08T19:11:20Z |
+| main | orchestration | start A/B/C | active | codex/ui-engine-phase12-secured-20260608T190736Z | 2026-06-08T19:13:20Z |
+| s-A / Boyle / 019ea8a8-319c-7793-a536-3f7fc4652364 | A | A1-A4 | active | codex/track-a-ui-engine-20260608T1912Z | 2026-06-08T19:13:20Z |
+| s-B / Hypatia / 019ea8a8-33d8-78c3-8c97-fea0c36bfe3e | B | B1-B7 | active | codex/track-b-workflow-20260608T1912Z | 2026-06-08T19:13:20Z |
+| s-C / Confucius / 019ea8a8-3639-7673-8a3a-1122c1c5e3f7 | C | C1-C5 | active | codex/track-c-structure-20260608T1912Z | 2026-06-08T19:13:20Z |
 
 status: pending | active | blocked | waiting | done
 
@@ -61,3 +65,14 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: start Track A/B/C parallel sessions from secured branch
 - blocker(있으면): 없음
 - 검증: `cmake --preset linux-ninja` passed; `cmake --build ../../../build/out/quiz/quiz-vulkan/linux-ninja --target quiz_vulkan_interface_contract_compile_tests` passed (`ninja: no work to do`)
+
+### [CP-main-003]
+- 시각 UTC: 2026-06-08T19:13:20Z
+- 태스크: start A/B/C long-lived tracks
+- status: active
+- 변경 파일: coordination/PROGRESS_LEDGER.md
+- commit SHA: 20e3d5b
+- 다음 단계: monitor Track A/B/C, integrate completed branch results, start Track D after A6
+- blocker(있으면): 없음
+- 세션: A=Boyle/019ea8a8-319c-7793-a536-3f7fc4652364, B=Hypatia/019ea8a8-33d8-78c3-8c97-fea0c36bfe3e, C=Confucius/019ea8a8-3639-7673-8a3a-1122c1c5e3f7
+- 원격 백업: `git push -u origin codex/ui-engine-phase12-secured-20260608T190736Z` passed

@@ -12,6 +12,7 @@ All times use UTC ISO8601. Append session work declarations and request notes; d
 | s-ui-engine / Franklin / 019ea7cc-0735-7043-9ec8-ef1f934806b2 | quiz-vulkan UI/scene/app/layout and React references read-only | 2026-06-08T15:12:00Z | active |
 | main-impl | integration, src/app, CMakeLists.txt, tests, reports | 2026-06-08T17:13:12Z | active |
 | s-cmdtype | apps/quiz/quiz-vulkan/src/core/scene, focused scene tests if required | 2026-06-08T17:15:04Z | active |
+| main-orchestration | branch backup, ledger, subagent monitoring, integration only | 2026-06-08T19:13:20Z | active |
 
 ## Intrusion Requests
 
@@ -37,3 +38,4 @@ Append entries in this format:
 | main-002 | report-only scope retained | 2026-06-08T15:25:00Z | source code was not modified; only coordination/ and reports/ were changed |
 | main-003 | completed Phase 1-2 implementation | 2026-06-08T17:45:00Z | typed scene commands, app command registry, day-intro script compiler, tests, and reports/phase1-2-implementation-report.md completed |
 | main-004 | Phase 0 secure branch created | 2026-06-08T19:10:06Z | branch codex/ui-engine-phase12-secured-20260608T190736Z created from 00ae55c and Phase 1-2 changes split into protection commits |
+| main-005 | A/B/C track sessions started | 2026-06-08T19:13:20Z | spawned Track A Boyle, Track B Hypatia, Track C Confucius from secured branch 20e3d5b |

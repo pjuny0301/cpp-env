@@ -86,3 +86,13 @@ status: pending | active | blocked | waiting | done
 - commit SHA: pending
 - 다음 단계: A1 schema and A2 binding engine survey
 - blocker(있으면): 없음
+
+### [CP-track-a-current-002]
+- 시각 UTC: 2026-06-08T19:48:25Z
+- 태스크: A1-A4 Phase 3 schema, binding engine, node DSL compiler, command registry allowlist
+- status: done; G1 ready
+- 변경 파일: apps/quiz/quiz-vulkan/src/app/app_command_registry.h, apps/quiz/quiz-vulkan/src/app/app_scene_script.h, apps/quiz/quiz-vulkan/tests/app/app_action_router_tests.cpp, apps/quiz/quiz-vulkan/tests/app/app_scene_script_tests.cpp, apps/quiz/quiz-vulkan/CMakeLists.txt
+- commit SHA: d3e8a16, fc66d19
+- 다음 단계: A5 screen migration can start because G1 is proven; do not merge without review
+- blocker(있으면): 없음
+- 검증: `cmake --preset linux-ninja` passed; `cmake --build ... --target quiz_vulkan_app_action_router_tests quiz_vulkan_app_scene_script_tests quiz_vulkan_interface_contract_compile_tests` passed; `cmake --build ... --target quiz_vulkan_app_quiz_screens_tests quiz_vulkan_architecture_boundary_tests` passed; `ctest -R 'quiz_vulkan_(app_action_router_tests|app_scene_script_tests|app_quiz_screens_tests|architecture_boundary_tests)$'` passed 4/4; `git diff --check` passed

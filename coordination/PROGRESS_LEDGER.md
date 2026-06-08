@@ -22,6 +22,7 @@
 | s-A / Boyle / 019ea8a8-319c-7793-a536-3f7fc4652364 | A | A1-A4 | active | codex/track-a-ui-engine-20260608T1912Z | 2026-06-08T19:13:20Z |
 | s-B / Hypatia / 019ea8a8-33d8-78c3-8c97-fea0c36bfe3e | B | B1-B7 | active | codex/track-b-workflow-20260608T1912Z | 2026-06-08T19:13:20Z |
 | s-C / Confucius / 019ea8a8-3639-7673-8a3a-1122c1c5e3f7 | C | C1-C5 | active | codex/track-c-structure-20260608T1912Z | 2026-06-08T19:13:20Z |
+| track-a-current | A | A1-A4 | active | codex/track-a-ui-engine-20260608T1912Z | 2026-06-08T19:20:15Z |
 
 status: pending | active | blocked | waiting | done
 
@@ -76,3 +77,12 @@ status: pending | active | blocked | waiting | done
 - blocker(있으면): 없음
 - 세션: A=Boyle/019ea8a8-319c-7793-a536-3f7fc4652364, B=Hypatia/019ea8a8-33d8-78c3-8c97-fea0c36bfe3e, C=Confucius/019ea8a8-3639-7673-8a3a-1122c1c5e3f7
 - 원격 백업: `git push -u origin codex/ui-engine-phase12-secured-20260608T190736Z` passed
+
+### [CP-track-a-current-001]
+- 시각 UTC: 2026-06-08T19:20:15Z
+- 태스크: Track A isolated worktree start and heartbeat
+- status: active
+- 변경 파일: coordination/SHARED_NOTES.md, coordination/PROGRESS_LEDGER.md
+- commit SHA: pending
+- 다음 단계: A1 schema and A2 binding engine survey
+- blocker(있으면): 없음

@@ -1,13 +1,25 @@
 #pragma once
 
+#include "app/app_command_registry.h"
 #include "app/app_quiz_screens.h"
 
+#include <algorithm>
+#include <charconv>
+#include <cstddef>
+#include <cstdint>
+#include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
+#include <vector>
 
 namespace quiz_vulkan::presentation {
+
+inline constexpr int app_scene_script_template_schema_version = 1;
+inline constexpr int app_scene_script_node_dsl_schema_version = 2;
 
 inline constexpr std::string_view day_intro_screen_script_json = R"json({
   "schema_version": 1,
@@ -15,10 +27,64 @@ inline constexpr std::string_view day_intro_screen_script_json = R"json({
   "screen": "day_intro"
 })json";
 
+struct app_scene_script_data_binding {
+    std::string target;
+    std::string expression;
+};
+
+struct app_scene_script_repeater {
+    std::string item_name;
+    std::string collection;
+};
+
+struct app_scene_script_command_template {
+    std::string name;
+    std::map<std::string, std::string> args;
+};
+
+struct app_scene_script_event_handler_template {
+    scene::scene_action_trigger trigger = scene::scene_action_trigger::press;
+    std::vector<app_scene_script_command_template> commands;
+    std::string condition;
+    std::string transition;
+};
+
+struct app_scene_script_transition {
+    std::string name;
+    float duration_seconds = 0.0f;
+    std::string condition;
+};
+
+struct app_scene_script_node {
+    std::string id;
+    std::string parent_id;
+    scene::scene_node_kind kind = scene::scene_node_kind::container;
+    std::string debug_name;
+    scene::scene_layout_rule layout_rule;
+    scene::scene_style style;
+    std::vector<scene::scene_text_run> text_runs;
+    std::vector<app_scene_script_data_binding> bindings;
+    std::optional<app_scene_script_repeater> repeater;
+    std::string condition;
+    std::vector<app_scene_script_event_handler_template> events;
+    std::vector<app_scene_script_transition> transitions;
+    scene::scene_node_semantics semantics;
+    bool visible = true;
+    bool input_enabled = true;
+};
+
+struct app_scene_script_style_definition {
+    std::string id;
+    scene::scene_style style;
+};
+
 struct app_scene_script_document {
     int schema_version = 0;
     std::string template_id;
     std::string screen;
+    std::vector<app_scene_script_style_definition> styles;
+    std::vector<app_scene_script_node> nodes;
+    std::vector<app_scene_script_transition> transitions;
 };
 
 struct app_scene_script_parse_result {
@@ -28,6 +94,27 @@ struct app_scene_script_parse_result {
     bool ok() const
     {
         return document.has_value() && error.empty();
+    }
+};
+
+struct app_scene_script_validation_result {
+    std::vector<std::string> errors;
+
+    bool ok() const
+    {
+        return errors.empty();
+    }
+
+    std::string joined_error() const
+    {
+        std::string joined;
+        for (const std::string& error : errors) {
+            if (!joined.empty()) {
+                joined += "; ";
+            }
+            joined += error;
+        }
+        return joined;
     }
 };
 
@@ -41,7 +128,7 @@ struct app_scene_script_compile_result {
     }
 };
 
-namespace detail {
+namespace script_detail {
 
 inline bool json_is_space(char ch)
 {
@@ -133,26 +220,736 @@ inline std::optional<int> find_json_int_field(
     return value;
 }
 
-}  // namespace detail
+inline std::string_view trim(std::string_view value)
+{
+    while (!value.empty() && (value.front() == ' ' || value.front() == '\t' || value.front() == '\r' || value.front() == '\n')) {
+        value.remove_prefix(1);
+    }
+    while (!value.empty() && (value.back() == ' ' || value.back() == '\t' || value.back() == '\r' || value.back() == '\n')) {
+        value.remove_suffix(1);
+    }
+    return value;
+}
+
+inline bool parse_int64(std::string_view value, std::int64_t& parsed)
+{
+    value = trim(value);
+    if (value.empty()) {
+        return false;
+    }
+    const char* begin = value.data();
+    const char* end = begin + value.size();
+    const std::from_chars_result result = std::from_chars(begin, end, parsed);
+    return result.ec == std::errc{} && result.ptr == end;
+}
+
+inline std::string strip_optional_quotes(std::string_view value)
+{
+    value = trim(value);
+    if (value.size() >= 2
+        && ((value.front() == '"' && value.back() == '"') || (value.front() == '\'' && value.back() == '\''))) {
+        value.remove_prefix(1);
+        value.remove_suffix(1);
+    }
+    return std::string(value);
+}
+
+enum class script_value_kind {
+    none,
+    string,
+    boolean,
+    integer,
+};
+
+struct script_value {
+    script_value_kind kind = script_value_kind::none;
+    std::string string_value;
+    bool bool_value = false;
+    std::int64_t int_value = 0;
+
+    static script_value string(std::string value)
+    {
+        script_value result;
+        result.kind = script_value_kind::string;
+        result.string_value = std::move(value);
+        return result;
+    }
+
+    static script_value boolean(bool value)
+    {
+        script_value result;
+        result.kind = script_value_kind::boolean;
+        result.bool_value = value;
+        return result;
+    }
+
+    static script_value integer(std::int64_t value)
+    {
+        script_value result;
+        result.kind = script_value_kind::integer;
+        result.int_value = value;
+        return result;
+    }
+
+    bool truthy() const
+    {
+        switch (kind) {
+            case script_value_kind::string:
+                return !string_value.empty();
+            case script_value_kind::boolean:
+                return bool_value;
+            case script_value_kind::integer:
+                return int_value != 0;
+            case script_value_kind::none:
+                return false;
+        }
+        return false;
+    }
+
+    std::string to_string() const
+    {
+        switch (kind) {
+            case script_value_kind::string:
+                return string_value;
+            case script_value_kind::boolean:
+                return bool_value ? "true" : "false";
+            case script_value_kind::integer:
+                return std::to_string(int_value);
+            case script_value_kind::none:
+                return {};
+        }
+        return {};
+    }
+
+    scene::scene_value to_scene_value() const
+    {
+        switch (kind) {
+            case script_value_kind::string:
+                return scene::scene_value(string_value);
+            case script_value_kind::boolean:
+                return scene::scene_value(bool_value);
+            case script_value_kind::integer:
+                return scene::scene_value(int_value);
+            case script_value_kind::none:
+                return scene::scene_value();
+        }
+        return scene::scene_value();
+    }
+};
+
+struct option_context {
+    const domain::option_snapshot* option = nullptr;
+    std::size_t index = 0;
+};
+
+struct eval_context {
+    const domain::app_snapshot& snapshot;
+    std::optional<option_context> option;
+};
+
+inline const domain::question_snapshot* current_question(const domain::app_snapshot& snapshot)
+{
+    if (!snapshot.active_session.has_value() || !snapshot.active_session->current_question.has_value()) {
+        return nullptr;
+    }
+    return &(*snapshot.active_session->current_question);
+}
+
+inline bool evaluate_path(std::string_view raw_expression, const eval_context& context, script_value& value, std::string& error)
+{
+    const std::string expression = strip_optional_quotes(raw_expression);
+    if (expression == "true") {
+        value = script_value::boolean(true);
+        return true;
+    }
+    if (expression == "false") {
+        value = script_value::boolean(false);
+        return true;
+    }
+
+    std::int64_t parsed_integer = 0;
+    if (parse_int64(expression, parsed_integer)) {
+        value = script_value::integer(parsed_integer);
+        return true;
+    }
+
+    if (expression == "question.exists") {
+        value = script_value::boolean(current_question(context.snapshot) != nullptr);
+        return true;
+    }
+
+    const domain::question_snapshot* question = current_question(context.snapshot);
+    if (expression == "question.prompt") {
+        if (question == nullptr) {
+            error = "expression question.prompt requires an active question";
+            return false;
+        }
+        value = script_value::string(question->prompt);
+        return true;
+    }
+    if (expression == "question.id") {
+        if (question == nullptr) {
+            error = "expression question.id requires an active question";
+            return false;
+        }
+        value = script_value::string(question->question_id);
+        return true;
+    }
+    if (expression == "question.long_text") {
+        if (question == nullptr) {
+            error = "expression question.long_text requires an active question";
+            return false;
+        }
+        value = script_value::string(question->long_text.value_or(std::string{}));
+        return true;
+    }
+    if (expression == "question.has_long_text") {
+        value = script_value::boolean(question != nullptr && question->long_text.has_value() && !question->long_text->empty());
+        return true;
+    }
+    if (expression == "question.has_options") {
+        value = script_value::boolean(question != nullptr && !question->options.empty());
+        return true;
+    }
+    if (expression == "question.option_count") {
+        value = script_value::integer(question == nullptr ? 0 : static_cast<std::int64_t>(question->options.size()));
+        return true;
+    }
+    if (expression == "question.type") {
+        if (question == nullptr) {
+            error = "expression question.type requires an active question";
+            return false;
+        }
+        value = script_value::string(std::string(domain::to_string(question->type)));
+        return true;
+    }
+
+    if (expression == "option.index") {
+        if (!context.option.has_value()) {
+            error = "expression option.index requires a repeater option item";
+            return false;
+        }
+        value = script_value::integer(static_cast<std::int64_t>(context.option->index));
+        return true;
+    }
+    if (expression == "option.text") {
+        if (!context.option.has_value() || context.option->option == nullptr) {
+            error = "expression option.text requires a repeater option item";
+            return false;
+        }
+        value = script_value::string(context.option->option->text);
+        return true;
+    }
+    if (expression == "option.is_correct") {
+        if (!context.option.has_value() || context.option->option == nullptr) {
+            error = "expression option.is_correct requires a repeater option item";
+            return false;
+        }
+        value = script_value::boolean(context.option->option->is_correct);
+        return true;
+    }
+    if (expression == "option.reveal_correctness") {
+        if (!context.option.has_value() || context.option->option == nullptr) {
+            error = "expression option.reveal_correctness requires a repeater option item";
+            return false;
+        }
+        value = script_value::boolean(context.option->option->reveal_correctness);
+        return true;
+    }
+
+    error = "unsupported script expression: " + expression;
+    return false;
+}
+
+inline bool extract_single_interpolation(std::string_view expression, std::string_view& inner)
+{
+    expression = trim(expression);
+    if (expression.size() < 5 || expression.substr(0, 2) != "{{" || expression.substr(expression.size() - 2) != "}}") {
+        return false;
+    }
+    inner = trim(expression.substr(2, expression.size() - 4));
+    return true;
+}
+
+inline bool render_template(
+    std::string_view templated,
+    const eval_context& context,
+    std::string& rendered,
+    std::string& error)
+{
+    rendered.clear();
+    std::size_t cursor = 0;
+    while (cursor < templated.size()) {
+        const std::size_t open = templated.find("{{", cursor);
+        if (open == std::string_view::npos) {
+            rendered += templated.substr(cursor);
+            return true;
+        }
+
+        rendered += templated.substr(cursor, open - cursor);
+        const std::size_t close = templated.find("}}", open + 2);
+        if (close == std::string_view::npos) {
+            error = "unterminated script binding expression";
+            return false;
+        }
+
+        script_value value;
+        if (!evaluate_path(templated.substr(open + 2, close - open - 2), context, value, error)) {
+            return false;
+        }
+        rendered += value.to_string();
+        cursor = close + 2;
+    }
+    return true;
+}
+
+inline bool evaluate_scene_value_expression(
+    std::string_view expression,
+    const eval_context& context,
+    scene::scene_value& value,
+    std::string& error)
+{
+    std::string_view inner;
+    if (extract_single_interpolation(expression, inner)) {
+        script_value script_result;
+        if (!evaluate_path(inner, context, script_result, error)) {
+            return false;
+        }
+        value = script_result.to_scene_value();
+        return true;
+    }
+
+    std::string rendered;
+    if (!render_template(expression, context, rendered, error)) {
+        return false;
+    }
+    value = scene::scene_value(std::move(rendered));
+    return true;
+}
+
+inline bool evaluate_condition(std::string_view raw_condition, const eval_context& context, bool& value, std::string& error)
+{
+    raw_condition = trim(raw_condition);
+    if (raw_condition.empty()) {
+        value = true;
+        return true;
+    }
+
+    bool negate = false;
+    if (raw_condition.front() == '!') {
+        negate = true;
+        raw_condition.remove_prefix(1);
+        raw_condition = trim(raw_condition);
+    }
+
+    const std::size_t equals = raw_condition.find("==");
+    if (equals != std::string_view::npos) {
+        script_value left;
+        if (!evaluate_path(raw_condition.substr(0, equals), context, left, error)) {
+            return false;
+        }
+        const std::string right = strip_optional_quotes(raw_condition.substr(equals + 2));
+        value = left.to_string() == right;
+        if (negate) {
+            value = !value;
+        }
+        return true;
+    }
+
+    script_value evaluated;
+    if (!evaluate_path(raw_condition, context, evaluated, error)) {
+        return false;
+    }
+    value = evaluated.truthy();
+    if (negate) {
+        value = !value;
+    }
+    return true;
+}
+
+inline bool evaluate_option_repeater(
+    std::string_view collection,
+    const eval_context& context,
+    std::vector<option_context>& items,
+    std::string& error)
+{
+    collection = trim(collection);
+    if (collection != "question.options") {
+        error = "unsupported script repeater collection: " + std::string(collection);
+        return false;
+    }
+
+    const domain::question_snapshot* question = current_question(context.snapshot);
+    if (question == nullptr) {
+        error = "question.options repeater requires an active question";
+        return false;
+    }
+
+    items.clear();
+    items.reserve(question->options.size());
+    for (std::size_t index = 0; index < question->options.size(); ++index) {
+        items.push_back(option_context{&question->options[index], index});
+    }
+    return true;
+}
+
+inline std::optional<quiz_screen_kind> screen_kind_from_script_name(std::string_view screen)
+{
+    if (screen == "deck_list") {
+        return quiz_screen_kind::deck_list;
+    }
+    if (screen == "deck_view") {
+        return quiz_screen_kind::deck_view;
+    }
+    if (screen == "day_intro") {
+        return quiz_screen_kind::day_intro;
+    }
+    if (screen == "quiz_active") {
+        return quiz_screen_kind::quiz_active;
+    }
+    if (screen == "quiz_feedback") {
+        return quiz_screen_kind::quiz_feedback;
+    }
+    if (screen == "quiz_results") {
+        return quiz_screen_kind::quiz_results;
+    }
+    if (screen == "settings") {
+        return quiz_screen_kind::settings;
+    }
+    if (screen == "error") {
+        return quiz_screen_kind::error;
+    }
+    return std::nullopt;
+}
+
+inline scene::scene_route_state route_for_script_document(
+    const app_scene_script_document& document,
+    const domain::app_snapshot& snapshot)
+{
+    if (const std::optional<quiz_screen_kind> screen = screen_kind_from_script_name(document.screen)) {
+        return describe_quiz_screen(*screen, snapshot).route;
+    }
+
+    scene::scene_route_state route;
+    route.route_id = document.template_id.empty() ? document.screen : document.template_id;
+    route.screen_id = document.screen.empty() ? route.route_id : document.screen;
+    route.metadata["descriptor_version"] = "app_scene_script_v2";
+    route.metadata["script_template"] = document.template_id;
+    route.metadata["schema_version"] = std::to_string(document.schema_version);
+    return route;
+}
+
+inline bool compile_command_template(
+    const app_scene_script_command_template& command_template,
+    const eval_context& context,
+    scene::scene_command& command,
+    std::string& error)
+{
+    std::string rendered_name;
+    if (!render_template(command_template.name, context, rendered_name, error)) {
+        return false;
+    }
+    command.name = std::move(rendered_name);
+
+    for (const auto& [arg_name, expression] : command_template.args) {
+        scene::scene_value arg_value;
+        if (!evaluate_scene_value_expression(expression, context, arg_value, error)) {
+            return false;
+        }
+        command.args.emplace(arg_name, std::move(arg_value));
+    }
+
+    const app_command_validation_result validation = validate_scene_command(command);
+    if (!validation.ok()) {
+        error = validation.error;
+        return false;
+    }
+    return true;
+}
+
+inline bool compile_event_template(
+    const app_scene_script_event_handler_template& event_template,
+    const eval_context& context,
+    std::optional<scene::scene_event_handler>& handler,
+    std::string& error)
+{
+    bool condition = true;
+    if (!evaluate_condition(event_template.condition, context, condition, error)) {
+        return false;
+    }
+    if (!condition) {
+        handler = std::nullopt;
+        return true;
+    }
+
+    std::vector<scene::scene_command> commands;
+    commands.reserve(event_template.commands.size());
+    for (const app_scene_script_command_template& command_template : event_template.commands) {
+        scene::scene_command command;
+        if (!compile_command_template(command_template, context, command, error)) {
+            return false;
+        }
+        commands.push_back(std::move(command));
+    }
+
+    scene::scene_event_handler event_handler;
+    event_handler.trigger = event_template.trigger;
+    event_handler.commands = std::move(commands);
+    if (!event_template.condition.empty()) {
+        event_handler.condition = event_template.condition;
+    }
+    handler = std::move(event_handler);
+    return true;
+}
+
+inline bool apply_node_bindings(
+    const std::vector<app_scene_script_data_binding>& bindings,
+    const eval_context& context,
+    scene::scene_node_data& node,
+    std::string& node_id,
+    std::string& parent_id,
+    std::string& error)
+{
+    for (const app_scene_script_data_binding& binding : bindings) {
+        if (binding.target == "id") {
+            if (!render_template(binding.expression, context, node_id, error)) {
+                return false;
+            }
+            node.id = node_id;
+            continue;
+        }
+        if (binding.target == "parent_id") {
+            if (!render_template(binding.expression, context, parent_id, error)) {
+                return false;
+            }
+            continue;
+        }
+        if (binding.target == "debug_name") {
+            if (!render_template(binding.expression, context, node.debug_name, error)) {
+                return false;
+            }
+            continue;
+        }
+        if (binding.target == "text") {
+            std::string rendered_text;
+            if (!render_template(binding.expression, context, rendered_text, error)) {
+                return false;
+            }
+            node.text_runs.clear();
+            node.text_runs.push_back({std::move(rendered_text), node.style.token});
+            continue;
+        }
+        if (binding.target == "visible" || binding.target == "input_enabled") {
+            bool rendered_bool = false;
+            if (!evaluate_condition(binding.expression, context, rendered_bool, error)) {
+                return false;
+            }
+            if (binding.target == "visible") {
+                node.visible = rendered_bool;
+            } else {
+                node.input_enabled = rendered_bool;
+            }
+            continue;
+        }
+        if (binding.target == "style.token") {
+            if (!render_template(binding.expression, context, node.style.token, error)) {
+                return false;
+            }
+            for (scene::scene_text_run& run : node.text_runs) {
+                run.style_token = node.style.token;
+            }
+            continue;
+        }
+        if (binding.target == "style.background_color") {
+            if (!render_template(binding.expression, context, node.style.background_color, error)) {
+                return false;
+            }
+            continue;
+        }
+        if (binding.target == "style.foreground_color") {
+            if (!render_template(binding.expression, context, node.style.foreground_color, error)) {
+                return false;
+            }
+            continue;
+        }
+
+        error = "unsupported node binding target: " + binding.target;
+        return false;
+    }
+    return true;
+}
+
+inline bool compile_node_instance(
+    const app_scene_script_node& script_node,
+    const eval_context& context,
+    scene::scene_layout_edit_data& edit_data,
+    std::set<std::string>& emitted_ids,
+    std::string& error)
+{
+    bool condition = true;
+    if (!evaluate_condition(script_node.condition, context, condition, error)) {
+        return false;
+    }
+    if (!condition) {
+        return true;
+    }
+
+    std::string node_id;
+    std::string parent_id;
+    if (!render_template(script_node.id, context, node_id, error)) {
+        return false;
+    }
+    if (!render_template(script_node.parent_id, context, parent_id, error)) {
+        return false;
+    }
+    if (node_id.empty()) {
+        error = "script node emitted an empty id";
+        return false;
+    }
+    if (!emitted_ids.insert(node_id).second) {
+        error = "script node emitted duplicate id: " + node_id;
+        return false;
+    }
+
+    scene::scene_node_data node;
+    node.id = node_id;
+    node.kind = script_node.kind;
+    node.debug_name = script_node.debug_name.empty() ? "script node" : script_node.debug_name;
+    node.layout_rule = script_node.layout_rule;
+    node.style = script_node.style;
+    node.text_runs = script_node.text_runs;
+    for (scene::scene_text_run& run : node.text_runs) {
+        if (run.style_token.empty()) {
+            run.style_token = node.style.token;
+        }
+        std::string rendered_text;
+        if (!render_template(run.text, context, rendered_text, error)) {
+            return false;
+        }
+        run.text = std::move(rendered_text);
+    }
+    node.semantics = script_node.semantics;
+    node.visible = script_node.visible;
+    node.input_enabled = script_node.input_enabled;
+
+    if (!apply_node_bindings(script_node.bindings, context, node, node_id, parent_id, error)) {
+        return false;
+    }
+
+    std::vector<scene::scene_event_handler> event_handlers;
+    for (const app_scene_script_event_handler_template& event_template : script_node.events) {
+        std::optional<scene::scene_event_handler> handler;
+        if (!compile_event_template(event_template, context, handler, error)) {
+            return false;
+        }
+        if (handler.has_value() && !handler->empty()) {
+            event_handlers.push_back(std::move(*handler));
+        }
+    }
+
+    edit_data.append_node(std::move(parent_id), std::move(node));
+    for (scene::scene_event_handler& handler : event_handlers) {
+        edit_data.bind_event_handler(node_id, std::move(handler));
+    }
+
+    for (const app_scene_script_transition& transition : script_node.transitions) {
+        bool transition_condition = true;
+        if (!evaluate_condition(transition.condition, context, transition_condition, error)) {
+            return false;
+        }
+        if (transition_condition && !transition.name.empty()) {
+            scene::scene_animation_state animation;
+            animation.active = true;
+            animation.name = transition.name;
+            animation.duration_seconds = transition.duration_seconds;
+            edit_data.start_transition(std::move(animation));
+            break;
+        }
+    }
+
+    return true;
+}
+
+inline bool compile_script_node(
+    const app_scene_script_node& script_node,
+    const eval_context& context,
+    scene::scene_layout_edit_data& edit_data,
+    std::set<std::string>& emitted_ids,
+    std::string& error)
+{
+    if (!script_node.repeater.has_value()) {
+        return compile_node_instance(script_node, context, edit_data, emitted_ids, error);
+    }
+
+    std::vector<option_context> items;
+    if (!evaluate_option_repeater(script_node.repeater->collection, context, items, error)) {
+        return false;
+    }
+
+    for (const option_context& item : items) {
+        eval_context item_context{context.snapshot, item};
+        if (!compile_node_instance(script_node, item_context, edit_data, emitted_ids, error)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+inline app_scene_script_compile_result compile_node_dsl_script(
+    const app_scene_script_document& document,
+    const domain::app_snapshot& snapshot)
+{
+    app_scene_script_compile_result result;
+    scene::scene_layout_edit_data edit_data("app_scene_script");
+    edit_data.set_route(route_for_script_document(document, snapshot));
+
+    eval_context context{snapshot, std::nullopt};
+    std::set<std::string> emitted_ids;
+    for (const app_scene_script_node& node : document.nodes) {
+        if (!compile_script_node(node, context, edit_data, emitted_ids, result.error)) {
+            return result;
+        }
+    }
+
+    for (const app_scene_script_transition& transition : document.transitions) {
+        bool transition_condition = true;
+        if (!evaluate_condition(transition.condition, context, transition_condition, result.error)) {
+            return result;
+        }
+        if (transition_condition && !transition.name.empty()) {
+            scene::scene_animation_state animation;
+            animation.active = true;
+            animation.name = transition.name;
+            animation.duration_seconds = transition.duration_seconds;
+            edit_data.start_transition(std::move(animation));
+            break;
+        }
+    }
+
+    result.patch = edit_data.finish_patch();
+    return result;
+}
+
+}  // namespace script_detail
 
 inline app_scene_script_parse_result parse_app_scene_script_json(std::string_view json)
 {
     app_scene_script_parse_result result;
     app_scene_script_document document;
 
-    if (const std::optional<int> schema_version = detail::find_json_int_field(json, "schema_version", result.error)) {
+    if (const std::optional<int> schema_version = script_detail::find_json_int_field(json, "schema_version", result.error)) {
         document.schema_version = *schema_version;
     } else {
         return result;
     }
 
-    if (const std::optional<std::string> template_id = detail::find_json_string_field(json, "template", result.error)) {
+    if (const std::optional<std::string> template_id = script_detail::find_json_string_field(json, "template", result.error)) {
         document.template_id = *template_id;
     } else {
         return result;
     }
 
-    if (const std::optional<std::string> screen = detail::find_json_string_field(json, "screen", result.error)) {
+    if (const std::optional<std::string> screen = script_detail::find_json_string_field(json, "screen", result.error)) {
         document.screen = *screen;
     } else {
         return result;
@@ -162,18 +959,69 @@ inline app_scene_script_parse_result parse_app_scene_script_json(std::string_vie
     return result;
 }
 
+inline app_scene_script_validation_result validate_app_scene_script_document(const app_scene_script_document& document)
+{
+    app_scene_script_validation_result result;
+
+    if (document.schema_version != app_scene_script_template_schema_version
+        && document.schema_version != app_scene_script_node_dsl_schema_version) {
+        result.errors.push_back("unsupported app scene script schema_version: " + std::to_string(document.schema_version));
+    }
+
+    if (document.schema_version == app_scene_script_node_dsl_schema_version && document.nodes.empty()) {
+        result.errors.push_back("schema_version 2 script requires at least one node");
+    }
+
+    std::set<std::string> literal_ids;
+    for (const app_scene_script_node& node : document.nodes) {
+        if (script_detail::trim(node.id).empty()) {
+            result.errors.push_back("script node is missing an id");
+        }
+        if (node.id.find("{{") == std::string::npos && !literal_ids.insert(node.id).second) {
+            result.errors.push_back("script contains duplicate literal node id: " + node.id);
+        }
+        if (node.repeater.has_value()) {
+            if (script_detail::trim(node.repeater->item_name).empty()) {
+                result.errors.push_back("script repeater is missing item_name");
+            }
+            if (script_detail::trim(node.repeater->collection).empty()) {
+                result.errors.push_back("script repeater is missing collection");
+            }
+        }
+        for (const app_scene_script_event_handler_template& event : node.events) {
+            if (event.commands.empty()) {
+                result.errors.push_back("script event on node " + node.id + " has no commands");
+            }
+            for (const app_scene_script_command_template& command : event.commands) {
+                if (!is_scene_command_allowed(command.name)) {
+                    result.errors.push_back("script command is not allowlisted: " + command.name);
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
 inline app_scene_script_compile_result compile_app_scene_script(
     const app_scene_script_document& document,
     const domain::app_snapshot& snapshot)
 {
     app_scene_script_compile_result result;
 
-    if (document.schema_version != 1) {
-        result.error = "unsupported app scene script schema_version: " + std::to_string(document.schema_version);
+    const app_scene_script_validation_result validation = validate_app_scene_script_document(document);
+    if (!validation.ok()) {
+        result.error = validation.joined_error();
         return result;
     }
 
-    if (document.template_id == "builtin:quiz.day_intro.v1" && document.screen == "day_intro") {
+    if (document.schema_version == app_scene_script_node_dsl_schema_version || !document.nodes.empty()) {
+        return script_detail::compile_node_dsl_script(document, snapshot);
+    }
+
+    if (document.schema_version == app_scene_script_template_schema_version
+        && document.template_id == "builtin:quiz.day_intro.v1"
+        && document.screen == "day_intro") {
         result.patch = make_day_intro_screen_patch(snapshot);
         return result;
     }

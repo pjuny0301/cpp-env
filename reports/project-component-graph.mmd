@@ -1,0 +1,80 @@
+flowchart LR
+  subgraph Planning["Planning and traceability"]
+    CodexCommon["codex/common"]
+    CodexQuiz["codex/quiz"]
+    ReqMatrix["requirements_traceability_matrix.md"]
+    ImplNotes["codex/quiz implementation notes"]
+  end
+
+  subgraph CurrentApps["Current product baselines"]
+    Android["apps/quiz/android-quiz-app"]
+    Editor["apps/quiz/quiz-editor"]
+  end
+
+  subgraph NativeRemake["Native convergence target"]
+    AppShell["quiz-vulkan app shell"]
+    Domain["domain services and app_state"]
+    Scene["scene data, patch, modifier"]
+    Layout["layout_placer"]
+    UIRenderer["ui_renderer"]
+    Vulkan["vulkan_renderer"]
+    Text["text engine"]
+    Image["image/texture engine"]
+    Assets["asset/materialized-byte pipeline"]
+    Input["input/IME"]
+    Audio["audio, deferred"]
+  end
+
+  subgraph WorkspaceInfra["Workspace infrastructure"]
+    Workers["codex-workers"]
+    External["build/external"]
+    BuildOut["build/out"]
+  end
+
+  subgraph Needed["Needed forward components"]
+    UIScript["UI script DSL and compiler"]
+    CommandRuntime["Command runtime and registry"]
+    GUIAuthoring["GUI script authoring editor"]
+    ArtifactSchema["shared artifact/schema package"]
+    WorkerAPIs["AI/OCR/proof/code worker APIs"]
+    Validation["schema, scenario, and visual validation"]
+    WorkerLedger["worker ledger and preflight"]
+    SharedUI["shared generated React UI package"]
+  end
+
+  CodexQuiz --> ReqMatrix
+  CodexQuiz --> ImplNotes
+  ReqMatrix --> Android
+  ReqMatrix --> Editor
+  ReqMatrix --> AppShell
+  Android --> Domain
+  Editor --> ArtifactSchema
+  Editor --> GUIAuthoring
+  AppShell --> Domain
+  AppShell --> Scene
+  Domain --> Scene
+  Scene --> Layout
+  Layout --> UIRenderer
+  UIRenderer --> Vulkan
+  UIRenderer --> Text
+  UIRenderer --> Image
+  Image --> Assets
+  Vulkan --> Assets
+  Input --> AppShell
+  Workers --> AppShell
+  Workers --> Text
+  Workers --> Image
+  Workers --> Vulkan
+  External --> AppShell
+  BuildOut --> Workers
+  GUIAuthoring --> UIScript
+  UIScript --> CommandRuntime
+  CommandRuntime --> AppShell
+  ArtifactSchema --> Domain
+  WorkerAPIs --> Editor
+  WorkerAPIs --> ArtifactSchema
+  Validation --> UIScript
+  Validation --> ArtifactSchema
+  WorkerLedger --> Workers
+  SharedUI --> Android
+  SharedUI --> Editor

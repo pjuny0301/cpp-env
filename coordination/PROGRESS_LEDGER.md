@@ -17,6 +17,7 @@
 | s-C | C | C1 | pending | | |
 | s-D | D | (A6 대기) | waiting | | |
 | main-p0 | Phase 0 | P0.1-P0.3 | active | codex/ui-engine-phase12-secured-20260608T190736Z | 2026-06-08T19:10:06Z |
+| main-p0 | Phase 0 | P0.3 | done | codex/ui-engine-phase12-secured-20260608T190736Z | 2026-06-08T19:11:20Z |
 
 status: pending | active | blocked | waiting | done
 
@@ -50,3 +51,13 @@ status: pending | active | blocked | waiting | done
 - commit SHA: c173c8b, 8f36ad5, 31e8e93, af720fa, 3831e74
 - 다음 단계: P0.2 coordination files commit, P0.3 configure + contract compile
 - blocker(있으면): 없음
+
+### [CP-main-p0-002]
+- 시각 UTC: 2026-06-08T19:11:20Z
+- 태스크: P0.3 pre-track build gate
+- status: done
+- 변경 파일: coordination/PROGRESS_LEDGER.md
+- commit SHA: 1a92a5d
+- 다음 단계: start Track A/B/C parallel sessions from secured branch
+- blocker(있으면): 없음
+- 검증: `cmake --preset linux-ninja` passed; `cmake --build ../../../build/out/quiz/quiz-vulkan/linux-ninja --target quiz_vulkan_interface_contract_compile_tests` passed (`ninja: no work to do`)

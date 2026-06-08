@@ -81,6 +81,7 @@ case "${path_style}" in
 esac
 
 cd "${source_dir}"
-QUIZ_CODEX_REPO_ROOT="${repo_root}" "${script_dir}/with-build-lock.sh" --deps-lock "${cmake_exe}" \
+build_dir_for_lock="$("${script_dir}/quiz-vulkan-worker-build-dir.sh" "${repo_root}" "${preset}")"
+QUIZ_CODEX_REPO_ROOT="${repo_root}" "${script_dir}/with-build-lock.sh" --build-dir "${build_dir_for_lock}" --deps-lock "${cmake_exe}" \
   --preset "${preset}" \
   -DQUIZ_VULKAN_DESKTOP_EXTERNAL_DIR="${external_dir_for_cmake}"

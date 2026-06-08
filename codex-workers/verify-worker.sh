@@ -57,6 +57,21 @@ QUIZ_CODEX_REPO_ROOT="${repo_root}" "${script_dir}/with-build-lock.sh" --build-d
   --build "${build_dir}" \
   --target quiz_vulkan_interface_contract_compile_tests
 
+mapfile -t matched_tests < <(
+  "${ctest_exe}" --test-dir "${build_dir}" -N -R "${ctest_regex}" |
+    sed -nE 's/^ *Test +#[0-9]+: +([^ ]+)$/\1/p'
+)
+if [[ "${#matched_tests[@]}" -eq 0 ]]; then
+  echo "verify-worker: no CTest entries matched regex: ${ctest_regex}" >&2
+  exit 1
+fi
+
+for test_target in "${matched_tests[@]}"; do
+  QUIZ_CODEX_REPO_ROOT="${repo_root}" "${script_dir}/with-build-lock.sh" --build-dir "${build_dir}" "${cmake_exe}" \
+    --build "${build_dir}" \
+    --target "${test_target}"
+done
+
 QUIZ_CODEX_REPO_ROOT="${repo_root}" "${script_dir}/with-build-lock.sh" --build-dir "${build_dir}" "${ctest_exe}" \
   --test-dir "${build_dir}" \
   -R "${ctest_regex}" \

@@ -44,8 +44,7 @@ done
 worktree="${1:-$(pwd)}"
 preset="${2:-windows-mingw-ascii}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(git -C "${script_dir}/.." rev-parse --show-toplevel)"
-external_dir="${QUIZ_CODEX_EXTERNAL_DIR:-${repo_root}/build/external/lib/cpp/desktop}"
+external_dir="${QUIZ_CODEX_EXTERNAL_DIR:-/mnt/c/aa/build/external/lib/cpp/desktop}"
 path_style="${QUIZ_CODEX_PATH_STYLE:-auto}"
 
 case "${preset}" in

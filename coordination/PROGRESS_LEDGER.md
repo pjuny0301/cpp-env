@@ -96,3 +96,13 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: run verify-worker.sh focused Linux pass, then commit verification checkpoint
 - blocker(있으면): 없음
 - 검증: bash -n passed; shellcheck passed; worker ledger/source manifest/external artifact manifest checks passed; preflight linux-ninja passed; with-build-lock smoke passed
+
+### [CP-track-b-current-003]
+- 시각 UTC: 2026-06-08T19:50:00Z
+- 태스크: B1-B7 verification
+- status: done
+- 변경 파일: codex-workers/, apps/quiz/quiz-vulkan/cmake/quiz-vulkan-source-manifest.txt, coordination/PROGRESS_LEDGER.md
+- commit SHA: pending
+- 다음 단계: report Track B branch and verification
+- blocker(있으면): 없음
+- 검증: `codex-workers/verify-worker.sh track-b '^quiz_vulkan_architecture_boundary_tests$' . linux-ninja` passed; includes preflight, configure, `quiz_vulkan_interface_contract_compile_tests` build, focused CTest target build/run, worker ledger/source manifest/external manifest checks, and `git diff --check`

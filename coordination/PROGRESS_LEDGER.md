@@ -18,6 +18,7 @@
 | s-D | D | (A6 대기) | waiting | | |
 | main-p0 | Phase 0 | P0.1-P0.3 | active | codex/ui-engine-phase12-secured-20260608T190736Z | 2026-06-08T19:10:06Z |
 | main-p0 | Phase 0 | P0.3 | done | codex/ui-engine-phase12-secured-20260608T190736Z | 2026-06-08T19:11:20Z |
+| track-c-structure | C | C1 | active | codex/track-c-structure-20260608T1912Z | 2026-06-08T19:20:41Z |
 
 status: pending | active | blocked | waiting | done
 
@@ -61,3 +62,13 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: start Track A/B/C parallel sessions from secured branch
 - blocker(있으면): 없음
 - 검증: `cmake --preset linux-ninja` passed; `cmake --build ../../../build/out/quiz/quiz-vulkan/linux-ninja --target quiz_vulkan_interface_contract_compile_tests` passed (`ninja: no work to do`)
+
+### [CP-track-c-structure-001]
+- 시각 UTC: 2026-06-08T19:20:41Z
+- 태스크: Track C start, worktree isolation
+- status: active
+- 변경 파일: coordination/SHARED_NOTES.md, coordination/PROGRESS_LEDGER.md
+- commit SHA: pending
+- 다음 단계: C1 requirements authority audit and normalization
+- blocker(있으면): 없음
+- worktree: /mnt/c/Users/박준용/Desktop/goal/worktrees/track-c-structure

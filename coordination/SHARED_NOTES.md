@@ -12,6 +12,7 @@ All times use UTC ISO8601. Append session work declarations and request notes; d
 | s-ui-engine / Franklin / 019ea7cc-0735-7043-9ec8-ef1f934806b2 | quiz-vulkan UI/scene/app/layout and React references read-only | 2026-06-08T15:12:00Z | active |
 | main-impl | integration, src/app, CMakeLists.txt, tests, reports | 2026-06-08T17:13:12Z | active |
 | s-cmdtype | apps/quiz/quiz-vulkan/src/core/scene, focused scene tests if required | 2026-06-08T17:15:04Z | active |
+| track-c-structure | codex/quiz requirements/docs, apps/quiz/android-quiz-app, apps/quiz/quiz-editor shared UI extraction, build/external/quiz stale workspace/evidence policy | 2026-06-08T19:20:41Z | active |
 
 ## Intrusion Requests
 

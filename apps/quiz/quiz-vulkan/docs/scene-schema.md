@@ -58,6 +58,7 @@ Schema version 2 documents contain:
 - data bindings such as `{{ question.prompt }}`
 - question media bindings such as `{{ question.has_image }}` and
   `{{ question.image_uri }}`
+- node image bindings such as `image.uri` and `image.alt_text`
 - session bindings such as `{{ session.progress }}` and
   `{{ session.mode }} / {{ session.phase }}`
 - feedback bindings such as `{{ feedback.exists }}` and

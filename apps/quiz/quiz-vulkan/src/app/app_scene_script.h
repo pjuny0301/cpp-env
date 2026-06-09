@@ -1388,6 +1388,19 @@ inline bool apply_node_bindings(
             }
             continue;
         }
+        if (binding.target == "image.uri") {
+            if (!render_template(binding.expression, context, node.image.uri, error)) {
+                return false;
+            }
+            node.has_image = !node.image.uri.empty();
+            continue;
+        }
+        if (binding.target == "image.alt_text") {
+            if (!render_template(binding.expression, context, node.image.alt_text, error)) {
+                return false;
+            }
+            continue;
+        }
 
         error = "unsupported node binding target: " + binding.target;
         return false;

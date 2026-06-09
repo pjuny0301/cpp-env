@@ -43,6 +43,12 @@ nodes:
     kind: text
     binding:
       text: {{ choose(question.has_image, question.image_uri, "no-image") }}
+  - id: question_image
+    parent_id: script_root
+    kind: image
+    binding:
+      image.uri: {{ choose(question.has_image, question.image_uri, "") }}
+      image.alt_text: {{ concat("Question image for ", question.id) }}
   - id: session_progress
     parent_id: script_root
     kind: text

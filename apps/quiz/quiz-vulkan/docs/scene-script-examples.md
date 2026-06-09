@@ -58,6 +58,11 @@ nodes:
     kind: text
     binding:
       text: {{ selected_day.title }} / {{ selected_day.question_count }} questions
+  - id: deck_day_function_title
+    parent_id: script_root
+    kind: text
+    binding:
+      text: {{ concat(selected_deck.title, " / ", selected_day.title) | upper }}
   - id: question_prompt_upper
     parent_id: script_root
     kind: text
@@ -110,3 +115,16 @@ pass `validate_scene_command`.
 
 Text-answer inputs may use a legacy-only event because the submitted text is
 provided by the input router at runtime, after script compilation.
+
+## Expression Functions
+
+Use functions when a binding or condition needs small deterministic composition:
+
+```text
+binding:
+  text: {{ concat(selected_deck.title, " / ", selected_day.title) }}
+condition: equals(session.phase, "active")
+condition: not(session.completed)
+```
+
+Function calls are app/presentation concerns and stay outside renderer code.

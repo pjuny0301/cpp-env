@@ -185,6 +185,53 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     formatted_type.bindings.push_back({"text", "{{ question.type | upper | lower }}"});
     script.nodes.push_back(std::move(formatted_type));
 
+    presentation::app_scene_script_node function_title;
+    function_title.id = "deck_day_function_title";
+    function_title.parent_id = "script_root";
+    function_title.kind = scene::scene_node_kind::text;
+    function_title.debug_name = "deck day function title";
+    function_title.style.token = "muted";
+    function_title.bindings.push_back({"text", "{{ concat(selected_deck.title, \" / \", selected_day.title) }}"});
+    script.nodes.push_back(std::move(function_title));
+
+    presentation::app_scene_script_node function_title_upper;
+    function_title_upper.id = "deck_day_function_title_upper";
+    function_title_upper.parent_id = "script_root";
+    function_title_upper.kind = scene::scene_node_kind::text;
+    function_title_upper.debug_name = "deck day function title upper";
+    function_title_upper.style.token = "muted";
+    function_title_upper.bindings.push_back({"text", "{{ concat(selected_deck.title, \" / \", selected_day.title) | upper }}"});
+    script.nodes.push_back(std::move(function_title_upper));
+
+    presentation::app_scene_script_node session_active_flag;
+    session_active_flag.id = "session_active_flag";
+    session_active_flag.parent_id = "script_root";
+    session_active_flag.kind = scene::scene_node_kind::text;
+    session_active_flag.debug_name = "session active flag";
+    session_active_flag.style.token = "muted";
+    session_active_flag.bindings.push_back({"text", "{{ equals(session.phase, \"active\") }}"});
+    script.nodes.push_back(std::move(session_active_flag));
+
+    presentation::app_scene_script_node function_condition;
+    function_condition.id = "function_condition_active";
+    function_condition.parent_id = "script_root";
+    function_condition.kind = scene::scene_node_kind::text;
+    function_condition.debug_name = "function condition active";
+    function_condition.condition = "equals(session.phase, \"active\")";
+    function_condition.style.token = "muted";
+    function_condition.text_runs.push_back({"Function condition active", "muted"});
+    script.nodes.push_back(std::move(function_condition));
+
+    presentation::app_scene_script_node not_condition;
+    not_condition.id = "function_condition_not_completed";
+    not_condition.parent_id = "script_root";
+    not_condition.kind = scene::scene_node_kind::text;
+    not_condition.debug_name = "function condition not completed";
+    not_condition.condition = "not(session.completed)";
+    not_condition.style.token = "muted";
+    not_condition.text_runs.push_back({"Function condition not completed", "muted"});
+    script.nodes.push_back(std::move(not_condition));
+
     presentation::app_scene_script_node long_text;
     long_text.id = "question_long_text";
     long_text.parent_id = "script_root";
@@ -299,6 +346,17 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(formatted_type != nullptr, "formatted type node exists");
     require(formatted_prompt->text_runs.front().text == "CAPITAL OF KOREA?", "upper formatter renders prompt");
     require(formatted_type->text_runs.front().text == "answer", "formatter chain renders question type");
+    const scene::scene_node_data* function_title = data.find_node("deck_day_function_title");
+    const scene::scene_node_data* function_title_upper = data.find_node("deck_day_function_title_upper");
+    const scene::scene_node_data* session_active_flag = data.find_node("session_active_flag");
+    require(function_title != nullptr, "function title node exists");
+    require(function_title_upper != nullptr, "function title upper node exists");
+    require(session_active_flag != nullptr, "function active flag node exists");
+    require(function_title->text_runs.front().text == "Geography / Day 1", "concat function renders text");
+    require(function_title_upper->text_runs.front().text == "GEOGRAPHY / DAY 1", "function result supports formatter chain");
+    require(session_active_flag->text_runs.front().text == "true", "equals function renders boolean");
+    require(data.contains_node("function_condition_active"), "function expression can drive conditions");
+    require(data.contains_node("function_condition_not_completed"), "not function can drive conditions");
     require(!data.contains_node("question_long_text"), "false condition suppresses long text node");
 
     const scene::scene_node_data* option_0 = data.find_node("option_0");

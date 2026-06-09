@@ -79,6 +79,16 @@ Formatter chains run left to right, for example
 the original `scene_value` type where the target expects a typed value; formatted
 expressions render as strings.
 
+The expression engine also supports pure function calls:
+
+- `concat(a, b, ...)`
+- `equals(a, b)`
+- `not(value)`
+
+Function arguments may be other expressions or quoted string literals, and
+function results can still flow through formatter chains, for example
+`{{ concat(selected_deck.title, " / ", selected_day.title) | upper }}`.
+
 Text-answer controls may use legacy-only events because the submitted text is
 provided by the input router at runtime. Other script commands should prefer the
 typed command path and must pass the app command registry allowlist and argument

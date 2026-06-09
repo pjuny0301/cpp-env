@@ -282,6 +282,13 @@ inline std::string strip_optional_quotes(std::string_view value)
     return std::string(value);
 }
 
+inline bool is_quoted_string(std::string_view value)
+{
+    value = trim(value);
+    return value.size() >= 2
+        && ((value.front() == '"' && value.back() == '"') || (value.front() == '\'' && value.back() == '\''));
+}
+
 enum class script_value_kind {
     none,
     string,
@@ -375,6 +382,12 @@ struct eval_context {
     std::optional<option_context> option;
 };
 
+inline bool evaluate_expression(
+    std::string_view raw_expression,
+    const eval_context& context,
+    script_value& value,
+    std::string& error);
+
 inline const domain::question_snapshot* current_question(const domain::app_snapshot& snapshot)
 {
     if (!snapshot.active_session.has_value() || !snapshot.active_session->current_question.has_value()) {
@@ -427,9 +440,193 @@ inline std::size_t deck_question_count(const domain::deck& deck)
     return count;
 }
 
+inline bool parse_function_arguments(
+    std::string_view raw_args,
+    std::vector<std::string>& args,
+    std::string& error)
+{
+    args.clear();
+
+    std::size_t start = 0;
+    int nested_parentheses = 0;
+    char quote = '\0';
+    bool escaping = false;
+
+    for (std::size_t index = 0; index <= raw_args.size(); ++index) {
+        const bool at_end = index == raw_args.size();
+        const char ch = at_end ? ',' : raw_args[index];
+
+        if (!at_end && quote != '\0') {
+            if (escaping) {
+                escaping = false;
+                continue;
+            }
+            if (ch == '\\') {
+                escaping = true;
+                continue;
+            }
+            if (ch == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+
+        if (!at_end && (ch == '"' || ch == '\'')) {
+            quote = ch;
+            continue;
+        }
+
+        if (!at_end && ch == '(') {
+            ++nested_parentheses;
+            continue;
+        }
+        if (!at_end && ch == ')') {
+            if (nested_parentheses == 0) {
+                error = "script function argument has unmatched ')'";
+                return false;
+            }
+            --nested_parentheses;
+            continue;
+        }
+
+        if (ch != ',' || nested_parentheses != 0) {
+            continue;
+        }
+
+        std::string_view argument = trim(raw_args.substr(start, index - start));
+        if (!argument.empty()) {
+            args.emplace_back(argument);
+        }
+        start = index + 1;
+    }
+
+    if (quote != '\0') {
+        error = "script function argument has unterminated string literal";
+        return false;
+    }
+    if (nested_parentheses != 0) {
+        error = "script function argument has unmatched '('";
+        return false;
+    }
+    return true;
+}
+
+inline bool parse_function_call(
+    std::string_view raw_expression,
+    std::string& name,
+    std::vector<std::string>& args,
+    std::string& error)
+{
+    raw_expression = trim(raw_expression);
+    if (raw_expression.empty() || raw_expression.back() != ')') {
+        return false;
+    }
+
+    const std::size_t open = raw_expression.find('(');
+    if (open == std::string_view::npos) {
+        return false;
+    }
+
+    std::string_view raw_name = trim(raw_expression.substr(0, open));
+    if (raw_name.empty()) {
+        return false;
+    }
+    for (unsigned char ch : raw_name) {
+        if (std::isalnum(ch) == 0 && ch != '_') {
+            return false;
+        }
+    }
+
+    name = std::string(raw_name);
+    return parse_function_arguments(raw_expression.substr(open + 1, raw_expression.size() - open - 2), args, error);
+}
+
+inline bool require_script_function_arg_count(
+    std::string_view name,
+    const std::vector<std::string>& args,
+    std::size_t expected,
+    std::string& error)
+{
+    if (args.size() == expected) {
+        return true;
+    }
+
+    error = "script function " + std::string(name) + " expects " + std::to_string(expected)
+        + " argument(s), got " + std::to_string(args.size());
+    return false;
+}
+
+inline bool evaluate_script_function(
+    std::string_view name,
+    const std::vector<std::string>& args,
+    const eval_context& context,
+    script_value& value,
+    std::string& error)
+{
+    if (name == "concat") {
+        std::string rendered;
+        for (const std::string& arg : args) {
+            script_value arg_value;
+            if (!evaluate_expression(arg, context, arg_value, error)) {
+                return false;
+            }
+            rendered += arg_value.to_string();
+        }
+        value = script_value::string(std::move(rendered));
+        return true;
+    }
+
+    if (name == "equals") {
+        if (!require_script_function_arg_count(name, args, 2, error)) {
+            return false;
+        }
+
+        script_value left;
+        script_value right;
+        if (!evaluate_expression(args[0], context, left, error)
+            || !evaluate_expression(args[1], context, right, error)) {
+            return false;
+        }
+        value = script_value::boolean(left.to_string() == right.to_string());
+        return true;
+    }
+
+    if (name == "not") {
+        if (!require_script_function_arg_count(name, args, 1, error)) {
+            return false;
+        }
+
+        script_value arg_value;
+        if (!evaluate_expression(args.front(), context, arg_value, error)) {
+            return false;
+        }
+        value = script_value::boolean(!arg_value.truthy());
+        return true;
+    }
+
+    error = "unsupported script function: " + std::string(name);
+    return false;
+}
+
 inline bool evaluate_path(std::string_view raw_expression, const eval_context& context, script_value& value, std::string& error)
 {
-    const std::string expression = strip_optional_quotes(raw_expression);
+    raw_expression = trim(raw_expression);
+    if (is_quoted_string(raw_expression)) {
+        value = script_value::string(strip_optional_quotes(raw_expression));
+        return true;
+    }
+
+    std::string function_name;
+    std::vector<std::string> function_args;
+    if (!raw_expression.empty()
+        && parse_function_call(raw_expression, function_name, function_args, error)) {
+        return evaluate_script_function(function_name, function_args, context, value, error);
+    }
+    if (!error.empty()) {
+        return false;
+    }
+
+    const std::string expression(raw_expression);
     if (expression == "true") {
         value = script_value::boolean(true);
         return true;

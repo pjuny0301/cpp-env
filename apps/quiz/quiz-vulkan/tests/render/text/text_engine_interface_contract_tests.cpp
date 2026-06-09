@@ -3116,6 +3116,16 @@ static_assert(requires(
     render::render_text_renderer_glyph_quad_packet_diff_policy glyph_quad_diff_policy,
     render::render_text_renderer_glyph_quad_packet_diff_record glyph_quad_packet_diff,
     render::render_text_renderer_glyph_quad_packet_diff_snapshot glyph_quad_diff,
+    render::render_text_renderer_draw_payload_status renderer_draw_payload_status,
+    render::render_text_renderer_draw_payload_record renderer_draw_payload,
+    render::render_text_renderer_draw_payload_policy_snapshot renderer_draw_payload_policy,
+    render::render_text_renderer_draw_payload_request renderer_draw_payload_request,
+    render::render_text_renderer_draw_payload_snapshot renderer_draw_payload_snapshot,
+    render::render_text_renderer_runtime_draw_packet_status runtime_draw_packet_status,
+    render::render_text_renderer_runtime_draw_packet_descriptor runtime_draw_packet,
+    render::render_text_renderer_runtime_draw_packet_policy_snapshot runtime_draw_packet_policy,
+    render::render_text_renderer_runtime_draw_packet_request runtime_draw_packet_request,
+    render::render_text_renderer_runtime_draw_packet_snapshot runtime_draw_packet_snapshot,
     render::render_text_render_frame_handoff_summary_policy render_frame_handoff_policy,
     render::render_text_render_frame_handoff_summary_request render_frame_handoff_request,
     render::render_text_render_frame_handoff_summary_snapshot render_frame_handoff_summary,
@@ -4228,6 +4238,127 @@ static_assert(requires(
         -> std::same_as<void>;
     { render::make_render_text_renderer_glyph_quad_packets(glyph_quad_request) }
         -> std::same_as<render::render_text_renderer_glyph_quad_packet_snapshot>;
+    { render::render_text_renderer_draw_payload_status_name(renderer_draw_payload_status) }
+        -> std::same_as<std::string>;
+    { renderer_draw_payload.payload_id } -> std::same_as<std::string&>;
+    { renderer_draw_payload.quad_packet_id } -> std::same_as<std::string&>;
+    { renderer_draw_payload.resource_packet_id } -> std::same_as<std::string&>;
+    { renderer_draw_payload.stable_packet_key } -> std::same_as<std::string&>;
+    { renderer_draw_payload.source_label } -> std::same_as<std::string&>;
+    { renderer_draw_payload.source_node_id_hint } -> std::same_as<render::render_node_id&>;
+    { renderer_draw_payload.draw_packet_id } -> std::same_as<std::string&>;
+    { renderer_draw_payload.upload_request_id } -> std::same_as<std::string&>;
+    { renderer_draw_payload.sampler_key } -> std::same_as<std::string&>;
+    { renderer_draw_payload.payload_index } -> std::same_as<std::size_t&>;
+    { renderer_draw_payload.run_index } -> std::same_as<std::size_t&>;
+    { renderer_draw_payload.cluster_byte_offset } -> std::same_as<std::size_t&>;
+    { renderer_draw_payload.cluster_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_draw_payload.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { renderer_draw_payload.resolved_glyph_id } -> std::same_as<std::uint32_t&>;
+    { renderer_draw_payload.page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { renderer_draw_payload.page_revision } -> std::same_as<render::render_text_revision&>;
+    { renderer_draw_payload.quad_bounds } -> std::same_as<render::render_rect&>;
+    { renderer_draw_payload.atlas_bounds } -> std::same_as<render::render_rect&>;
+    { renderer_draw_payload.uv_bounds } -> std::same_as<render::render_text_frame_draw_uv_rect&>;
+    { renderer_draw_payload.status } -> std::same_as<render::render_text_renderer_draw_payload_status&>;
+    { renderer_draw_payload.ready } -> std::same_as<bool&>;
+    { renderer_draw_payload.blocked } -> std::same_as<bool&>;
+    { renderer_draw_payload.uploaded } -> std::same_as<bool&>;
+    { renderer_draw_payload.clean_reuse } -> std::same_as<bool&>;
+    { renderer_draw_payload.upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { renderer_draw_payload.atlas_consumption }
+        -> std::same_as<render::render_text_atlas_packet_consumption_evidence&>;
+    { renderer_draw_payload.blocker_summary } -> std::same_as<std::string&>;
+    { renderer_draw_payload.diagnostic } -> std::same_as<std::string&>;
+    { renderer_draw_payload.drawable() } -> std::same_as<bool>;
+    { renderer_draw_payload_policy.payload_count } -> std::same_as<std::size_t&>;
+    { renderer_draw_payload_policy.ready_payload_count } -> std::same_as<std::size_t&>;
+    { renderer_draw_payload_policy.blocked_payload_count } -> std::same_as<std::size_t&>;
+    { renderer_draw_payload_policy.total_upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { renderer_draw_payload_policy.frame_ready_for_renderer } -> std::same_as<bool&>;
+    { renderer_draw_payload_policy.has_blockers } -> std::same_as<bool&>;
+    { renderer_draw_payload_request.glyph_quads }
+        -> std::same_as<render::render_text_renderer_glyph_quad_packet_snapshot&>;
+    { renderer_draw_payload_snapshot.payloads }
+        -> std::same_as<std::vector<render::render_text_renderer_draw_payload_record>&>;
+    { renderer_draw_payload_snapshot.ok() } -> std::same_as<bool>;
+    { render::render_text_renderer_draw_payload_id_for(glyph_quad_packet, std::size_t{}) }
+        -> std::same_as<std::string>;
+    { render::render_text_renderer_draw_payload_status_for(glyph_quad_packet) }
+        -> std::same_as<render::render_text_renderer_draw_payload_status>;
+    { render::render_text_renderer_draw_payload_blocker_summary_for(
+        glyph_quad_packet, renderer_draw_payload_status) } -> std::same_as<std::string>;
+    { render::make_render_text_renderer_draw_payload(glyph_quad_packet, std::size_t{}) }
+        -> std::same_as<render::render_text_renderer_draw_payload_record>;
+    { render::append_render_text_renderer_draw_payload(renderer_draw_payload_snapshot, renderer_draw_payload) }
+        -> std::same_as<void>;
+    { render::make_render_text_renderer_draw_payloads(renderer_draw_payload_request) }
+        -> std::same_as<render::render_text_renderer_draw_payload_snapshot>;
+    { render::render_text_renderer_runtime_draw_packet_status_name(runtime_draw_packet_status) }
+        -> std::same_as<std::string>;
+    { runtime_draw_packet.draw_packet_descriptor_id } -> std::same_as<std::string&>;
+    { runtime_draw_packet.stable_draw_packet_identity } -> std::same_as<std::string&>;
+    { runtime_draw_packet.source_payload_id } -> std::same_as<std::string&>;
+    { runtime_draw_packet.quad_packet_id } -> std::same_as<std::string&>;
+    { runtime_draw_packet.draw_packet_id } -> std::same_as<std::string&>;
+    { runtime_draw_packet.upload_request_id } -> std::same_as<std::string&>;
+    { runtime_draw_packet.sampler_key } -> std::same_as<std::string&>;
+    { runtime_draw_packet.descriptor_index } -> std::same_as<std::size_t&>;
+    { runtime_draw_packet.source_payload_index } -> std::same_as<std::size_t&>;
+    { runtime_draw_packet.glyph_run_index } -> std::same_as<std::size_t&>;
+    { runtime_draw_packet.glyph_run_key } -> std::same_as<std::string&>;
+    { runtime_draw_packet.glyph_count } -> std::same_as<std::size_t&>;
+    { runtime_draw_packet.cache_key } -> std::same_as<render::glyph_atlas_key&>;
+    { runtime_draw_packet.resolved_glyph_id } -> std::same_as<std::uint32_t&>;
+    { runtime_draw_packet.atlas_page_id } -> std::same_as<render::render_text_atlas_page_id&>;
+    { runtime_draw_packet.atlas_page_revision } -> std::same_as<render::render_text_revision&>;
+    { runtime_draw_packet.quad_bounds } -> std::same_as<render::render_rect&>;
+    { runtime_draw_packet.atlas_bounds } -> std::same_as<render::render_rect&>;
+    { runtime_draw_packet.uv_bounds } -> std::same_as<render::render_text_frame_draw_uv_rect&>;
+    { runtime_draw_packet.source_payload_status }
+        -> std::same_as<render::render_text_renderer_draw_payload_status&>;
+    { runtime_draw_packet.status } -> std::same_as<render::render_text_renderer_runtime_draw_packet_status&>;
+    { runtime_draw_packet.ready } -> std::same_as<bool&>;
+    { runtime_draw_packet.blocked } -> std::same_as<bool&>;
+    { runtime_draw_packet.duplicate_packet_identity } -> std::same_as<bool&>;
+    { runtime_draw_packet.missing_payload_identity } -> std::same_as<bool&>;
+    { runtime_draw_packet.upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { runtime_draw_packet.atlas_consumption }
+        -> std::same_as<render::render_text_atlas_packet_consumption_evidence&>;
+    { runtime_draw_packet.blocker_summary } -> std::same_as<std::string&>;
+    { runtime_draw_packet.diagnostic } -> std::same_as<std::string&>;
+    { runtime_draw_packet.drawable() } -> std::same_as<bool>;
+    { runtime_draw_packet_policy.source_payload_count } -> std::same_as<std::size_t&>;
+    { runtime_draw_packet_policy.draw_packet_count } -> std::same_as<std::size_t&>;
+    { runtime_draw_packet_policy.ready_draw_packet_count } -> std::same_as<std::size_t&>;
+    { runtime_draw_packet_policy.blocked_draw_packet_count } -> std::same_as<std::size_t&>;
+    { runtime_draw_packet_policy.glyph_count } -> std::same_as<std::size_t&>;
+    { runtime_draw_packet_policy.total_upload_rgba_bytes } -> std::same_as<std::size_t&>;
+    { runtime_draw_packet_policy.frame_ready_for_renderer } -> std::same_as<bool&>;
+    { runtime_draw_packet_policy.has_blockers } -> std::same_as<bool&>;
+    { runtime_draw_packet_request.draw_payloads }
+        -> std::same_as<render::render_text_renderer_draw_payload_snapshot&>;
+    { runtime_draw_packet_snapshot.draw_packets }
+        -> std::same_as<std::vector<render::render_text_renderer_runtime_draw_packet_descriptor>&>;
+    { runtime_draw_packet_snapshot.ok() } -> std::same_as<bool>;
+    { render::render_text_renderer_runtime_draw_packet_id_for(renderer_draw_payload, std::size_t{}) }
+        -> std::same_as<std::string>;
+    { render::render_text_renderer_runtime_draw_packet_identity_duplicate(
+        renderer_draw_payload_snapshot.payloads, style_key_text) } -> std::same_as<bool>;
+    { render::render_text_renderer_runtime_draw_packet_glyph_count_for(renderer_draw_payload) }
+        -> std::same_as<std::size_t>;
+    { render::render_text_renderer_runtime_draw_packet_glyph_run_key_for(renderer_draw_payload) }
+        -> std::same_as<std::string>;
+    { render::render_text_renderer_runtime_draw_packet_status_for(renderer_draw_payload, duplicate) }
+        -> std::same_as<render::render_text_renderer_runtime_draw_packet_status>;
+    { render::render_text_renderer_runtime_draw_packet_blocker_summary_for(
+        renderer_draw_payload, runtime_draw_packet_status) } -> std::same_as<std::string>;
+    { render::make_render_text_renderer_runtime_draw_packet(renderer_draw_payload, std::size_t{}, duplicate) }
+        -> std::same_as<render::render_text_renderer_runtime_draw_packet_descriptor>;
+    { render::append_render_text_renderer_runtime_draw_packet(runtime_draw_packet_snapshot, runtime_draw_packet) }
+        -> std::same_as<void>;
+    { render::make_render_text_renderer_runtime_draw_packets(runtime_draw_packet_request) }
+        -> std::same_as<render::render_text_renderer_runtime_draw_packet_snapshot>;
     { glyph_quad_diff_policy.quad_packet_count_delta } -> std::same_as<std::ptrdiff_t&>;
     { glyph_quad_diff_policy.ready_quad_count_delta } -> std::same_as<std::ptrdiff_t&>;
     { glyph_quad_diff_policy.blocked_quad_count_delta } -> std::same_as<std::ptrdiff_t&>;

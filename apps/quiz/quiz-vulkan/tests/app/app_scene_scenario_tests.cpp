@@ -238,6 +238,42 @@ void test_quiz_scene_deck_navigation_replay_reaches_day_intro()
     require(*result.final_frame.snapshot.selected_day_id == "day1", "deck navigation selects day1");
 }
 
+void test_quiz_scene_day_intro_random_mode_replay_starts_random_session()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_random",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_random",
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "random mode day intro scenario replay succeeds");
+    require(result.trace.size() == 1, "random mode day intro scenario emits one trace entry");
+    require_trace_entry(result.trace[0], "day_intro", "start_quiz", "quiz_active", "random mode start trace is stable");
+    require(result.trace[0].target_node_id == "day_intro_start_random", "random mode start records target node");
+    require(result.trace[0].after_focus_id == "quiz_active_option_0", "random mode start captures active option focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::quiz, "random mode final snapshot is quiz");
+    require(result.final_frame.snapshot.active_session.has_value(), "random mode final snapshot has session");
+    const domain::session_snapshot& session = *result.final_frame.snapshot.active_session;
+    require(session.mode == domain::quiz_mode::random, "random mode final session is random");
+    require(session.question_count == 1, "random mode final session includes day question");
+    require(session.current_question.has_value(), "random mode final session has current question");
+    require(session.current_question->question_id == "q1", "random mode final session starts available question");
+}
+
 void test_quiz_scene_error_recovery_replay_selects_deck()
 {
     using namespace quiz_vulkan;
@@ -731,6 +767,7 @@ int main()
 {
     test_quiz_scene_event_replay_reaches_results();
     test_quiz_scene_deck_navigation_replay_reaches_day_intro();
+    test_quiz_scene_day_intro_random_mode_replay_starts_random_session();
     test_quiz_scene_error_recovery_replay_selects_deck();
     test_quiz_scene_text_submit_replay_records_feedback();
     test_quiz_scene_incorrect_text_submit_replay_records_feedback();

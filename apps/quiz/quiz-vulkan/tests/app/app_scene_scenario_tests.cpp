@@ -1232,6 +1232,44 @@ void test_quiz_scene_unhandled_text_submit_records_noop_trace()
     require(result.final_frame.layout.route_state().screen_id == "deck_list", "unhandled text submit final frame remains deck list");
 }
 
+void test_quiz_scene_settings_swipe_previous_records_error_transition()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_update_setting_action("ui_screen", "settings"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "swipe_previous_from_settings",
+                .input = app_scene_scenario_input_kind::swipe_left,
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "settings swipe previous scenario remains successful");
+    require(result.trace.size() == 1, "settings swipe previous scenario records one trace");
+
+    const app_scene_scenario_trace_entry& trace = result.trace.front();
+    require(trace.step_name == "swipe_previous_from_settings", "settings swipe previous trace records step name");
+    require(trace.event_kind == "swipe_left", "settings swipe previous trace records event kind");
+    require(trace.target_node_id.empty(), "settings swipe previous trace records no target");
+    require_trace_entry(trace, "settings", "previous_question", "error", "settings swipe previous trace is stable");
+    require(trace.before_focus_id == "settings_close", "settings swipe previous trace records before focus");
+    require(trace.after_focus_id == "error_deck_deck1", "settings swipe previous trace captures error recovery focus");
+    require(!trace.clear_text_after_action, "settings swipe previous trace does not clear text");
+    require(trace.error.empty(), "settings swipe previous trace records no route error");
+
+    require(result.final_frame.layout.route_state().screen_id == "error", "settings swipe previous final frame is error");
+    require(result.final_frame.snapshot.error_message.has_value(), "settings swipe previous final snapshot records error");
+    require(result.final_frame.layout.contains_node("error_deck_deck1"), "settings swipe previous final frame emits recovery deck action");
+}
+
 } // namespace
 
 int main()
@@ -1262,5 +1300,6 @@ int main()
     test_quiz_scene_settings_close_replay_returns_to_deck_list();
     test_quiz_scene_missing_target_records_failure_trace();
     test_quiz_scene_unhandled_text_submit_records_noop_trace();
+    test_quiz_scene_settings_swipe_previous_records_error_transition();
     return 0;
 }

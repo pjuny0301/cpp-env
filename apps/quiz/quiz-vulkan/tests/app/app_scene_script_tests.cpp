@@ -4,8 +4,10 @@
 #include "core/layout/layout_placer.h"
 
 #include <cassert>
+#include <algorithm>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <variant>
@@ -242,11 +244,41 @@ void test_phase3_dsl_validation_and_determinism()
     require(!command_validation.ok(), "non-allowlisted command fails validation");
 }
 
+void test_scene_script_package_manifest()
+{
+    using namespace quiz_vulkan;
+
+    const presentation::app_scene_script_package_manifest manifest =
+        presentation::app_scene_script_package_manifest_for_runtime();
+    require(manifest.package_id == "quiz.scene-script", "scene script package id is stable");
+    require(manifest.package_version == "0.1.0", "scene script package version is stable");
+    require(manifest.min_supported_schema_version == presentation::app_scene_script_template_schema_version,
+        "scene script min schema version is template selector");
+    require(manifest.max_supported_schema_version == presentation::app_scene_script_node_dsl_schema_version,
+        "scene script max schema version is node DSL");
+    require(presentation::app_scene_script_schema_version_supported(manifest.template_schema_version),
+        "template schema version is supported");
+    require(presentation::app_scene_script_schema_version_supported(manifest.node_dsl_schema_version),
+        "node DSL schema version is supported");
+    require(!presentation::app_scene_script_schema_version_supported(0), "schema version zero is rejected");
+    require(!presentation::app_scene_script_schema_version_supported(manifest.max_supported_schema_version + 1),
+        "future schema version is rejected until runtime support lands");
+
+    const auto has_artifact = [&](std::string_view artifact_id) {
+        return std::find(manifest.compatible_artifact_ids.begin(), manifest.compatible_artifact_ids.end(), artifact_id)
+            != manifest.compatible_artifact_ids.end();
+    };
+    require(has_artifact("quiz-vulkan"), "native artifact id is listed");
+    require(has_artifact("android-quiz-app"), "android artifact id is listed");
+    require(has_artifact("quiz-editor"), "editor artifact id is listed");
+}
+
 }  // namespace
 
 int main()
 {
     test_phase3_dsl_compiles_bindings_repeaters_conditions_events();
     test_phase3_dsl_validation_and_determinism();
+    test_scene_script_package_manifest();
     return 0;
 }

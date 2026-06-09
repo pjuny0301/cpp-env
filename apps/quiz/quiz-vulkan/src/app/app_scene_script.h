@@ -21,6 +21,13 @@ namespace quiz_vulkan::presentation {
 
 inline constexpr int app_scene_script_template_schema_version = 1;
 inline constexpr int app_scene_script_node_dsl_schema_version = 2;
+inline constexpr int app_scene_script_min_supported_schema_version = app_scene_script_template_schema_version;
+inline constexpr int app_scene_script_max_supported_schema_version = app_scene_script_node_dsl_schema_version;
+inline constexpr std::string_view app_scene_script_package_id = "quiz.scene-script";
+inline constexpr std::string_view app_scene_script_package_version = "0.1.0";
+inline constexpr std::string_view app_scene_script_native_artifact_id = "quiz-vulkan";
+inline constexpr std::string_view app_scene_script_android_artifact_id = "android-quiz-app";
+inline constexpr std::string_view app_scene_script_editor_artifact_id = "quiz-editor";
 
 inline constexpr std::string_view day_intro_screen_script_json = R"json({
   "schema_version": 1,
@@ -90,6 +97,39 @@ struct app_scene_script_document {
     std::vector<app_scene_script_node> nodes;
     std::vector<app_scene_script_transition> transitions;
 };
+
+struct app_scene_script_package_manifest {
+    std::string package_id;
+    std::string package_version;
+    int min_supported_schema_version = 0;
+    int max_supported_schema_version = 0;
+    int template_schema_version = 0;
+    int node_dsl_schema_version = 0;
+    std::vector<std::string> compatible_artifact_ids;
+};
+
+inline bool app_scene_script_schema_version_supported(int schema_version)
+{
+    return schema_version >= app_scene_script_min_supported_schema_version
+        && schema_version <= app_scene_script_max_supported_schema_version;
+}
+
+inline app_scene_script_package_manifest app_scene_script_package_manifest_for_runtime()
+{
+    return app_scene_script_package_manifest{
+        .package_id = std::string(app_scene_script_package_id),
+        .package_version = std::string(app_scene_script_package_version),
+        .min_supported_schema_version = app_scene_script_min_supported_schema_version,
+        .max_supported_schema_version = app_scene_script_max_supported_schema_version,
+        .template_schema_version = app_scene_script_template_schema_version,
+        .node_dsl_schema_version = app_scene_script_node_dsl_schema_version,
+        .compatible_artifact_ids = {
+            std::string(app_scene_script_native_artifact_id),
+            std::string(app_scene_script_android_artifact_id),
+            std::string(app_scene_script_editor_artifact_id),
+        },
+    };
+}
 
 struct app_scene_script_parse_result {
     std::optional<app_scene_script_document> document;
@@ -949,8 +989,7 @@ inline app_scene_script_validation_result validate_app_scene_script_document(con
 {
     app_scene_script_validation_result result;
 
-    if (document.schema_version != app_scene_script_template_schema_version
-        && document.schema_version != app_scene_script_node_dsl_schema_version) {
+    if (!app_scene_script_schema_version_supported(document.schema_version)) {
         result.errors.push_back("unsupported app scene script schema_version: " + std::to_string(document.schema_version));
     }
 

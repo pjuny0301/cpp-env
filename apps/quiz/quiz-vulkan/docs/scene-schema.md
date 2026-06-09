@@ -75,6 +75,22 @@ Restricted write surface for modifiers. It may append, update, remove, bind acti
 
 `layout_placer` resolves constraints to final rectangles and hit regions. It receives text metrics through an interface so tests can run without Vulkan.
 
+## Scene Script Package Compatibility
+
+Scene scripts use package id `quiz.scene-script` version `0.1.0`.
+The native runtime advertises this through `app_scene_script_package_manifest_for_runtime()`.
+
+Supported schema versions:
+
+- `1`: template selector scripts, currently used by the built-in day intro script.
+- `2`: node DSL scripts with nodes, bindings, repeaters, conditions, events, commands, transitions, route state, and focus.
+
+Compatibility responsibilities:
+
+- `quiz-vulkan` must reject schema versions outside the advertised min/max range before compiling.
+- `quiz-editor` must not publish scripts with a schema version newer than the native max until the native runtime supports it.
+- `android-quiz-app` must keep bundled/generated scene script artifacts on package `quiz.scene-script` and schema `1` or `2` until the manifest changes.
+
 ## Rendering Rules
 
 `ui_renderer` converts placed nodes to draw commands:

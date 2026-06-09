@@ -424,6 +424,15 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     string_predicates.bindings.push_back({"text", "{{ contains(question.prompt, \"Korea\") }} / {{ starts_with(selected_deck.source_uri, \"fixture://\") }} / {{ ends_with(selected_deck.source_uri, \".quizdeck\") }}"});
     script.nodes.push_back(std::move(string_predicates));
 
+    presentation::app_scene_script_node prompt_length;
+    prompt_length.id = "question_prompt_length";
+    prompt_length.parent_id = "script_root";
+    prompt_length.kind = scene::scene_node_kind::text;
+    prompt_length.debug_name = "question prompt length";
+    prompt_length.style.token = "muted";
+    prompt_length.bindings.push_back({"text", "{{ length(question.prompt) }}"});
+    script.nodes.push_back(std::move(prompt_length));
+
     presentation::app_scene_script_node choice_label;
     choice_label.id = "choice_error_label";
     choice_label.parent_id = "script_root";
@@ -728,6 +737,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     const scene::scene_node_data* session_active_flag = data.find_node("session_active_flag");
     const scene::scene_node_data* empty_error_flag = data.find_node("empty_error_flag");
     const scene::scene_node_data* string_predicates = data.find_node("string_predicate_flags");
+    const scene::scene_node_data* prompt_length = data.find_node("question_prompt_length");
     const scene::scene_node_data* choice_label = data.find_node("choice_error_label");
     const scene::scene_node_data* lazy_choice = data.find_node("lazy_choice_missing_long_text");
     require(function_title != nullptr, "function title node exists");
@@ -737,6 +747,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(session_active_flag != nullptr, "function active flag node exists");
     require(empty_error_flag != nullptr, "empty function node exists");
     require(string_predicates != nullptr, "string predicate function node exists");
+    require(prompt_length != nullptr, "length function node exists");
     require(choice_label != nullptr, "choose function node exists");
     require(lazy_choice != nullptr, "lazy choose function node exists");
     require(function_title->text_runs.front().text == "Geography / Day 1", "concat function renders text");
@@ -746,6 +757,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(session_active_flag->text_runs.front().text == "true", "equals function renders boolean");
     require(empty_error_flag->text_runs.front().text == "true", "empty function renders boolean");
     require(string_predicates->text_runs.front().text == "true / true / true", "string predicate functions render booleans");
+    require(prompt_length->text_runs.front().text == "17", "length function renders string length");
     require(choice_label->text_runs.front().text == "No error", "choose function renders fallback branch");
     require(lazy_choice->text_runs.front().text == "No long text", "choose function only evaluates selected branch");
     require(data.contains_node("function_condition_active"), "function expression can drive conditions");
@@ -944,6 +956,14 @@ void test_expression_function_errors_are_reported()
         snapshot,
         "contains expects 2 argument",
         "contains function arg count errors are reported");
+
+    presentation::app_scene_script_document length_extra_arg = make_active_question_script();
+    append_invalid_function_node(length_extra_arg, "{{ length(question.prompt, \"extra\") }}");
+    require_compile_error_contains(
+        length_extra_arg,
+        snapshot,
+        "length expects 1 argument",
+        "length function arg count errors are reported");
 
     presentation::app_scene_script_document format_count_missing_arg = make_active_question_script();
     append_invalid_function_node(format_count_missing_arg, "{{ format_count(settings.count) }}");

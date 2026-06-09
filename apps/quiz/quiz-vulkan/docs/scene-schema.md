@@ -100,6 +100,7 @@ The expression engine also supports pure function calls:
 - `contains(value, needle)`
 - `starts_with(value, prefix)`
 - `ends_with(value, suffix)`
+- `length(value)`
 - `format_count(count, singular, plural?)`
 - `choose(condition, value_when_true, value_when_false)`
 - `safe_id(value, fallback?)`
@@ -112,8 +113,9 @@ evaluates the selected branch, which allows fallback bindings such as
 Use `safe_id(...)` when dynamic node IDs need stable slug text, for example
 `option_{{ safe_id(option.text, option.index) }}`. Use `setting(...)` to read
 app settings by key without exposing the map shape to the renderer. Use
-`format_count(...)` for stable singular/plural count labels in script-authored
-copy.
+`length(...)` when script-authored copy or conditions need the rendered string
+length. Use `format_count(...)` for stable singular/plural count labels in
+script-authored copy.
 
 Text-answer controls may use legacy-only events because the submitted text is
 provided by the input router at runtime. Other script commands should prefer the

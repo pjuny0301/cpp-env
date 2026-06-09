@@ -711,6 +711,20 @@ inline bool evaluate_script_function(
         return true;
     }
 
+    if (name == "length") {
+        if (!require_script_function_arg_count(name, args, 1, error)) {
+            return false;
+        }
+
+        script_value arg_value;
+        if (!evaluate_expression(args.front(), context, arg_value, error)) {
+            return false;
+        }
+
+        value = script_value::integer(static_cast<std::int64_t>(arg_value.to_string().size()));
+        return true;
+    }
+
     if (name == "format_count") {
         if (args.size() < 2 || args.size() > 3) {
             error = "script function format_count expects 2 or 3 argument(s), got " + std::to_string(args.size());

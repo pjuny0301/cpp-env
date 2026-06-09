@@ -135,3 +135,13 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: push Track C branch update; continue next independent stretch item
 - blocker(있으면): 없음
 - 검증: `git diff --check` passed
+
+### [CP-track-c-structure-008]
+- 시각 UTC: 2026-06-09T15:01:48Z
+- 태스크: Stretch backlog - document React app package identities
+- status: done
+- 변경 파일: apps/quiz/android-quiz-app/README.md, apps/quiz/quiz-editor/README.md
+- commit SHA: 1cef739
+- 다음 단계: push Track C branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `git diff --check` passed

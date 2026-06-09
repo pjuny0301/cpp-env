@@ -56,6 +56,8 @@ Schema version 2 documents contain:
 - node definitions with layout rules, style tokens, text runs, image refs, and
   generic scene semantics
 - data bindings such as `{{ question.prompt }}`
+- session bindings such as `{{ session.progress }}` and
+  `{{ session.mode }} / {{ session.phase }}`
 - `question.options` repeaters
 - conditions
 - event handlers with typed commands and optional legacy action bindings

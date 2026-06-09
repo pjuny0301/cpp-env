@@ -95,6 +95,33 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     prompt.bindings.push_back({"text", "{{ question.prompt }}"});
     script.nodes.push_back(std::move(prompt));
 
+    presentation::app_scene_script_node progress;
+    progress.id = "session_progress";
+    progress.parent_id = "script_root";
+    progress.kind = scene::scene_node_kind::text;
+    progress.debug_name = "session progress";
+    progress.style.token = "muted";
+    progress.bindings.push_back({"text", "{{ session.progress }}"});
+    script.nodes.push_back(std::move(progress));
+
+    presentation::app_scene_script_node session_mode;
+    session_mode.id = "session_mode_phase";
+    session_mode.parent_id = "script_root";
+    session_mode.kind = scene::scene_node_kind::text;
+    session_mode.debug_name = "session mode phase";
+    session_mode.style.token = "muted";
+    session_mode.bindings.push_back({"text", "{{ session.mode }} / {{ session.phase }}"});
+    script.nodes.push_back(std::move(session_mode));
+
+    presentation::app_scene_script_node session_count;
+    session_count.id = "session_question_count";
+    session_count.parent_id = "script_root";
+    session_count.kind = scene::scene_node_kind::text;
+    session_count.debug_name = "session question count";
+    session_count.style.token = "muted";
+    session_count.bindings.push_back({"text", "{{ session.question_count }}"});
+    script.nodes.push_back(std::move(session_count));
+
     presentation::app_scene_script_node formatted_prompt;
     formatted_prompt.id = "question_prompt_upper";
     formatted_prompt.parent_id = "script_root";
@@ -197,6 +224,15 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(prompt != nullptr, "prompt node exists");
     require(prompt->text_runs.size() == 1, "prompt text run exists");
     require(prompt->text_runs.front().text == "Capital of Korea?", "prompt binding renders question.prompt");
+    const scene::scene_node_data* progress = data.find_node("session_progress");
+    const scene::scene_node_data* session_mode = data.find_node("session_mode_phase");
+    const scene::scene_node_data* session_count = data.find_node("session_question_count");
+    require(progress != nullptr, "session progress node exists");
+    require(session_mode != nullptr, "session mode node exists");
+    require(session_count != nullptr, "session count node exists");
+    require(progress->text_runs.front().text == "Question 1 of 1", "session progress binding renders");
+    require(session_mode->text_runs.front().text == "normal / active", "session mode and phase render");
+    require(session_count->text_runs.front().text == "1", "session question count renders");
     const scene::scene_node_data* formatted_prompt = data.find_node("question_prompt_upper");
     const scene::scene_node_data* formatted_type = data.find_node("question_type_lower");
     require(formatted_prompt != nullptr, "formatted prompt node exists");

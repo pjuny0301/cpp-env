@@ -383,6 +383,11 @@ inline const domain::question_snapshot* current_question(const domain::app_snaps
     return &(*snapshot.active_session->current_question);
 }
 
+inline const domain::session_snapshot* current_session(const domain::app_snapshot& snapshot)
+{
+    return snapshot.active_session.has_value() ? &(*snapshot.active_session) : nullptr;
+}
+
 inline bool evaluate_path(std::string_view raw_expression, const eval_context& context, script_value& value, std::string& error)
 {
     const std::string expression = strip_optional_quotes(raw_expression);
@@ -403,6 +408,56 @@ inline bool evaluate_path(std::string_view raw_expression, const eval_context& c
 
     if (expression == "question.exists") {
         value = script_value::boolean(current_question(context.snapshot) != nullptr);
+        return true;
+    }
+
+    const domain::session_snapshot* session = current_session(context.snapshot);
+    if (expression == "session.exists") {
+        value = script_value::boolean(session != nullptr);
+        return true;
+    }
+    if (expression == "session.mode") {
+        if (session == nullptr) {
+            error = "expression session.mode requires an active session";
+            return false;
+        }
+        value = script_value::string(std::string(domain::to_string(session->mode)));
+        return true;
+    }
+    if (expression == "session.phase") {
+        if (session == nullptr) {
+            error = "expression session.phase requires an active session";
+            return false;
+        }
+        value = script_value::string(std::string(domain::to_string(session->phase)));
+        return true;
+    }
+    if (expression == "session.current_index") {
+        value = script_value::integer(session == nullptr ? 0 : static_cast<std::int64_t>(session->current_index));
+        return true;
+    }
+    if (expression == "session.question_count") {
+        value = script_value::integer(session == nullptr ? 0 : static_cast<std::int64_t>(session->question_count));
+        return true;
+    }
+    if (expression == "session.progress") {
+        if (session == nullptr) {
+            error = "expression session.progress requires an active session";
+            return false;
+        }
+        value = session->question_count == 0
+            ? script_value::string("No questions")
+            : script_value::string(
+                "Question " + std::to_string(std::min(session->current_index + 1, session->question_count))
+                + " of " + std::to_string(session->question_count));
+        return true;
+    }
+    if (expression == "session.completed") {
+        value = script_value::boolean(session != nullptr && session->completed);
+        return true;
+    }
+    if (expression == "session.has_feedback") {
+        value = script_value::boolean(session != nullptr && session->feedback.has_value());
         return true;
     }
 

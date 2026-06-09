@@ -38,6 +38,16 @@ nodes:
     kind: text
     binding:
       text: {{ question.prompt }}
+  - id: session_progress
+    parent_id: script_root
+    kind: text
+    binding:
+      text: {{ session.progress }}
+  - id: session_mode_phase
+    parent_id: script_root
+    kind: text
+    binding:
+      text: {{ session.mode }} / {{ session.phase }}
   - id: question_prompt_upper
     parent_id: script_root
     kind: text

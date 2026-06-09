@@ -146,3 +146,13 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: push Track B branch update; continue next independent stretch item
 - blocker(있으면): 없음
 - 검증: `bash -n codex-workers/worker-status.sh` passed; `codex-workers/worker-status.sh --help` passed; `QUIZ_CODEX_BASE_REF=HEAD codex-workers/worker-status.sh "$(pwd)"` passed; `QUIZ_CODEX_BASE_REF=HEAD codex-workers/worker-status.sh --tsv "$(pwd)"` passed; `QUIZ_CODEX_STATUS_FORMAT=bad codex-workers/worker-status.sh "$(pwd)"` exited 64 with validation error; `codex-workers/verify-worker-ledger.sh codex-workers/worker-ledger.tsv` passed; `codex-workers/verify-source-manifest.sh "$(pwd)"` passed; `codex-workers/verify-external-artifacts.sh "$(pwd)"` passed; `git diff --check` passed
+
+### [CP-track-b-current-008]
+- 시각 UTC: 2026-06-09T13:29:39Z
+- 태스크: Stretch backlog - report Track B TSV worker status rollup
+- status: done
+- 변경 파일: reports/progress/2026-06-09T132832Z-track-b-status-tsv-rollup.md
+- commit SHA: cf0b508
+- 다음 단계: push Track B branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `git diff --check` passed

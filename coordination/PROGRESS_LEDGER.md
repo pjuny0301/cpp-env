@@ -23,6 +23,7 @@
 | s-B / Hypatia / 019ea8a8-33d8-78c3-8c97-fea0c36bfe3e | B | B1-B7 | active | codex/track-b-workflow-20260608T1912Z | 2026-06-08T19:13:20Z |
 | s-C / Confucius / 019ea8a8-3639-7673-8a3a-1122c1c5e3f7 | C | C1-C5 | active | codex/track-c-structure-20260608T1912Z | 2026-06-08T19:13:20Z |
 | track-a-current | A | A1-A4 | active | codex/track-a-ui-engine-20260608T1912Z | 2026-06-08T19:20:15Z |
+| track-a-current | A | A7 | done | codex/track-a-ui-engine-20260608T1912Z | 2026-06-09T06:42:32Z |
 
 status: pending | active | blocked | waiting | done
 
@@ -117,3 +118,14 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: Start A7 Phase 5 generic scene cleanup and unblock Track D validation/tooling work
 - blocker(있으면): 없음
 - 검증: `cmake --build --preset linux-debug --target quiz_vulkan_app_input_router_tests quiz_vulkan_app_quiz_screens_tests quiz_vulkan_app_scene_script_tests quiz_vulkan_app_action_router_tests quiz_vulkan_architecture_boundary_tests quiz_vulkan_interface_contract_compile_tests` passed; `ctest --test-dir build/out/quiz/quiz-vulkan/linux-ninja -R "quiz_vulkan_(app_input_router_tests|app_quiz_screens_tests|app_scene_script_tests|app_action_router_tests|architecture_boundary_tests|interface_contract_compile_tests)$" --output-on-failure` passed 5/5; `git diff --check` passed
+
+### [CP-track-a-current-005]
+- 시각 UTC: 2026-06-09T06:42:32Z
+- 태스크: A7 Phase 5 generic scene semantics cleanup
+- status: done
+- 변경 파일: apps/quiz/quiz-vulkan/src/core/scene/scene_layout_data.h, apps/quiz/quiz-vulkan/src/app/app_quiz_scene_semantics.h, apps/quiz/quiz-vulkan/src/app/app_quiz_screens.h, apps/quiz/quiz-vulkan/src/app/app_input_router.cpp, apps/quiz/quiz-vulkan/src/app/app_demo.cpp, focused tests, CMakeLists.txt
+- commit SHA: 22ebbec
+- 다음 단계: push Track A branch update to PR #24; continue stretch backlog/integration reporting
+- blocker(있으면): 없음
+- 검증: `cmake --build --preset linux-debug --target quiz_vulkan_app_input_router_tests quiz_vulkan_app_quiz_screens_tests quiz_vulkan_app_scene_script_tests quiz_vulkan_layout_placer_tests quiz_vulkan_scene_layout_data_tests quiz_vulkan_architecture_boundary_tests quiz_vulkan_interface_contract_compile_tests` passed; `ctest --test-dir build/out/quiz/quiz-vulkan/linux-ninja -R "quiz_vulkan_(app_input_router_tests|app_quiz_screens_tests|app_scene_script_tests|layout_placer_tests|scene_layout_data_tests|architecture_boundary_tests)$" --output-on-failure` passed 6/6; `git diff --check` passed; `git diff --cached --check` passed
+- 확인: core scene/layout targeted scan has no quiz semantic role/state tokens (`scene_quiz`, `quiz_question`, `quiz_option`, `quiz_answer`, `question_length`, `accepts_keyboard`).

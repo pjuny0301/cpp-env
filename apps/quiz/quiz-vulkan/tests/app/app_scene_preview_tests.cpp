@@ -197,6 +197,27 @@ void test_preview_request_validation()
         quiz_vulkan::presentation::preview_app_scene_script({});
     require(!missing_document.ok(), "preview rejects missing document");
     require(!missing_document.error.empty(), "preview reports missing document error");
+
+    const quiz_vulkan::presentation::app_scene_script_parse_result parsed =
+        quiz_vulkan::presentation::parse_app_scene_script_json(quiz_vulkan::presentation::day_intro_screen_script_json);
+    require(parsed.ok(), "preview validation fixture parses");
+
+    const quiz_vulkan::presentation::app_scene_preview_result missing_snapshot =
+        quiz_vulkan::presentation::preview_app_scene_script(quiz_vulkan::presentation::app_scene_preview_request{
+            .document = &(*parsed.document),
+        });
+    require(!missing_snapshot.ok(), "preview rejects missing snapshot");
+    require(missing_snapshot.error == "preview request is missing an app snapshot", "preview reports missing snapshot");
+
+    const std::vector<quiz_vulkan::domain::deck> decks{make_test_deck()};
+    const quiz_vulkan::domain::app_snapshot snapshot = make_snapshot(decks);
+    const quiz_vulkan::presentation::app_scene_preview_result missing_metrics =
+        quiz_vulkan::presentation::preview_app_scene_script(quiz_vulkan::presentation::app_scene_preview_request{
+            .document = &(*parsed.document),
+            .snapshot = &snapshot,
+        });
+    require(!missing_metrics.ok(), "preview rejects missing text metrics");
+    require(missing_metrics.error == "preview request is missing text metrics", "preview reports missing text metrics");
 }
 
 } // namespace

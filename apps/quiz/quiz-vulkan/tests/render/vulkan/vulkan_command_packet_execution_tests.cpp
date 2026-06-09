@@ -828,6 +828,39 @@ ready_image_native_packet_fixture make_ready_image_native_packet_fixture(
     };
 }
 
+struct ready_descriptor_update_execution_fixture {
+    quiz_vulkan::render::vulkan_backend::vulkan_native_descriptor_update_command_path_result
+        path;
+    quiz_vulkan::render::vulkan_backend::vulkan_native_function_table_diagnostics
+        native_functions;
+};
+
+ready_descriptor_update_execution_fixture make_ready_descriptor_update_execution_fixture(
+    quiz_vulkan::render::vulkan_backend::vulkan_native_function_table_diagnostics
+        native_functions = make_native_descriptor_write_bind_functions())
+{
+    namespace vulkan_backend = quiz_vulkan::render::vulkan_backend;
+
+    ready_image_payload_descriptor_binding_fixture fixture =
+        make_ready_image_payload_descriptor_binding_fixture(std::move(native_functions));
+    const vulkan_backend::vulkan_native_image_payload_descriptor_binding_result binding =
+        vulkan_backend::build_vulkan_native_image_payload_descriptor_binding_result(
+            fixture.bridge,
+            fixture.payload_recording,
+            fixture.pipeline_layout,
+            fixture.native_functions);
+    const vulkan_backend::vulkan_native_descriptor_write_bind_call_result calls =
+        vulkan_backend::build_vulkan_native_descriptor_write_bind_call_result(
+            binding,
+            fixture.native_functions);
+
+    return ready_descriptor_update_execution_fixture{
+        .path = vulkan_backend::build_vulkan_native_descriptor_update_command_path_result(
+            calls),
+        .native_functions = std::move(fixture.native_functions),
+    };
+}
+
 std::size_t count_native_calls_of_kind(
     const quiz_vulkan::render::vulkan_backend::vulkan_native_command_packet_execution_result& result,
     quiz_vulkan::render::vulkan_backend::vulkan_native_command_packet_call_kind kind)
@@ -1123,6 +1156,29 @@ void test_vulkan_command_packet_execution_names_are_stable()
                 stale_payload_identity)
             == std::string_view{"stale_payload_identity"},
         "native descriptor update command path stale identity name is stable");
+    require(
+        vulkan_backend::native_descriptor_update_execution_status_name(
+            vulkan_backend::vulkan_native_descriptor_update_execution_status::ready)
+            == std::string_view{"ready"},
+        "native descriptor update execution ready name is stable");
+    require(
+        vulkan_backend::native_descriptor_update_execution_status_name(
+            vulkan_backend::vulkan_native_descriptor_update_execution_status::
+                invalid_layout)
+            == std::string_view{"invalid_layout"},
+        "native descriptor update execution invalid layout name is stable");
+    require(
+        vulkan_backend::native_descriptor_update_execution_status_name(
+            vulkan_backend::vulkan_native_descriptor_update_execution_status::
+                duplicate_command)
+            == std::string_view{"duplicate_command"},
+        "native descriptor update execution duplicate command name is stable");
+    require(
+        vulkan_backend::native_descriptor_update_execution_status_name(
+            vulkan_backend::vulkan_native_descriptor_update_execution_status::
+                wrong_packet)
+            == std::string_view{"wrong_packet"},
+        "native descriptor update execution wrong packet name is stable");
     require(
         vulkan_backend::scoped_command_packet_execution_status_name(
             vulkan_backend::vulkan_scoped_command_packet_execution_status::completed)
@@ -2831,6 +2887,242 @@ void test_vulkan_native_descriptor_update_command_path_blocks_stale_payload_iden
         "stale payload identity records no successful descriptor update commands");
 }
 
+void test_vulkan_native_descriptor_update_execution_accepts_ready_path()
+{
+    using namespace quiz_vulkan::render;
+
+    ready_descriptor_update_execution_fixture fixture =
+        make_ready_descriptor_update_execution_fixture();
+    const vulkan_backend::vulkan_native_descriptor_update_execution_result execution =
+        vulkan_backend::build_vulkan_native_descriptor_update_execution_result(
+            fixture.path,
+            fixture.native_functions);
+
+    require(fixture.path.completed(), "descriptor update command path is complete");
+    require(execution.completed(), "descriptor update execution completes");
+    require(
+        execution.status
+            == vulkan_backend::vulkan_native_descriptor_update_execution_status::ready,
+        "descriptor update execution reports ready");
+    require(execution.fake_dispatch_ready, "descriptor update execution has fake dispatch evidence");
+    require(
+        execution.real_dispatch_blocked,
+        "descriptor update execution preserves real dispatch blocker");
+    require(
+        execution.planned_update_command_count == 2,
+        "descriptor update execution plans update commands");
+    require(
+        execution.planned_bind_command_count == 1,
+        "descriptor update execution plans bind commands");
+    require(execution.execution_count == 3, "descriptor update execution records all commands");
+    require(
+        execution.completed_execution_count == 3,
+        "descriptor update execution records completed commands");
+    require(
+        execution.executed_update_command_count == 2,
+        "descriptor update execution counts update commands");
+    require(
+        execution.executed_bind_command_count == 1,
+        "descriptor update execution counts bind commands");
+
+    const vulkan_backend::vulkan_native_descriptor_update_execution_record& update =
+        execution.executions.front();
+    require(update.successful(), "descriptor update execution record is successful");
+    require(
+        update.kind
+            == vulkan_backend::vulkan_native_descriptor_update_command_kind::
+                update_descriptor_set,
+        "first execution record updates descriptor set");
+    require(update.packet_index == 0, "update execution preserves packet id");
+    require(update.packet_command_index == 20, "update execution preserves command id");
+    require(update.descriptor_set.value == 9100, "update execution preserves descriptor set");
+    require(update.image_view.value == 12000, "update execution preserves image view");
+    require(update.sampler.value == 13000, "update execution preserves sampler");
+    require(update.image_layout.valid(), "update execution preserves image layout");
+    require(
+        update.payload_identity
+            == "packet:0:set:0:binding:1:kind:image_texture:resource:fixture://renderer/card.png",
+        "update execution preserves payload identity");
+
+    const vulkan_backend::vulkan_native_descriptor_update_execution_record& bind =
+        execution.executions.back();
+    require(bind.successful(), "descriptor bind execution record is successful");
+    require(
+        bind.kind
+            == vulkan_backend::vulkan_native_descriptor_update_command_kind::
+                bind_descriptor_sets,
+        "last execution record binds descriptor sets");
+    require(bind.pipeline_layout.value == 5500, "bind execution preserves pipeline layout");
+    require(bind.descriptor_set.value == 9100, "bind execution preserves descriptor set");
+    require(bind.descriptor_payloads.size() == 3, "bind execution preserves payload identities");
+}
+
+void test_vulkan_native_descriptor_update_execution_blocks_missing_update_symbol()
+{
+    using namespace quiz_vulkan::render;
+
+    ready_descriptor_update_execution_fixture fixture =
+        make_ready_descriptor_update_execution_fixture();
+    const vulkan_backend::vulkan_native_descriptor_update_execution_result execution =
+        vulkan_backend::build_vulkan_native_descriptor_update_execution_result(
+            fixture.path,
+            make_native_functions());
+
+    require(!execution.completed(), "missing update symbol blocks descriptor update execution");
+    require(
+        execution.status
+            == vulkan_backend::vulkan_native_descriptor_update_execution_status::
+                native_command_symbol_unavailable,
+        "missing update symbol reports native symbol unavailable");
+    require(
+        execution.missing_native_symbol_name == "vkUpdateDescriptorSets",
+        "missing update symbol records exact symbol");
+    require(execution.executions.empty(), "missing update symbol records no executions");
+}
+
+void test_vulkan_native_descriptor_update_execution_blocks_invalid_handles_and_layout()
+{
+    using namespace quiz_vulkan::render;
+
+    ready_descriptor_update_execution_fixture fixture =
+        make_ready_descriptor_update_execution_fixture();
+
+    vulkan_backend::vulkan_native_descriptor_update_command_path_result invalid_set =
+        fixture.path;
+    invalid_set.commands.front().descriptor_set = {};
+    const vulkan_backend::vulkan_native_descriptor_update_execution_result set_result =
+        vulkan_backend::build_vulkan_native_descriptor_update_execution_result(
+            invalid_set,
+            fixture.native_functions);
+    require(!set_result.completed(), "invalid descriptor set blocks execution");
+    require(
+        set_result.status
+            == vulkan_backend::vulkan_native_descriptor_update_execution_status::
+                invalid_descriptor_set,
+        "invalid descriptor set reports exact status");
+    require(set_result.failed_binding == 1, "invalid descriptor set records binding");
+    require(!set_result.executions.empty() && set_result.executions.front().failed,
+        "invalid descriptor set records failed execution");
+
+    vulkan_backend::vulkan_native_descriptor_update_command_path_result invalid_view =
+        fixture.path;
+    invalid_view.commands.front().image_view = {};
+    const vulkan_backend::vulkan_native_descriptor_update_execution_result view_result =
+        vulkan_backend::build_vulkan_native_descriptor_update_execution_result(
+            invalid_view,
+            fixture.native_functions);
+    require(!view_result.completed(), "invalid image view blocks execution");
+    require(
+        view_result.status
+            == vulkan_backend::vulkan_native_descriptor_update_execution_status::
+                invalid_image_view,
+        "invalid image view reports exact status");
+
+    vulkan_backend::vulkan_native_descriptor_update_command_path_result invalid_sampler =
+        fixture.path;
+    invalid_sampler.commands.front().sampler = {};
+    const vulkan_backend::vulkan_native_descriptor_update_execution_result sampler_result =
+        vulkan_backend::build_vulkan_native_descriptor_update_execution_result(
+            invalid_sampler,
+            fixture.native_functions);
+    require(!sampler_result.completed(), "invalid sampler blocks execution");
+    require(
+        sampler_result.status
+            == vulkan_backend::vulkan_native_descriptor_update_execution_status::
+                invalid_sampler,
+        "invalid sampler reports exact status");
+
+    vulkan_backend::vulkan_native_descriptor_update_command_path_result invalid_layout =
+        fixture.path;
+    invalid_layout.commands.front().image_layout = {};
+    const vulkan_backend::vulkan_native_descriptor_update_execution_result layout_result =
+        vulkan_backend::build_vulkan_native_descriptor_update_execution_result(
+            invalid_layout,
+            fixture.native_functions);
+    require(!layout_result.completed(), "invalid image layout blocks execution");
+    require(
+        layout_result.status
+            == vulkan_backend::vulkan_native_descriptor_update_execution_status::
+                invalid_layout,
+        "invalid image layout reports exact status");
+
+    vulkan_backend::vulkan_native_descriptor_update_command_path_result invalid_bind_layout =
+        fixture.path;
+    invalid_bind_layout.commands.back().pipeline_layout = {};
+    const vulkan_backend::vulkan_native_descriptor_update_execution_result bind_layout_result =
+        vulkan_backend::build_vulkan_native_descriptor_update_execution_result(
+            invalid_bind_layout,
+            fixture.native_functions);
+    require(!bind_layout_result.completed(), "invalid bind layout blocks execution");
+    require(
+        bind_layout_result.status
+            == vulkan_backend::vulkan_native_descriptor_update_execution_status::
+                invalid_layout,
+        "invalid bind layout reports exact status");
+}
+
+void test_vulkan_native_descriptor_update_execution_blocks_stale_duplicate_wrong_packet()
+{
+    using namespace quiz_vulkan::render;
+
+    ready_descriptor_update_execution_fixture fixture =
+        make_ready_descriptor_update_execution_fixture();
+
+    vulkan_backend::vulkan_native_descriptor_update_command_path_result stale =
+        fixture.path;
+    stale.commands.front().payload_identity = "stale-update-payload";
+    const vulkan_backend::vulkan_native_descriptor_update_execution_result stale_result =
+        vulkan_backend::build_vulkan_native_descriptor_update_execution_result(
+            stale,
+            fixture.native_functions);
+    require(!stale_result.completed(), "stale payload identity blocks execution");
+    require(
+        stale_result.status
+            == vulkan_backend::vulkan_native_descriptor_update_execution_status::
+                stale_payload_identity,
+        "stale payload identity reports exact status");
+    require(
+        stale_result.failed_payload_identity == "stale-update-payload",
+        "stale payload identity records failed identity");
+
+    vulkan_backend::vulkan_native_descriptor_update_command_path_result duplicate =
+        fixture.path;
+    duplicate.commands.push_back(duplicate.commands.front());
+    duplicate.commands.back().command_index = duplicate.commands.size() - 1;
+    duplicate.command_count = duplicate.commands.size();
+    duplicate.completed_command_count = duplicate.command_count;
+    ++duplicate.planned_update_command_count;
+    ++duplicate.descriptor_update_command_count;
+    const vulkan_backend::vulkan_native_descriptor_update_execution_result duplicate_result =
+        vulkan_backend::build_vulkan_native_descriptor_update_execution_result(
+            duplicate,
+            fixture.native_functions);
+    require(!duplicate_result.completed(), "duplicate command blocks execution");
+    require(
+        duplicate_result.status
+            == vulkan_backend::vulkan_native_descriptor_update_execution_status::
+                duplicate_command,
+        "duplicate command reports exact status");
+    require(
+        duplicate_result.failed_packet_index == 0,
+        "duplicate command preserves failed packet id");
+
+    vulkan_backend::vulkan_native_descriptor_update_command_path_result wrong_packet =
+        fixture.path;
+    wrong_packet.commands.front().packet_index = 99;
+    const vulkan_backend::vulkan_native_descriptor_update_execution_result wrong_result =
+        vulkan_backend::build_vulkan_native_descriptor_update_execution_result(
+            wrong_packet,
+            fixture.native_functions);
+    require(!wrong_result.completed(), "wrong packet command blocks execution");
+    require(
+        wrong_result.status
+            == vulkan_backend::vulkan_native_descriptor_update_execution_status::
+                wrong_packet,
+        "wrong packet command reports exact status");
+    require(wrong_result.failed_packet_index == 99, "wrong packet records failed packet id");
+}
+
 void test_vulkan_native_descriptor_payload_command_recording_blocks_blocked_payload_handoff()
 {
     using namespace quiz_vulkan::render;
@@ -4229,6 +4521,10 @@ int main()
     test_vulkan_native_descriptor_update_command_path_blocks_invalid_image_view();
     test_vulkan_native_descriptor_update_command_path_blocks_invalid_sampler();
     test_vulkan_native_descriptor_update_command_path_blocks_stale_payload_identity();
+    test_vulkan_native_descriptor_update_execution_accepts_ready_path();
+    test_vulkan_native_descriptor_update_execution_blocks_missing_update_symbol();
+    test_vulkan_native_descriptor_update_execution_blocks_invalid_handles_and_layout();
+    test_vulkan_native_descriptor_update_execution_blocks_stale_duplicate_wrong_packet();
     test_vulkan_native_descriptor_payload_command_recording_blocks_blocked_payload_handoff();
     test_vulkan_native_descriptor_payload_command_recording_blocks_missing_payload();
     test_vulkan_native_descriptor_payload_command_recording_blocks_duplicate_payload();

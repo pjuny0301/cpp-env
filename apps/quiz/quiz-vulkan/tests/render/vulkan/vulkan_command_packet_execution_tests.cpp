@@ -383,6 +383,7 @@ make_native_packet_evidence(
         },
         .descriptor_write_payloads = {},
         .descriptor_payload_binds = {},
+        .descriptor_buffer_binds = {},
         .descriptor_write_calls = {},
         .descriptor_bind_calls = {},
         .descriptor_update_commands = {},
@@ -979,6 +980,23 @@ void test_vulkan_command_packet_execution_names_are_stable()
                 duplicate_packet_binding)
             == std::string_view{"duplicate_packet_binding"},
         "native vertex buffer binding duplicate packet name is stable");
+    require(
+        vulkan_backend::native_buffer_descriptor_allocation_status_name(
+            vulkan_backend::vulkan_native_buffer_descriptor_allocation_status::ready)
+            == std::string_view{"ready"},
+        "native buffer descriptor allocation ready name is stable");
+    require(
+        vulkan_backend::native_buffer_descriptor_allocation_status_name(
+            vulkan_backend::vulkan_native_buffer_descriptor_allocation_status::
+                native_descriptor_write_symbol_unavailable)
+            == std::string_view{"native_descriptor_write_symbol_unavailable"},
+        "native buffer descriptor allocation missing symbol name is stable");
+    require(
+        vulkan_backend::native_buffer_descriptor_allocation_status_name(
+            vulkan_backend::vulkan_native_buffer_descriptor_allocation_status::
+                invalid_buffer_resource)
+            == std::string_view{"invalid_buffer_resource"},
+        "native buffer descriptor allocation invalid resource name is stable");
     require(
         vulkan_backend::native_descriptor_write_payload_status_name(
             vulkan_backend::vulkan_native_descriptor_write_payload_status::ready)
@@ -2073,6 +2091,192 @@ void test_vulkan_native_descriptor_write_payload_handoff_builds_stable_payloads(
     require(
         merged_evidence.descriptor_write_payloads[1].image_view.value == 12000,
         "merged payload evidence preserves stable image view handle");
+}
+
+void test_vulkan_native_buffer_descriptor_allocation_builds_fake_buffer_binds()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_bridge();
+    const vulkan_backend::vulkan_backend_resource_binding_state resource_bindings =
+        make_ready_resource_bindings(bridge);
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
+            bridge,
+            resource_bindings,
+            vulkan_backend::vulkan_native_descriptor_set_fake_allocator_options{
+                .first_descriptor_set_handle = 9200,
+            });
+    const vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result handoff =
+        vulkan_backend::build_vulkan_native_descriptor_write_payload_handoff_result(
+            bridge,
+            allocation,
+            vulkan_backend::vulkan_native_image_descriptor_resource_evidence{});
+    const vulkan_backend::vulkan_native_buffer_descriptor_allocation_result buffers =
+        vulkan_backend::build_fake_vulkan_native_buffer_descriptor_allocation_result(
+            handoff,
+            make_native_descriptor_write_bind_functions(),
+            vulkan_backend::vulkan_native_buffer_descriptor_fake_allocator_options{
+                .first_buffer_handle = 31000,
+                .offset = 32,
+                .range = 128,
+            });
+
+    require(allocation.completed(), "buffer descriptor allocation starts with descriptor sets");
+    require(handoff.completed(), "buffer descriptor allocation starts with descriptor payloads");
+    require(buffers.checked, "buffer descriptor allocation result is checked");
+    require(buffers.completed(), "buffer descriptor allocation completes");
+    require(
+        buffers.status
+            == vulkan_backend::vulkan_native_buffer_descriptor_allocation_status::ready,
+        "buffer descriptor allocation status is ready");
+    require(
+        buffers.native_descriptor_write_symbol_ready,
+        "buffer descriptor allocation consumes vkUpdateDescriptorSets readiness");
+    require(
+        buffers.planned_payload_count == 4,
+        "buffer descriptor allocation records source payload count");
+    require(
+        buffers.planned_buffer_descriptor_count == 4,
+        "buffer descriptor allocation plans one buffer descriptor per payload");
+    require(
+        buffers.operation_count == 4 && buffers.allocated_buffer_descriptor_count == 4
+            && buffers.bound_buffer_descriptor_count == 4,
+        "buffer descriptor allocation records allocation and bind counts");
+    require(
+        buffers.operations.size() == 4 && buffers.descriptor_buffer_binds.size() == 4,
+        "buffer descriptor allocation stores operations and bind evidence");
+
+    const vulkan_backend::vulkan_native_buffer_descriptor_allocation_operation& operation =
+        buffers.operations.front();
+    require(operation.completed(), "buffer descriptor allocation operation completes");
+    require(
+        operation.symbol_name == "vkUpdateDescriptorSets",
+        "buffer descriptor allocation operation records descriptor update symbol");
+    require(
+        operation.descriptor_kind
+            == vulkan_backend::vulkan_resource_binding_kind::batch_uniform,
+        "buffer descriptor allocation preserves descriptor kind");
+    require(
+        operation.payload_identity
+            == "packet:0:set:0:binding:0:kind:batch_uniform:resource:batch_uniform:packet",
+        "buffer descriptor allocation preserves stable payload identity");
+    require(
+        operation.descriptor_buffer_bind.buffer.value == 31000,
+        "buffer descriptor allocation starts from fake buffer handle base");
+    require(
+        operation.descriptor_buffer_bind.descriptor_set.value == 9200,
+        "buffer descriptor allocation keeps descriptor set handle");
+    require(
+        operation.descriptor_buffer_bind.offset == 32
+            && operation.descriptor_buffer_bind.range == 128,
+        "buffer descriptor allocation records fake buffer range");
+
+    vulkan_backend::vulkan_backend_frame_result frame =
+        make_native_packet_frame_without_descriptor_handles();
+    frame.command_packets = bridge;
+    const vulkan_backend::vulkan_native_command_packet_executor_evidence default_evidence =
+        vulkan_backend::build_vulkan_native_command_packet_executor_evidence(
+            frame,
+            allocation,
+            make_native_functions());
+    require(
+        default_evidence.descriptor_buffer_binds.empty(),
+        "default executor evidence does not fabricate buffer descriptor binds");
+    const vulkan_backend::vulkan_native_command_packet_executor_evidence merged_evidence =
+        vulkan_backend::merge_vulkan_native_buffer_descriptor_allocation_result(
+            default_evidence,
+            buffers);
+    require(
+        merged_evidence.descriptor_buffer_binds.size()
+            == buffers.descriptor_buffer_binds.size(),
+        "explicit merge carries buffer descriptor binds into executor evidence");
+    require(
+        merged_evidence.descriptor_buffer_binds.front().buffer.value == 31000,
+        "merged buffer descriptor evidence preserves fake buffer handle");
+}
+
+void test_vulkan_native_buffer_descriptor_allocation_blocks_missing_write_symbol()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_bridge();
+    const vulkan_backend::vulkan_backend_resource_binding_state resource_bindings =
+        make_ready_resource_bindings(bridge);
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
+            bridge,
+            resource_bindings);
+    const vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result handoff =
+        vulkan_backend::build_vulkan_native_descriptor_write_payload_handoff_result(
+            bridge,
+            allocation,
+            vulkan_backend::vulkan_native_image_descriptor_resource_evidence{});
+    const vulkan_backend::vulkan_native_buffer_descriptor_allocation_result buffers =
+        vulkan_backend::build_fake_vulkan_native_buffer_descriptor_allocation_result(
+            handoff,
+            make_native_descriptor_write_bind_functions({"vkUpdateDescriptorSets"}));
+
+    require(handoff.completed(), "missing write symbol test starts with ready payloads");
+    require(!buffers.completed(), "missing descriptor write symbol blocks buffer allocation");
+    require(
+        buffers.status
+            == vulkan_backend::vulkan_native_buffer_descriptor_allocation_status::
+                native_descriptor_write_symbol_unavailable,
+        "missing descriptor write symbol records exact status");
+    require(
+        buffers.fallback_reason
+            == vulkan_backend::vulkan_backend_fallback_reason::record_commands_failed,
+        "missing descriptor write symbol records fallback");
+    require(
+        buffers.missing_native_symbol_name == "vkUpdateDescriptorSets",
+        "missing descriptor write symbol records symbol name");
+    require(
+        buffers.descriptor_buffer_binds.empty(),
+        "missing descriptor write symbol does not fabricate buffer descriptor binds");
+}
+
+void test_vulkan_native_buffer_descriptor_allocation_blocks_invalid_fake_buffer_handle()
+{
+    using namespace quiz_vulkan::render;
+
+    const vulkan_backend::vulkan_command_packet_bridge_result bridge =
+        make_ready_bridge();
+    const vulkan_backend::vulkan_backend_resource_binding_state resource_bindings =
+        make_ready_resource_bindings(bridge);
+    const vulkan_backend::vulkan_native_descriptor_set_allocation_result allocation =
+        vulkan_backend::build_fake_vulkan_native_descriptor_set_allocation_result(
+            bridge,
+            resource_bindings);
+    const vulkan_backend::vulkan_native_descriptor_write_payload_handoff_result handoff =
+        vulkan_backend::build_vulkan_native_descriptor_write_payload_handoff_result(
+            bridge,
+            allocation,
+            vulkan_backend::vulkan_native_image_descriptor_resource_evidence{});
+    const vulkan_backend::vulkan_native_buffer_descriptor_allocation_result buffers =
+        vulkan_backend::build_fake_vulkan_native_buffer_descriptor_allocation_result(
+            handoff,
+            make_native_descriptor_write_bind_functions(),
+            vulkan_backend::vulkan_native_buffer_descriptor_fake_allocator_options{
+                .first_buffer_handle = 0,
+                .offset = 0,
+                .range = 64,
+            });
+
+    require(handoff.completed(), "invalid fake handle test starts with ready payloads");
+    require(!buffers.completed(), "zero fake buffer handle blocks buffer descriptor allocation");
+    require(
+        buffers.status
+            == vulkan_backend::vulkan_native_buffer_descriptor_allocation_status::
+                invalid_buffer_resource,
+        "zero fake buffer handle records invalid buffer resource");
+    require(buffers.failed_packet_index == 0, "invalid fake buffer handle records failed packet");
+    require(buffers.failed_binding == 0, "invalid fake buffer handle records failed binding");
+    require(
+        buffers.failed_resource_id == "batch_uniform:packet",
+        "invalid fake buffer handle records failed resource id");
 }
 
 void test_vulkan_native_descriptor_payload_command_recording_accepts_ready_image_payloads()
@@ -4214,6 +4418,9 @@ int main()
     test_vulkan_native_descriptor_write_payload_blocks_duplicate_payloads();
     test_vulkan_native_descriptor_write_payload_blocks_incomplete_native_image_handles();
     test_vulkan_native_descriptor_write_payload_handoff_builds_stable_payloads();
+    test_vulkan_native_buffer_descriptor_allocation_builds_fake_buffer_binds();
+    test_vulkan_native_buffer_descriptor_allocation_blocks_missing_write_symbol();
+    test_vulkan_native_buffer_descriptor_allocation_blocks_invalid_fake_buffer_handle();
     test_vulkan_native_descriptor_payload_command_recording_accepts_ready_image_payloads();
     test_vulkan_native_image_payload_descriptor_binding_accepts_ready_payloads();
     test_vulkan_native_image_payload_descriptor_binding_blocks_missing_payload();

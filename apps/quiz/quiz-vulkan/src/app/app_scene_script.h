@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -465,6 +466,72 @@ inline bool evaluate_path(std::string_view raw_expression, const eval_context& c
     return false;
 }
 
+inline bool apply_script_formatter(std::string_view raw_formatter, script_value& value, std::string& error)
+{
+    const std::string formatter = strip_optional_quotes(raw_formatter);
+    if (formatter.empty()) {
+        error = "empty script formatter";
+        return false;
+    }
+
+    std::string rendered = value.to_string();
+    if (formatter == "string") {
+        value = script_value::string(std::move(rendered));
+        return true;
+    }
+    if (formatter == "trim") {
+        value = script_value::string(std::string(trim(rendered)));
+        return true;
+    }
+    if (formatter == "upper") {
+        std::transform(rendered.begin(), rendered.end(), rendered.begin(), [](unsigned char c) {
+            return static_cast<char>(std::toupper(c));
+        });
+        value = script_value::string(std::move(rendered));
+        return true;
+    }
+    if (formatter == "lower") {
+        std::transform(rendered.begin(), rendered.end(), rendered.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        value = script_value::string(std::move(rendered));
+        return true;
+    }
+
+    error = "unsupported script formatter: " + formatter;
+    return false;
+}
+
+inline bool evaluate_expression(std::string_view raw_expression, const eval_context& context, script_value& value, std::string& error)
+{
+    raw_expression = trim(raw_expression);
+    const std::size_t first_pipe = raw_expression.find('|');
+    if (first_pipe == std::string_view::npos) {
+        return evaluate_path(raw_expression, context, value, error);
+    }
+
+    if (!evaluate_path(raw_expression.substr(0, first_pipe), context, value, error)) {
+        return false;
+    }
+
+    std::size_t cursor = first_pipe + 1;
+    while (cursor <= raw_expression.size()) {
+        const std::size_t next_pipe = raw_expression.find('|', cursor);
+        const std::string_view formatter = next_pipe == std::string_view::npos
+            ? raw_expression.substr(cursor)
+            : raw_expression.substr(cursor, next_pipe - cursor);
+        if (!apply_script_formatter(formatter, value, error)) {
+            return false;
+        }
+        if (next_pipe == std::string_view::npos) {
+            return true;
+        }
+        cursor = next_pipe + 1;
+    }
+
+    return true;
+}
+
 inline bool extract_single_interpolation(std::string_view expression, std::string_view& inner)
 {
     expression = trim(expression);
@@ -498,7 +565,7 @@ inline bool render_template(
         }
 
         script_value value;
-        if (!evaluate_path(templated.substr(open + 2, close - open - 2), context, value, error)) {
+        if (!evaluate_expression(templated.substr(open + 2, close - open - 2), context, value, error)) {
             return false;
         }
         rendered += value.to_string();
@@ -516,7 +583,7 @@ inline bool evaluate_scene_value_expression(
     std::string_view inner;
     if (extract_single_interpolation(expression, inner)) {
         script_value script_result;
-        if (!evaluate_path(inner, context, script_result, error)) {
+        if (!evaluate_expression(inner, context, script_result, error)) {
             return false;
         }
         value = script_result.to_scene_value();
@@ -549,7 +616,7 @@ inline bool evaluate_condition(std::string_view raw_condition, const eval_contex
     const std::size_t equals = raw_condition.find("==");
     if (equals != std::string_view::npos) {
         script_value left;
-        if (!evaluate_path(raw_condition.substr(0, equals), context, left, error)) {
+        if (!evaluate_expression(raw_condition.substr(0, equals), context, left, error)) {
             return false;
         }
         const std::string right = strip_optional_quotes(raw_condition.substr(equals + 2));
@@ -561,7 +628,7 @@ inline bool evaluate_condition(std::string_view raw_condition, const eval_contex
     }
 
     script_value evaluated;
-    if (!evaluate_path(raw_condition, context, evaluated, error)) {
+    if (!evaluate_expression(raw_condition, context, evaluated, error)) {
         return false;
     }
     value = evaluated.truthy();

@@ -94,6 +94,24 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     prompt.bindings.push_back({"text", "{{ question.prompt }}"});
     script.nodes.push_back(std::move(prompt));
 
+    presentation::app_scene_script_node formatted_prompt;
+    formatted_prompt.id = "question_prompt_upper";
+    formatted_prompt.parent_id = "script_root";
+    formatted_prompt.kind = scene::scene_node_kind::text;
+    formatted_prompt.debug_name = "formatted question prompt";
+    formatted_prompt.style.token = "muted";
+    formatted_prompt.bindings.push_back({"text", "{{ question.prompt | upper }}"});
+    script.nodes.push_back(std::move(formatted_prompt));
+
+    presentation::app_scene_script_node formatted_type;
+    formatted_type.id = "question_type_lower";
+    formatted_type.parent_id = "script_root";
+    formatted_type.kind = scene::scene_node_kind::text;
+    formatted_type.debug_name = "formatted question type";
+    formatted_type.style.token = "muted";
+    formatted_type.bindings.push_back({"text", "{{ question.type | upper | lower }}"});
+    script.nodes.push_back(std::move(formatted_type));
+
     presentation::app_scene_script_node long_text;
     long_text.id = "question_long_text";
     long_text.parent_id = "script_root";
@@ -178,6 +196,12 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(prompt != nullptr, "prompt node exists");
     require(prompt->text_runs.size() == 1, "prompt text run exists");
     require(prompt->text_runs.front().text == "Capital of Korea?", "prompt binding renders question.prompt");
+    const scene::scene_node_data* formatted_prompt = data.find_node("question_prompt_upper");
+    const scene::scene_node_data* formatted_type = data.find_node("question_type_lower");
+    require(formatted_prompt != nullptr, "formatted prompt node exists");
+    require(formatted_type != nullptr, "formatted type node exists");
+    require(formatted_prompt->text_runs.front().text == "CAPITAL OF KOREA?", "upper formatter renders prompt");
+    require(formatted_type->text_runs.front().text == "answer", "formatter chain renders question type");
     require(!data.contains_node("question_long_text"), "false condition suppresses long text node");
 
     const scene::scene_node_data* option_0 = data.find_node("option_0");

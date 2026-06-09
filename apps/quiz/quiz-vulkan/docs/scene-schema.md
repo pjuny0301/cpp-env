@@ -47,6 +47,8 @@ about scene, UI, or domain concepts.
 `app_scene_script_document` is an app/presentation-layer node DSL. It is not a
 renderer format and it is not owned by `src/core/ui` or `src/render`.
 
+For concrete examples, see `docs/scene-script-examples.md`.
+
 Schema version 2 documents contain:
 
 - screen/template identity

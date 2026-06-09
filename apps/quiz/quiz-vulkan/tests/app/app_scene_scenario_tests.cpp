@@ -104,6 +104,29 @@ quiz_vulkan::domain::deck make_blank_text_deck()
     return quiz_deck;
 }
 
+quiz_vulkan::domain::deck make_multiselect_deck()
+{
+    using namespace quiz_vulkan::domain;
+
+    question quiz_question;
+    quiz_question.id = "q_multi";
+    quiz_question.prompt = "Select the capital of Korea.";
+    quiz_question.type = question_type::multiselect;
+    quiz_question.options.push_back(option{"Seoul", true});
+    quiz_question.options.push_back(option{"Busan", false});
+
+    day quiz_day;
+    quiz_day.id = "day1";
+    quiz_day.title = "Day 1";
+    quiz_day.questions.push_back(std::move(quiz_question));
+
+    deck quiz_deck;
+    quiz_deck.id = "deck1";
+    quiz_deck.title = "Geography";
+    quiz_deck.days.push_back(std::move(quiz_day));
+    return quiz_deck;
+}
+
 void require_trace_entry(
     const quiz_vulkan::app_scene_scenario_trace_entry& entry,
     const char* before_screen,
@@ -340,6 +363,48 @@ void test_quiz_scene_incorrect_text_submit_replay_records_feedback()
     require(feedback.submitted_text_answers.front() == "busan", "incorrect text submit records normalized answer");
 }
 
+void test_quiz_scene_multiselect_replay_records_feedback()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_multiselect_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "submit_multiselect_option",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_active_option_0",
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "multiselect scenario replay succeeds");
+    require(result.trace.size() == 2, "multiselect scenario emits one trace entry per step");
+    require_trace_entry(result.trace[1], "quiz_active", "submit_multiselect", "quiz_feedback", "multiselect trace is stable");
+    require(result.trace[1].target_node_id == "quiz_active_option_0", "multiselect records target node");
+    require(result.trace[1].after_focus_id == "quiz_feedback_continue", "multiselect captures feedback focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::feedback, "multiselect final snapshot is feedback");
+    require(result.final_frame.snapshot.active_session.has_value(), "multiselect final snapshot has session");
+    require(result.final_frame.snapshot.active_session->feedback.has_value(), "multiselect final snapshot has feedback");
+    const domain::answer_record& feedback = *result.final_frame.snapshot.active_session->feedback;
+    require(feedback.outcome == domain::answer_outcome::correct, "multiselect feedback is correct");
+    require(feedback.selected_option_indexes.size() == 1, "multiselect records one selected option");
+    require(feedback.selected_option_indexes.front() == 0, "multiselect records selected option index");
+}
+
 void test_quiz_scene_swipe_skip_replay_reaches_results()
 {
     using namespace quiz_vulkan;
@@ -552,6 +617,7 @@ int main()
     test_quiz_scene_error_recovery_replay_selects_deck();
     test_quiz_scene_text_submit_replay_records_feedback();
     test_quiz_scene_incorrect_text_submit_replay_records_feedback();
+    test_quiz_scene_multiselect_replay_records_feedback();
     test_quiz_scene_swipe_skip_replay_reaches_results();
     test_quiz_scene_long_press_mark_unknown_updates_learning();
     test_quiz_scene_swipe_previous_replay_returns_to_prior_question();

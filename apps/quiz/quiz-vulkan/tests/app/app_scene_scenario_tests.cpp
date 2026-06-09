@@ -761,6 +761,48 @@ void test_quiz_scene_missing_target_records_failure_trace()
     require(trace.error == result.error, "missing target trace records failure error");
 }
 
+void test_quiz_scene_unhandled_text_submit_records_noop_trace()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "text_submit_without_handler",
+                .input = app_scene_scenario_input_kind::text_submit,
+                .target_node_id = "deck_list_deck_deck1",
+                .committed_text = "ignored",
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "unhandled text submit scenario remains successful");
+    require(result.trace.size() == 1, "unhandled text submit scenario records one trace");
+
+    const app_scene_scenario_trace_entry& trace = result.trace.front();
+    require(trace.step_name == "text_submit_without_handler", "unhandled text submit trace records step name");
+    require(trace.event_kind == "text_submit", "unhandled text submit trace records event kind");
+    require(trace.target_node_id == "deck_list_deck_deck1", "unhandled text submit trace records target");
+    require(trace.before_screen_id == "deck_list", "unhandled text submit trace records before screen");
+    require(trace.after_screen_id == "deck_list", "unhandled text submit trace records unchanged after screen");
+    require(trace.before_focus_id == "deck_list_deck_deck1", "unhandled text submit trace records before focus");
+    require(trace.after_focus_id == "deck_list_deck_deck1", "unhandled text submit trace records unchanged after focus");
+    require(!trace.handled, "unhandled text submit trace is not handled");
+    require(!trace.needs_render, "unhandled text submit trace does not request render");
+    require(!trace.clear_text_after_action, "unhandled text submit trace does not clear text");
+    require(trace.action_type.empty(), "unhandled text submit trace records no action");
+    require(trace.error.empty(), "unhandled text submit trace records no error");
+    require(trace.before_node_count == trace.after_node_count, "unhandled text submit keeps node count stable");
+    require(trace.before_input_region_count == trace.after_input_region_count, "unhandled text submit keeps input regions stable");
+    require(result.final_frame.layout.route_state().screen_id == "deck_list", "unhandled text submit final frame remains deck list");
+}
+
 } // namespace
 
 int main()
@@ -780,5 +822,6 @@ int main()
     test_quiz_scene_swipe_previous_replay_returns_to_prior_question();
     test_quiz_scene_settings_close_replay_returns_to_deck_list();
     test_quiz_scene_missing_target_records_failure_trace();
+    test_quiz_scene_unhandled_text_submit_records_noop_trace();
     return 0;
 }

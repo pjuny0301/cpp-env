@@ -117,3 +117,13 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: Start A7 Phase 5 generic scene cleanup and unblock Track D validation/tooling work
 - blocker(있으면): 없음
 - 검증: `cmake --build --preset linux-debug --target quiz_vulkan_app_input_router_tests quiz_vulkan_app_quiz_screens_tests quiz_vulkan_app_scene_script_tests quiz_vulkan_app_action_router_tests quiz_vulkan_architecture_boundary_tests quiz_vulkan_interface_contract_compile_tests` passed; `ctest --test-dir build/out/quiz/quiz-vulkan/linux-ninja -R "quiz_vulkan_(app_input_router_tests|app_quiz_screens_tests|app_scene_script_tests|app_action_router_tests|architecture_boundary_tests|interface_contract_compile_tests)$" --output-on-failure` passed 5/5; `git diff --check` passed
+
+### [CP-track-d-validation-001]
+- 시각 UTC: 2026-06-09T05:42:49Z
+- 태스크: D1 renderer-free script preview runner
+- status: done
+- 변경 파일: apps/quiz/quiz-vulkan/src/app/app_scene_preview.h, apps/quiz/quiz-vulkan/tests/app/app_scene_preview_tests.cpp, apps/quiz/quiz-vulkan/CMakeLists.txt, coordination/SHARED_NOTES.md
+- commit SHA: 8067f64
+- 다음 단계: D2 schema/package version reporting and D3 scenario/event replay validation
+- blocker(있으면): 없음
+- 검증: `cmake --preset linux-ninja` passed; `cmake --build --preset linux-debug --target quiz_vulkan_app_scene_preview_tests quiz_vulkan_app_scene_script_tests quiz_vulkan_app_quiz_screens_tests quiz_vulkan_architecture_boundary_tests` passed; `ctest --test-dir build/out/quiz/quiz-vulkan/linux-ninja -R "quiz_vulkan_(app_scene_preview_tests|app_scene_script_tests|app_quiz_screens_tests|architecture_boundary_tests)$" --output-on-failure` passed 4/4; `git diff --check` passed

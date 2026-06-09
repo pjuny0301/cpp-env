@@ -95,3 +95,13 @@ status: pending | active | blocked | waiting | done
 - PR: https://github.com/pjuny0301/cpp-env/pull/26
 - 다음 단계: Continue Track A A7 generic scene property cleanup
 - blocker(있으면): 없음
+
+### [CP-track-c-structure-004]
+- 시각 UTC: 2026-06-09T12:00:05Z
+- 태스크: Track C shared-ui/app README handoff refresh
+- status: done
+- 변경 파일: apps/quiz/android-quiz-app/README.md, apps/quiz/quiz-editor/README.md, apps/quiz/shared-ui/README.md, coordination/PROGRESS_LEDGER.md
+- commit SHA: pending
+- 다음 단계: Push README handoff refresh to PR #26, then re-check open PR merge states
+- blocker(있으면): 없음
+- 검증: `git diff --check` passed.

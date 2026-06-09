@@ -70,7 +70,7 @@ status: pending | active | blocked | waiting | done
 - 태스크: Track C start, worktree isolation
 - status: active
 - 변경 파일: coordination/SHARED_NOTES.md, coordination/PROGRESS_LEDGER.md
-- commit SHA: pending
+- commit SHA: 23f0de6
 - 다음 단계: C1 requirements authority audit and normalization
 - blocker(있으면): 없음
 - worktree: /mnt/c/Users/박준용/Desktop/goal/worktrees/track-c-structure

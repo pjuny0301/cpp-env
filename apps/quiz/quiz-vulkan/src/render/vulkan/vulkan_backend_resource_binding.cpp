@@ -1963,6 +1963,154 @@ void mark_descriptor_update_command_path_blocker(
     result.diagnostic = std::move(diagnostic);
 }
 
+bool resource_binding_kind_requires_native_buffer_descriptor_resource(
+    vulkan_resource_binding_kind kind)
+{
+    switch (kind) {
+    case vulkan_resource_binding_kind::batch_uniform:
+    case vulkan_resource_binding_kind::quad_vertex_buffer:
+    case vulkan_resource_binding_kind::text_run_buffer:
+    case vulkan_resource_binding_kind::text_glyph_atlas:
+        return true;
+    case vulkan_resource_binding_kind::image_texture:
+    case vulkan_resource_binding_kind::image_sampler:
+        return false;
+    }
+
+    return false;
+}
+
+std::size_t native_buffer_descriptor_payload_count(
+    const vulkan_native_descriptor_write_payload_handoff_result& handoff)
+{
+    std::size_t count = 0;
+    for (const vulkan_native_descriptor_write_payload& payload : handoff.payloads) {
+        if (resource_binding_kind_requires_native_buffer_descriptor_resource(
+                payload.descriptor_kind)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool native_buffer_descriptor_bind_key_exists(
+    const std::vector<vulkan_native_command_packet_descriptor_buffer_bind>& binds,
+    const vulkan_native_descriptor_write_payload& payload)
+{
+    for (const vulkan_native_command_packet_descriptor_buffer_bind& bind : binds) {
+        if (bind.packet_index == payload.packet_index
+            && bind.set == payload.set
+            && bind.binding == payload.binding) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void mark_buffer_descriptor_allocation_blocker(
+    vulkan_native_buffer_descriptor_allocation_result& result,
+    vulkan_native_buffer_descriptor_allocation_status status,
+    vulkan_backend_fallback_reason fallback_reason,
+    std::string diagnostic)
+{
+    result.status = status;
+    result.fallback_reason = fallback_reason;
+    result.diagnostic = std::move(diagnostic);
+}
+
+void mark_buffer_descriptor_allocation_blocker(
+    vulkan_native_buffer_descriptor_allocation_result& result,
+    vulkan_native_buffer_descriptor_allocation_status status,
+    const vulkan_native_descriptor_write_payload& payload,
+    std::string diagnostic)
+{
+    result.status = status;
+    result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+    result.failed_operation_index = result.operations.size();
+    result.failed_packet_index = payload.packet_index;
+    result.failed_command_index = payload.command_index;
+    result.failed_set = payload.set;
+    result.failed_binding = payload.binding;
+    result.failed_descriptor_kind = payload.descriptor_kind;
+    result.failed_resource_id = payload.resource_id;
+    result.failed_payload_identity = descriptor_payload_stable_identity(payload);
+    result.diagnostic = std::move(diagnostic);
+}
+
+vulkan_native_command_packet_descriptor_buffer_bind make_native_descriptor_buffer_bind(
+    const vulkan_native_descriptor_write_payload& payload,
+    std::uintptr_t buffer_handle,
+    vulkan_native_buffer_descriptor_fake_allocator_options options)
+{
+    const bool buffer_payload =
+        resource_binding_kind_requires_native_buffer_descriptor_resource(
+            payload.descriptor_kind);
+    const bool ready =
+        buffer_payload && payload.completed() && payload.descriptor_set.valid()
+        && buffer_handle != 0 && options.range > 0;
+    return vulkan_native_command_packet_descriptor_buffer_bind{
+        .packet_index = payload.packet_index,
+        .command_index = payload.command_index,
+        .set = payload.set,
+        .binding = payload.binding,
+        .descriptor_kind = payload.descriptor_kind,
+        .resource_id = payload.resource_id,
+        .payload_identity = descriptor_payload_stable_identity(payload),
+        .descriptor_set = payload.descriptor_set,
+        .buffer =
+            vulkan_native_descriptor_buffer_handle{
+                .value = ready ? buffer_handle : 0,
+            },
+        .offset = options.offset,
+        .range = options.range,
+        .required = payload.required,
+        .available = ready,
+        .allocation_ready = ready,
+        .bind_ready = ready,
+        .draw_ready = ready,
+        .diagnostic = ready
+            ? "Native Vulkan buffer descriptor allocation and bind evidence is ready"
+            : "Native Vulkan buffer descriptor allocation is missing a valid buffer payload",
+    };
+}
+
+vulkan_native_buffer_descriptor_allocation_operation make_native_buffer_descriptor_operation(
+    const vulkan_native_descriptor_write_payload& payload,
+    const vulkan_native_command_packet_descriptor_buffer_bind& bind,
+    std::size_t operation_index,
+    bool native_function_table_checked,
+    bool native_descriptor_write_symbol_ready)
+{
+    const bool descriptor_payload_ready =
+        payload.completed()
+        && resource_binding_kind_requires_native_buffer_descriptor_resource(
+            payload.descriptor_kind)
+        && bind.payload_identity == descriptor_payload_stable_identity(payload);
+    return vulkan_native_buffer_descriptor_allocation_operation{
+        .operation_index = operation_index,
+        .packet_index = payload.packet_index,
+        .command_index = payload.command_index,
+        .set = payload.set,
+        .binding = payload.binding,
+        .descriptor_kind = payload.descriptor_kind,
+        .symbol_name = std::string{k_native_descriptor_write_symbol},
+        .resource_id = payload.resource_id,
+        .payload_identity = descriptor_payload_stable_identity(payload),
+        .native_function_table_checked = native_function_table_checked,
+        .native_descriptor_write_symbol_ready =
+            native_descriptor_write_symbol_ready,
+        .descriptor_payload_ready = descriptor_payload_ready,
+        .allocation_ready = bind.allocation_ready,
+        .bind_ready = bind.bind_ready,
+        .draw_ready = bind.draw_ready,
+        .blocked = false,
+        .diagnostic = bind.completed()
+            ? "Native Vulkan buffer descriptor allocation operation is ready"
+            : "Native Vulkan buffer descriptor allocation operation is incomplete",
+        .descriptor_buffer_bind = bind,
+    };
+}
+
 } // namespace
 
 vulkan_backend_resource_binding_state build_vulkan_resource_binding_state(
@@ -2222,6 +2370,190 @@ merge_vulkan_native_descriptor_write_payload_handoff_result(
     }
 
     evidence.descriptor_write_payloads = descriptor_write_payloads.payloads;
+    return evidence;
+}
+
+vulkan_native_buffer_descriptor_allocation_result
+build_fake_vulkan_native_buffer_descriptor_allocation_result(
+    const vulkan_native_descriptor_write_payload_handoff_result& descriptor_write_payloads,
+    const vulkan_native_function_table_diagnostics& native_functions,
+    vulkan_native_buffer_descriptor_fake_allocator_options options)
+{
+    vulkan_native_buffer_descriptor_allocation_result result{
+        .checked = true,
+        .status = vulkan_native_buffer_descriptor_allocation_status::not_checked,
+        .fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .descriptor_write_payload_checked = descriptor_write_payloads.checked,
+        .descriptor_write_payload_ready = descriptor_write_payloads.completed(),
+        .native_function_table_checked = native_functions.checked,
+        .native_descriptor_write_symbol_ready =
+            native_function_table_has_ready_symbol(
+                native_functions,
+                k_native_descriptor_write_symbol),
+        .missing_native_symbol_name = {},
+        .planned_payload_count = descriptor_write_payloads.planned_payload_count,
+        .planned_buffer_descriptor_count =
+            native_buffer_descriptor_payload_count(descriptor_write_payloads),
+        .operation_count = 0,
+        .allocated_buffer_descriptor_count = 0,
+        .bound_buffer_descriptor_count = 0,
+        .failed_operation_index = 0,
+        .failed_packet_index = 0,
+        .failed_command_index = 0,
+        .failed_set = 0,
+        .failed_binding = 0,
+        .failed_descriptor_kind = vulkan_resource_binding_kind::batch_uniform,
+        .failed_resource_id = {},
+        .failed_payload_identity = {},
+        .diagnostic = {},
+        .operations = {},
+        .descriptor_buffer_binds = {},
+    };
+
+    if (!descriptor_write_payloads.checked
+        || descriptor_write_payloads.status
+            != vulkan_native_descriptor_write_payload_status::ready
+        || descriptor_write_payloads.fallback_reason
+            != vulkan_backend_fallback_reason::none) {
+        mark_buffer_descriptor_allocation_blocker(
+            result,
+            vulkan_native_buffer_descriptor_allocation_status::
+                descriptor_write_payload_unavailable,
+            descriptor_write_payloads.fallback_reason
+                    == vulkan_backend_fallback_reason::none
+                ? vulkan_backend_fallback_reason::record_commands_failed
+                : descriptor_write_payloads.fallback_reason,
+            "Native Vulkan buffer descriptor allocation is missing ready descriptor write payload handoff evidence");
+        result.failed_packet_index = descriptor_write_payloads.failed_packet_index;
+        result.failed_command_index = descriptor_write_payloads.failed_command_index;
+        result.failed_set = descriptor_write_payloads.failed_set;
+        result.failed_binding = descriptor_write_payloads.failed_binding;
+        result.failed_resource_id = descriptor_write_payloads.failed_resource_id;
+        return result;
+    }
+
+    if (!native_functions.checked) {
+        result.missing_native_symbol_name =
+            std::string{k_native_descriptor_write_symbol};
+        mark_buffer_descriptor_allocation_blocker(
+            result,
+            vulkan_native_buffer_descriptor_allocation_status::
+                native_function_table_unavailable,
+            vulkan_backend_fallback_reason::record_commands_failed,
+            "Native Vulkan buffer descriptor allocation is missing checked native function table diagnostics");
+        return result;
+    }
+
+    if (!result.native_descriptor_write_symbol_ready) {
+        result.missing_native_symbol_name =
+            std::string{k_native_descriptor_write_symbol};
+        mark_buffer_descriptor_allocation_blocker(
+            result,
+            vulkan_native_buffer_descriptor_allocation_status::
+                native_descriptor_write_symbol_unavailable,
+            vulkan_backend_fallback_reason::record_commands_failed,
+            "Native Vulkan buffer descriptor allocation is missing required native symbol: "
+                + result.missing_native_symbol_name);
+        return result;
+    }
+
+    if (result.planned_buffer_descriptor_count == 0) {
+        mark_buffer_descriptor_allocation_blocker(
+            result,
+            vulkan_native_buffer_descriptor_allocation_status::missing_buffer_payload,
+            vulkan_backend_fallback_reason::record_commands_failed,
+            "Native Vulkan buffer descriptor allocation could not find buffer descriptor payloads");
+        return result;
+    }
+
+    result.status = vulkan_native_buffer_descriptor_allocation_status::ready;
+    result.fallback_reason = vulkan_backend_fallback_reason::none;
+    result.operations.reserve(result.planned_buffer_descriptor_count);
+    result.descriptor_buffer_binds.reserve(result.planned_buffer_descriptor_count);
+
+    for (const vulkan_native_descriptor_write_payload& payload :
+         descriptor_write_payloads.payloads) {
+        if (!resource_binding_kind_requires_native_buffer_descriptor_resource(
+                payload.descriptor_kind)) {
+            continue;
+        }
+
+        if (native_buffer_descriptor_bind_key_exists(
+                result.descriptor_buffer_binds,
+                payload)) {
+            mark_buffer_descriptor_allocation_blocker(
+                result,
+                vulkan_native_buffer_descriptor_allocation_status::
+                    duplicate_buffer_payload,
+                payload,
+                "Native Vulkan buffer descriptor allocation found duplicate packet set/binding payload");
+            return result;
+        }
+
+        if (!payload.completed() || payload.resource_id.empty()
+            || !payload.descriptor_set.valid()) {
+            mark_buffer_descriptor_allocation_blocker(
+                result,
+                vulkan_native_buffer_descriptor_allocation_status::
+                    invalid_buffer_resource,
+                payload,
+                "Native Vulkan buffer descriptor allocation found incomplete buffer descriptor payload");
+            return result;
+        }
+
+        const std::uintptr_t buffer_handle =
+            options.first_buffer_handle + result.operations.size();
+        vulkan_native_command_packet_descriptor_buffer_bind bind =
+            make_native_descriptor_buffer_bind(payload, buffer_handle, options);
+        vulkan_native_buffer_descriptor_allocation_operation operation =
+            make_native_buffer_descriptor_operation(
+                payload,
+                bind,
+                result.operations.size(),
+                result.native_function_table_checked,
+                result.native_descriptor_write_symbol_ready);
+        if (!operation.completed()) {
+            mark_buffer_descriptor_allocation_blocker(
+                result,
+                vulkan_native_buffer_descriptor_allocation_status::
+                    invalid_buffer_resource,
+                payload,
+                operation.diagnostic);
+            return result;
+        }
+
+        ++result.operation_count;
+        ++result.allocated_buffer_descriptor_count;
+        ++result.bound_buffer_descriptor_count;
+        result.descriptor_buffer_binds.push_back(bind);
+        result.operations.push_back(std::move(operation));
+    }
+
+    result.diagnostic =
+        "Native Vulkan buffer descriptor allocation and bind evidence is ready";
+    if (!result.completed()) {
+        result.status =
+            vulkan_native_buffer_descriptor_allocation_status::invalid_buffer_resource;
+        result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+        result.diagnostic =
+            "Native Vulkan buffer descriptor allocation could not produce complete buffer bind evidence";
+        return result;
+    }
+
+    return result;
+}
+
+vulkan_native_command_packet_executor_evidence
+merge_vulkan_native_buffer_descriptor_allocation_result(
+    vulkan_native_command_packet_executor_evidence evidence,
+    const vulkan_native_buffer_descriptor_allocation_result& buffer_descriptors)
+{
+    if (!buffer_descriptors.completed()) {
+        return evidence;
+    }
+
+    evidence.descriptor_buffer_binds =
+        buffer_descriptors.descriptor_buffer_binds;
     return evidence;
 }
 

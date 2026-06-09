@@ -1629,6 +1629,164 @@ struct vulkan_native_image_descriptor_resource_evidence {
     }
 };
 
+struct vulkan_native_descriptor_buffer_handle {
+    std::uintptr_t value = 0;
+
+    bool valid() const
+    {
+        return value != 0;
+    }
+};
+
+struct vulkan_native_command_packet_descriptor_buffer_bind {
+    std::size_t packet_index = 0;
+    std::size_t command_index = 0;
+    std::size_t set = 0;
+    std::size_t binding = 0;
+    vulkan_resource_binding_kind descriptor_kind = vulkan_resource_binding_kind::batch_uniform;
+    std::string resource_id;
+    std::string payload_identity;
+    vulkan_native_descriptor_set_handle descriptor_set;
+    vulkan_native_descriptor_buffer_handle buffer;
+    std::size_t offset = 0;
+    std::size_t range = 0;
+    bool required = true;
+    bool available = false;
+    bool allocation_ready = false;
+    bool bind_ready = false;
+    bool draw_ready = false;
+    std::string diagnostic;
+
+    bool completed() const
+    {
+        return !required
+            || (available && allocation_ready && bind_ready && draw_ready
+                && !resource_id.empty() && !payload_identity.empty()
+                && descriptor_set.valid() && buffer.valid() && range > 0);
+    }
+};
+
+enum class vulkan_native_buffer_descriptor_allocation_status {
+    not_checked,
+    ready,
+    descriptor_write_payload_unavailable,
+    native_function_table_unavailable,
+    native_descriptor_write_symbol_unavailable,
+    missing_buffer_payload,
+    duplicate_buffer_payload,
+    invalid_buffer_resource,
+};
+
+std::string_view native_buffer_descriptor_allocation_status_name(
+    vulkan_native_buffer_descriptor_allocation_status status);
+
+struct vulkan_native_buffer_descriptor_fake_allocator_options {
+    std::uintptr_t first_buffer_handle = 19000;
+    std::size_t offset = 0;
+    std::size_t range = 256;
+};
+
+struct vulkan_native_buffer_descriptor_allocation_operation {
+    std::size_t operation_index = 0;
+    std::size_t packet_index = 0;
+    std::size_t command_index = 0;
+    std::size_t set = 0;
+    std::size_t binding = 0;
+    vulkan_resource_binding_kind descriptor_kind = vulkan_resource_binding_kind::batch_uniform;
+    std::string symbol_name;
+    std::string resource_id;
+    std::string payload_identity;
+    bool native_function_table_checked = false;
+    bool native_descriptor_write_symbol_ready = false;
+    bool descriptor_payload_ready = false;
+    bool allocation_ready = false;
+    bool bind_ready = false;
+    bool draw_ready = false;
+    bool blocked = false;
+    std::string diagnostic;
+    vulkan_native_command_packet_descriptor_buffer_bind descriptor_buffer_bind;
+
+    bool completed() const
+    {
+        return native_function_table_checked && native_descriptor_write_symbol_ready
+            && descriptor_payload_ready && allocation_ready && bind_ready && draw_ready
+            && !blocked && !symbol_name.empty() && !resource_id.empty()
+            && !payload_identity.empty() && descriptor_buffer_bind.completed();
+    }
+};
+
+struct vulkan_native_buffer_descriptor_allocation_result {
+    bool checked = false;
+    vulkan_native_buffer_descriptor_allocation_status status =
+        vulkan_native_buffer_descriptor_allocation_status::not_checked;
+    vulkan_backend_fallback_reason fallback_reason = vulkan_backend_fallback_reason::not_requested;
+    bool descriptor_write_payload_checked = false;
+    bool descriptor_write_payload_ready = false;
+    bool native_function_table_checked = false;
+    bool native_descriptor_write_symbol_ready = false;
+    std::string missing_native_symbol_name;
+    std::size_t planned_payload_count = 0;
+    std::size_t planned_buffer_descriptor_count = 0;
+    std::size_t operation_count = 0;
+    std::size_t allocated_buffer_descriptor_count = 0;
+    std::size_t bound_buffer_descriptor_count = 0;
+    std::size_t failed_operation_index = 0;
+    std::size_t failed_packet_index = 0;
+    std::size_t failed_command_index = 0;
+    std::size_t failed_set = 0;
+    std::size_t failed_binding = 0;
+    vulkan_resource_binding_kind failed_descriptor_kind =
+        vulkan_resource_binding_kind::batch_uniform;
+    std::string failed_resource_id;
+    std::string failed_payload_identity;
+    std::string diagnostic;
+    std::vector<vulkan_native_buffer_descriptor_allocation_operation> operations;
+    std::vector<vulkan_native_command_packet_descriptor_buffer_bind> descriptor_buffer_binds;
+
+    bool completed() const
+    {
+        if (!checked
+            || status != vulkan_native_buffer_descriptor_allocation_status::ready
+            || fallback_reason != vulkan_backend_fallback_reason::none
+            || !descriptor_write_payload_checked || !descriptor_write_payload_ready
+            || !native_function_table_checked || !native_descriptor_write_symbol_ready
+            || operation_count != planned_buffer_descriptor_count
+            || allocated_buffer_descriptor_count != planned_buffer_descriptor_count
+            || bound_buffer_descriptor_count != planned_buffer_descriptor_count
+            || operations.size() != operation_count
+            || descriptor_buffer_binds.size() != bound_buffer_descriptor_count) {
+            return false;
+        }
+        for (std::size_t operation_index = 0;
+             operation_index < operations.size();
+             ++operation_index) {
+            const vulkan_native_buffer_descriptor_allocation_operation& operation =
+                operations[operation_index];
+            if (!operation.completed()) {
+                return false;
+            }
+            for (std::size_t next_index = operation_index + 1;
+                 next_index < operations.size();
+                 ++next_index) {
+                const vulkan_native_buffer_descriptor_allocation_operation& next_operation =
+                    operations[next_index];
+                if (operation.packet_index == next_operation.packet_index
+                    && operation.set == next_operation.set
+                    && operation.binding == next_operation.binding) {
+                    return false;
+                }
+            }
+        }
+        for (const vulkan_native_command_packet_descriptor_buffer_bind& bind :
+             descriptor_buffer_binds) {
+            if (!bind.completed()) {
+                return false;
+            }
+        }
+        return planned_buffer_descriptor_count > 0;
+    }
+};
+
 struct vulkan_native_descriptor_write_payload {
     std::size_t packet_index = 0;
     std::size_t command_index = 0;
@@ -2081,6 +2239,7 @@ struct vulkan_native_command_packet_executor_evidence {
     std::vector<vulkan_native_command_packet_descriptor_set> descriptor_sets;
     std::vector<vulkan_native_descriptor_write_payload> descriptor_write_payloads;
     std::vector<vulkan_native_command_packet_descriptor_payload_bind> descriptor_payload_binds;
+    std::vector<vulkan_native_command_packet_descriptor_buffer_bind> descriptor_buffer_binds;
     std::vector<vulkan_native_descriptor_write_call_evidence> descriptor_write_calls;
     std::vector<vulkan_native_descriptor_bind_call_evidence> descriptor_bind_calls;
     std::vector<vulkan_native_descriptor_update_command_record> descriptor_update_commands;
@@ -4014,6 +4173,17 @@ vulkan_native_descriptor_write_payload_handoff_result build_vulkan_native_descri
 vulkan_native_command_packet_executor_evidence merge_vulkan_native_descriptor_write_payload_handoff_result(
     vulkan_native_command_packet_executor_evidence evidence,
     const vulkan_native_descriptor_write_payload_handoff_result& descriptor_write_payloads);
+
+vulkan_native_buffer_descriptor_allocation_result
+build_fake_vulkan_native_buffer_descriptor_allocation_result(
+    const vulkan_native_descriptor_write_payload_handoff_result& descriptor_write_payloads,
+    const vulkan_native_function_table_diagnostics& native_functions = {},
+    vulkan_native_buffer_descriptor_fake_allocator_options options = {});
+
+vulkan_native_command_packet_executor_evidence
+merge_vulkan_native_buffer_descriptor_allocation_result(
+    vulkan_native_command_packet_executor_evidence evidence,
+    const vulkan_native_buffer_descriptor_allocation_result& buffer_descriptors);
 
 vulkan_command_recorder_operation_plan build_vulkan_command_recorder_operation_plan(
     const vulkan_command_packet_bridge_result& bridge,

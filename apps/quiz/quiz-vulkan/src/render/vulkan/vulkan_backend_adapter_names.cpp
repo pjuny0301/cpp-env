@@ -439,6 +439,34 @@ std::string_view native_vertex_buffer_binding_status_name(
     return "unknown";
 }
 
+std::string_view native_buffer_descriptor_allocation_status_name(
+    vulkan_native_buffer_descriptor_allocation_status status)
+{
+    switch (status) {
+    case vulkan_native_buffer_descriptor_allocation_status::not_checked:
+        return "not_checked";
+    case vulkan_native_buffer_descriptor_allocation_status::ready:
+        return "ready";
+    case vulkan_native_buffer_descriptor_allocation_status::
+        descriptor_write_payload_unavailable:
+        return "descriptor_write_payload_unavailable";
+    case vulkan_native_buffer_descriptor_allocation_status::
+        native_function_table_unavailable:
+        return "native_function_table_unavailable";
+    case vulkan_native_buffer_descriptor_allocation_status::
+        native_descriptor_write_symbol_unavailable:
+        return "native_descriptor_write_symbol_unavailable";
+    case vulkan_native_buffer_descriptor_allocation_status::missing_buffer_payload:
+        return "missing_buffer_payload";
+    case vulkan_native_buffer_descriptor_allocation_status::duplicate_buffer_payload:
+        return "duplicate_buffer_payload";
+    case vulkan_native_buffer_descriptor_allocation_status::invalid_buffer_resource:
+        return "invalid_buffer_resource";
+    }
+
+    return "unknown";
+}
+
 std::string_view native_descriptor_write_payload_status_name(
     vulkan_native_descriptor_write_payload_status status)
 {

@@ -106,3 +106,13 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: report Track B branch and verification
 - blocker(있으면): 없음
 - 검증: `codex-workers/verify-worker.sh track-b '^quiz_vulkan_architecture_boundary_tests$' . linux-ninja` passed; includes preflight, configure, `quiz_vulkan_interface_contract_compile_tests` build, focused CTest target build/run, worker ledger/source manifest/external manifest checks, and `git diff --check`
+
+### [CP-track-b-current-004]
+- 시각 UTC: 2026-06-09T11:53:27Z
+- 태스크: Stretch backlog - stabilize worker status defaults
+- status: done
+- 변경 파일: codex-workers/worker-status.sh, codex-workers/README.md
+- commit SHA: 9f65a73
+- 다음 단계: push Track B branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `bash -n codex-workers/worker-status.sh` passed; `codex-workers/worker-status.sh --help` passed; `QUIZ_CODEX_BASE_REF=HEAD codex-workers/worker-status.sh "$(pwd)"` passed with no tmux server noise; `codex-workers/verify-worker-ledger.sh codex-workers/worker-ledger.tsv` passed; `codex-workers/verify-source-manifest.sh "$(pwd)"` passed; `git diff --check` passed

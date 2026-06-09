@@ -123,6 +123,24 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     prompt.bindings.push_back({"text", "{{ question.prompt }}"});
     script.nodes.push_back(std::move(prompt));
 
+    presentation::app_scene_script_node question_learning;
+    question_learning.id = "question_learning";
+    question_learning.parent_id = "script_root";
+    question_learning.kind = scene::scene_node_kind::text;
+    question_learning.debug_name = "question learning";
+    question_learning.style.token = "muted";
+    question_learning.bindings.push_back({"text", "{{ question.learning }}"});
+    script.nodes.push_back(std::move(question_learning));
+
+    presentation::app_scene_script_node question_learning_flags;
+    question_learning_flags.id = "question_learning_flags";
+    question_learning_flags.parent_id = "script_root";
+    question_learning_flags.kind = scene::scene_node_kind::text;
+    question_learning_flags.debug_name = "question learning flags";
+    question_learning_flags.style.token = "muted";
+    question_learning_flags.bindings.push_back({"text", "{{ question.is_learning }} / {{ question.is_known }} / {{ question.is_unknown }} / {{ question.is_wrong_note }}"});
+    script.nodes.push_back(std::move(question_learning_flags));
+
     presentation::app_scene_script_node question_has_image;
     question_has_image.id = "question_has_image";
     question_has_image.parent_id = "script_root";
@@ -525,6 +543,27 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(prompt != nullptr, "prompt node exists");
     require(prompt->text_runs.size() == 1, "prompt text run exists");
     require(prompt->text_runs.front().text == "Capital of Korea?", "prompt binding renders question.prompt");
+    const scene::scene_node_data* question_learning = data.find_node("question_learning");
+    const scene::scene_node_data* question_learning_flags = data.find_node("question_learning_flags");
+    require(question_learning != nullptr, "question learning node exists");
+    require(question_learning_flags != nullptr, "question learning flags node exists");
+    require(question_learning->text_runs.front().text == "learning", "question learning binding renders");
+    require(question_learning_flags->text_runs.front().text == "true / false / false / false", "question learning flags render");
+
+    domain::app_snapshot known_snapshot = snapshot;
+    require(
+        known_snapshot.active_session.has_value() && known_snapshot.active_session->current_question.has_value(),
+        "known snapshot fixture has current question");
+    known_snapshot.active_session->current_question->learning = domain::learning_state::known;
+    const presentation::app_scene_script_compile_result known_compiled =
+        presentation::compile_app_scene_script(script, known_snapshot);
+    require(known_compiled.ok(), "script compiles with known question learning state");
+    scene::scene_layout_data known_data("script_known_question_learning_test");
+    apply_patch_to_scene(*known_compiled.patch, known_data);
+    require(known_data.find_node("question_learning")->text_runs.front().text == "known", "question learning renders known");
+    require(
+        known_data.find_node("question_learning_flags")->text_runs.front().text == "false / true / false / false",
+        "question learning flags render known state");
     const scene::scene_node_data* question_has_image = data.find_node("question_has_image");
     const scene::scene_node_data* question_image_uri = data.find_node("question_image_uri");
     const scene::scene_node_data* question_image = data.find_node("question_image");

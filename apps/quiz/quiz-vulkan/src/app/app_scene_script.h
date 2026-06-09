@@ -1000,6 +1000,30 @@ inline bool evaluate_path(std::string_view raw_expression, const eval_context& c
         value = script_value::string(question->question_id);
         return true;
     }
+    if (expression == "question.learning") {
+        if (question == nullptr) {
+            error = "expression question.learning requires an active question";
+            return false;
+        }
+        value = script_value::string(std::string(domain::to_string(question->learning)));
+        return true;
+    }
+    if (expression == "question.is_learning") {
+        value = script_value::boolean(question != nullptr && question->learning == domain::learning_state::learning);
+        return true;
+    }
+    if (expression == "question.is_known") {
+        value = script_value::boolean(question != nullptr && question->learning == domain::learning_state::known);
+        return true;
+    }
+    if (expression == "question.is_unknown") {
+        value = script_value::boolean(question != nullptr && question->learning == domain::learning_state::unknown);
+        return true;
+    }
+    if (expression == "question.is_wrong_note") {
+        value = script_value::boolean(question != nullptr && question->learning == domain::learning_state::wrong_note);
+        return true;
+    }
     if (expression == "question.long_text") {
         if (question == nullptr) {
             error = "expression question.long_text requires an active question";

@@ -38,6 +38,16 @@ nodes:
     kind: text
     binding:
       text: {{ question.prompt }}
+  - id: question_learning
+    parent_id: script_root
+    kind: text
+    binding:
+      text: {{ question.learning }}
+  - id: question_learning_flags
+    parent_id: script_root
+    kind: text
+    binding:
+      text: {{ question.is_learning }} / {{ question.is_known }} / {{ question.is_unknown }} / {{ question.is_wrong_note }}
   - id: question_image_uri
     parent_id: script_root
     kind: text

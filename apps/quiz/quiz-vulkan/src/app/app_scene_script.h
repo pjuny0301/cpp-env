@@ -725,6 +725,30 @@ inline bool evaluate_script_function(
         return true;
     }
 
+    if (name == "greater_than" || name == "less_than") {
+        if (!require_script_function_arg_count(name, args, 2, error)) {
+            return false;
+        }
+
+        script_value left_value;
+        script_value right_value;
+        if (!evaluate_expression(args[0], context, left_value, error)
+            || !evaluate_expression(args[1], context, right_value, error)) {
+            return false;
+        }
+
+        float left = 0.0f;
+        float right = 0.0f;
+        if (!parse_float32(trim(left_value.to_string()), left)
+            || !parse_float32(trim(right_value.to_string()), right)) {
+            error = "script function " + std::string(name) + " arguments must be numeric";
+            return false;
+        }
+
+        value = script_value::boolean(name == "greater_than" ? left > right : left < right);
+        return true;
+    }
+
     if (name == "format_count") {
         if (args.size() < 2 || args.size() > 3) {
             error = "script function format_count expects 2 or 3 argument(s), got " + std::to_string(args.size());

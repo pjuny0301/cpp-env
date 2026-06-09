@@ -433,6 +433,15 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     prompt_length.bindings.push_back({"text", "{{ length(question.prompt) }}"});
     script.nodes.push_back(std::move(prompt_length));
 
+    presentation::app_scene_script_node length_comparisons;
+    length_comparisons.id = "length_comparison_flags";
+    length_comparisons.parent_id = "script_root";
+    length_comparisons.kind = scene::scene_node_kind::text;
+    length_comparisons.debug_name = "length comparison flags";
+    length_comparisons.style.token = "muted";
+    length_comparisons.bindings.push_back({"text", "{{ greater_than(length(question.prompt), 10) }} / {{ less_than(length(question.prompt), 3) }}"});
+    script.nodes.push_back(std::move(length_comparisons));
+
     presentation::app_scene_script_node choice_label;
     choice_label.id = "choice_error_label";
     choice_label.parent_id = "script_root";
@@ -490,6 +499,26 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     hidden_contains_condition.style.token = "muted";
     hidden_contains_condition.text_runs.push_back({"Function condition contains Busan", "muted"});
     script.nodes.push_back(std::move(hidden_contains_condition));
+
+    presentation::app_scene_script_node length_condition;
+    length_condition.id = "function_condition_prompt_length";
+    length_condition.parent_id = "script_root";
+    length_condition.kind = scene::scene_node_kind::text;
+    length_condition.debug_name = "function condition prompt length";
+    length_condition.condition = "greater_than(length(question.prompt), 10)";
+    length_condition.style.token = "muted";
+    length_condition.text_runs.push_back({"Function condition prompt length", "muted"});
+    script.nodes.push_back(std::move(length_condition));
+
+    presentation::app_scene_script_node hidden_length_condition;
+    hidden_length_condition.id = "function_condition_short_prompt";
+    hidden_length_condition.parent_id = "script_root";
+    hidden_length_condition.kind = scene::scene_node_kind::text;
+    hidden_length_condition.debug_name = "function condition short prompt";
+    hidden_length_condition.condition = "less_than(length(question.prompt), 3)";
+    hidden_length_condition.style.token = "muted";
+    hidden_length_condition.text_runs.push_back({"Function condition short prompt", "muted"});
+    script.nodes.push_back(std::move(hidden_length_condition));
 
     presentation::app_scene_script_node seeded_start;
     seeded_start.id = "seeded_start_button";
@@ -738,6 +767,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     const scene::scene_node_data* empty_error_flag = data.find_node("empty_error_flag");
     const scene::scene_node_data* string_predicates = data.find_node("string_predicate_flags");
     const scene::scene_node_data* prompt_length = data.find_node("question_prompt_length");
+    const scene::scene_node_data* length_comparisons = data.find_node("length_comparison_flags");
     const scene::scene_node_data* choice_label = data.find_node("choice_error_label");
     const scene::scene_node_data* lazy_choice = data.find_node("lazy_choice_missing_long_text");
     require(function_title != nullptr, "function title node exists");
@@ -748,6 +778,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(empty_error_flag != nullptr, "empty function node exists");
     require(string_predicates != nullptr, "string predicate function node exists");
     require(prompt_length != nullptr, "length function node exists");
+    require(length_comparisons != nullptr, "length comparison function node exists");
     require(choice_label != nullptr, "choose function node exists");
     require(lazy_choice != nullptr, "lazy choose function node exists");
     require(function_title->text_runs.front().text == "Geography / Day 1", "concat function renders text");
@@ -758,12 +789,15 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(empty_error_flag->text_runs.front().text == "true", "empty function renders boolean");
     require(string_predicates->text_runs.front().text == "true / true / true", "string predicate functions render booleans");
     require(prompt_length->text_runs.front().text == "17", "length function renders string length");
+    require(length_comparisons->text_runs.front().text == "true / false", "numeric comparison functions render booleans");
     require(choice_label->text_runs.front().text == "No error", "choose function renders fallback branch");
     require(lazy_choice->text_runs.front().text == "No long text", "choose function only evaluates selected branch");
     require(data.contains_node("function_condition_active"), "function expression can drive conditions");
     require(data.contains_node("function_condition_not_completed"), "not function can drive conditions");
     require(data.contains_node("function_condition_contains_korea"), "contains function can drive true conditions");
     require(!data.contains_node("function_condition_contains_busan"), "contains function can drive false conditions");
+    require(data.contains_node("function_condition_prompt_length"), "numeric comparison function can drive true conditions");
+    require(!data.contains_node("function_condition_short_prompt"), "numeric comparison function can drive false conditions");
     require(!data.contains_node("question_long_text"), "false condition suppresses long text node");
 
     const scene::scene_node_data* seeded_start = data.find_node("seeded_start_button");
@@ -964,6 +998,14 @@ void test_expression_function_errors_are_reported()
         snapshot,
         "length expects 1 argument",
         "length function arg count errors are reported");
+
+    presentation::app_scene_script_document greater_bad_number = make_active_question_script();
+    append_invalid_function_node(greater_bad_number, "{{ greater_than(question.prompt, 3) }}");
+    require_compile_error_contains(
+        greater_bad_number,
+        snapshot,
+        "greater_than arguments must be numeric",
+        "numeric comparison function numeric errors are reported");
 
     presentation::app_scene_script_document format_count_missing_arg = make_active_question_script();
     append_invalid_function_node(format_count_missing_arg, "{{ format_count(settings.count) }}");

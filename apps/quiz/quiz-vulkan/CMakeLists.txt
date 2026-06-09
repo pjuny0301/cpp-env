@@ -535,6 +535,7 @@ target_sources(
         BASE_DIRS src
         FILES
             src/app/app_command_registry.h
+            src/app/app_scene_preview.h
             src/app/app_scene_script.h
             src/app/app_quiz_screens.h
             src/app/app_quiz_screens.hpp
@@ -765,6 +766,17 @@ if(BUILD_TESTING)
     )
     quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_app_scene_script_tests)
     add_test(NAME quiz_vulkan_app_scene_script_tests COMMAND quiz_vulkan_app_scene_script_tests)
+
+    add_executable(quiz_vulkan_app_scene_preview_tests tests/app/app_scene_preview_tests.cpp)
+    target_link_libraries(
+        quiz_vulkan_app_scene_preview_tests
+        PRIVATE
+            quiz_vulkan_app_presentation
+            quiz_vulkan_scene
+            quiz_vulkan_domain
+    )
+    quiz_vulkan_copy_mingw_runtime_dlls(quiz_vulkan_app_scene_preview_tests)
+    add_test(NAME quiz_vulkan_app_scene_preview_tests COMMAND quiz_vulkan_app_scene_preview_tests)
 
     add_executable(
         quiz_vulkan_app_demo_tests

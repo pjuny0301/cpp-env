@@ -14,6 +14,7 @@ All times use UTC ISO8601. Append session work declarations and request notes; d
 | s-cmdtype | apps/quiz/quiz-vulkan/src/core/scene, focused scene tests if required | 2026-06-08T17:15:04Z | active |
 | main-orchestration | branch backup, ledger, subagent monitoring, integration only | 2026-06-08T19:13:20Z | active |
 | track-a-current | apps/quiz/quiz-vulkan/src/app, apps/quiz/quiz-vulkan/src/core/scene_script, apps/quiz/quiz-vulkan/tests/app, apps/quiz/quiz-vulkan/tests/scene_script, narrow CMake registration | 2026-06-08T19:20:15Z | active |
+| track-d-validation | apps/quiz/quiz-vulkan/src/app preview/validation helpers, apps/quiz/quiz-vulkan/tests/app scene validation tests, narrow CMake registration | 2026-06-09T05:42:49Z | active |
 
 ## Intrusion Requests
 

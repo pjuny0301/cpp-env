@@ -20,6 +20,7 @@ namespace quiz_vulkan {
 
 enum class app_scene_scenario_input_kind {
     tap_node,
+    text_submit,
     swipe_left,
     swipe_right,
     long_press,
@@ -90,6 +91,8 @@ inline std::string to_string(app_scene_scenario_input_kind input)
     switch (input) {
         case app_scene_scenario_input_kind::tap_node:
             return "tap_node";
+        case app_scene_scenario_input_kind::text_submit:
+            return "text_submit";
         case app_scene_scenario_input_kind::swipe_left:
             return "swipe_left";
         case app_scene_scenario_input_kind::swipe_right:
@@ -138,6 +141,15 @@ inline input::input_event make_scenario_input_event(
     const scene::placed_scene& placed,
     std::string& error)
 {
+    if (step.input == app_scene_scenario_input_kind::text_submit) {
+        return input::text_event{
+            .kind = input::text_event_kind::submit,
+            .timestamp_ms = step.now_ms,
+            .target_id = step.target_node_id,
+            .utf8_text = step.committed_text,
+        };
+    }
+
     scene::scene_rect bounds = placed.usable_bounds;
     if (step.input == app_scene_scenario_input_kind::tap_node) {
         const scene::scene_input_region* region = find_scenario_input_region(placed, step.target_node_id);
@@ -158,6 +170,8 @@ inline input::input_event make_scenario_input_event(
     switch (step.input) {
         case app_scene_scenario_input_kind::tap_node:
             event.kind = input::gesture_kind::tap;
+            break;
+        case app_scene_scenario_input_kind::text_submit:
             break;
         case app_scene_scenario_input_kind::swipe_left:
             event.kind = input::gesture_kind::swipe_left;

@@ -158,3 +158,13 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: push Track D branch update; continue next independent stretch item
 - blocker(있으면): 없음
 - 검증: `cmake --build --preset linux-debug --target quiz_vulkan_app_scene_scenario_tests quiz_vulkan_app_scene_preview_tests quiz_vulkan_app_quiz_screens_tests` passed; `ctest --test-dir build/out/quiz/quiz-vulkan/linux-ninja -R "quiz_vulkan_app_(scene_scenario|scene_preview|quiz_screens)_tests$" --output-on-failure` passed 3/3; `git diff --check` passed
+
+### [CP-track-d-validation-005]
+- 시각 UTC: 2026-06-09T11:19:02Z
+- 태스크: Stretch backlog - add random mode scene scenario replay
+- status: done
+- 변경 파일: apps/quiz/quiz-vulkan/tests/app/app_scene_scenario_tests.cpp
+- commit SHA: d3d3280
+- 다음 단계: push Track D branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `cmake --build --preset linux-debug --target quiz_vulkan_app_scene_scenario_tests quiz_vulkan_app_scene_preview_tests quiz_vulkan_app_quiz_screens_tests` passed; `ctest --test-dir build/out/quiz/quiz-vulkan/linux-ninja -R "quiz_vulkan_app_(scene_scenario|scene_preview|quiz_screens)_tests$" --output-on-failure` passed 3/3; `git diff --check` passed

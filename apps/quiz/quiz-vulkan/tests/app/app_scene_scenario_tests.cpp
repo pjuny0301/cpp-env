@@ -334,6 +334,30 @@ void test_quiz_scene_feedback_continue_button_replay_reaches_results()
     require(result.final_frame.layout.contains_node("quiz_results_actions"), "feedback continue button to results final frame emits results actions");
 }
 
+void test_quiz_scene_empty_replay_renders_initial_frame()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {},
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "empty scenario replay succeeds");
+    require(result.trace.empty(), "empty scenario replay emits no trace entries");
+    require(result.final_frame.layout.route_state().screen_id == "deck_list", "empty scenario final frame is initial deck list");
+    require(result.final_frame.layout.contains_node("deck_list_deck_deck1"), "empty scenario final frame emits first deck");
+    require(result.final_frame.layout.has_focus(), "empty scenario final frame has focus");
+    require(result.final_frame.layout.focus_id() == "deck_list_deck_deck1", "empty scenario final frame focuses first deck");
+    require(result.final_frame.snapshot.screen == domain::app_screen::deck_select, "empty scenario final snapshot stays on deck select");
+    require(!result.final_frame.snapshot.selected_deck_id.has_value(), "empty scenario final snapshot has no selected deck");
+    require(!result.final_frame.snapshot.selected_day_id.has_value(), "empty scenario final snapshot has no selected day");
+}
+
 void test_quiz_scene_deck_navigation_replay_reaches_day_intro()
 {
     using namespace quiz_vulkan;
@@ -1329,6 +1353,7 @@ int main()
     test_quiz_scene_event_replay_supports_compact_viewport();
     test_quiz_scene_feedback_continue_button_replay_advances_question();
     test_quiz_scene_feedback_continue_button_replay_reaches_results();
+    test_quiz_scene_empty_replay_renders_initial_frame();
     test_quiz_scene_deck_navigation_replay_reaches_day_intro();
     test_quiz_scene_deck_view_start_all_replay_starts_session();
     test_quiz_scene_day_intro_random_mode_replay_starts_random_session();

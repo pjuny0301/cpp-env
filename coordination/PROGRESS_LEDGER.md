@@ -511,3 +511,23 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: push Track A branch update; continue next independent stretch item
 - blocker(있으면): 없음
 - 검증: `git diff --check` passed
+
+### [CP-track-a-current-044]
+- 시각 UTC: 2026-06-09T15:32:49Z
+- 태스크: Stretch backlog - cover safe_id fallback expression behavior
+- status: done
+- 변경 파일: apps/quiz/quiz-vulkan/tests/app/app_scene_script_tests.cpp, apps/quiz/quiz-vulkan/docs/scene-schema.md, apps/quiz/quiz-vulkan/docs/scene-script-examples.md
+- commit SHA: ed6141e
+- 다음 단계: push Track A branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `cmake --build --preset linux-debug --target quiz_vulkan_app_scene_script_tests quiz_vulkan_app_quiz_screens_tests quiz_vulkan_architecture_boundary_tests` passed; `ctest --test-dir ../../../build/out/quiz/quiz-vulkan/linux-ninja -R "quiz_vulkan_(app_scene_script_tests|app_quiz_screens_tests|architecture_boundary_tests)$" --output-on-failure` passed 3/3; `git diff --check` passed
+
+### [CP-track-a-current-045]
+- 시각 UTC: 2026-06-09T15:33:49Z
+- 태스크: Stretch backlog - report Track A safe_id fallback rollup
+- status: done
+- 변경 파일: reports/progress/2026-06-09T153249Z-track-a-safe-id-fallback-rollup.md
+- commit SHA: 0d59eea
+- 다음 단계: push Track A branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `git diff --check` passed

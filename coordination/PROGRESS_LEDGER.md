@@ -145,3 +145,23 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: push Track C branch update; continue next independent stretch item
 - blocker(있으면): 없음
 - 검증: `git diff --check` passed
+
+### [CP-track-c-structure-009]
+- 시각 UTC: 2026-06-09T15:37:48Z
+- 태스크: Stretch backlog - document shared UI package identity
+- status: done
+- 변경 파일: apps/quiz/shared-ui/README.md
+- commit SHA: d19ca83
+- 다음 단계: push Track C branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: package identity `rg` check passed; `git diff --check` passed
+
+### [CP-track-c-structure-010]
+- 시각 UTC: 2026-06-09T15:38:51Z
+- 태스크: Stretch backlog - report Track C shared UI identity rollup
+- status: done
+- 변경 파일: reports/progress/2026-06-09T153748Z-track-c-shared-ui-identity-rollup.md
+- commit SHA: 91645bf
+- 다음 단계: push Track C branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `git diff --check` passed

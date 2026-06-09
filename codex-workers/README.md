@@ -38,6 +38,8 @@ The workers are meant to implement behind existing quiz-vulkan interfaces, not r
   and reason fields in the external dependency manifest.
 - `verify-worker.sh`: runs preflight, configure, contract compile, focused
   CTest, ledger/source/external manifest checks, and `git diff --check`.
+- `verify-worker-status.sh`: smoke-verifies table, TSV, and JSON
+  `worker-status.sh` output against `worker-status.schema.md`.
 - `worker-status.sh`: summarizes live Codex tmux sessions, current paths, branch
   names, tracked dirty-file counts, and ahead/behind counts versus the
   integration baseline.

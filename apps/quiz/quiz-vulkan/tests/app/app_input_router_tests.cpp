@@ -1,4 +1,5 @@
 #include "app/app_input_router.h"
+#include "app/app_quiz_scene_semantics.h"
 #include "core/input/input_engine.h"
 
 #include <cstdlib>
@@ -97,7 +98,10 @@ quiz_vulkan::scene::placed_scene scene_with_text_answer()
     input_node.id = "answer";
     input_node.visible = true;
     input_node.input_enabled = true;
-    input_node.semantics.quiz.accepts_keyboard_input = true;
+    quiz_vulkan::presentation::set_semantic_bool(
+        input_node.semantics,
+        quiz_vulkan::presentation::quiz_accepts_keyboard_input_property,
+        true);
     placed.nodes.push_back(std::move(input_node));
 
     placed.input_regions.push_back(region(

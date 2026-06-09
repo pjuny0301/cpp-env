@@ -44,11 +44,12 @@ int main()
     choice.kind = quiz_vulkan::scene::scene_node_kind::input;
 
     quiz_vulkan::scene::scene_node_semantics choice_semantics;
-    choice_semantics.role = quiz_vulkan::scene::scene_node_role::quiz_option;
+    choice_semantics.role = "choice";
     choice_semantics.label = "Choice A";
-    choice_semantics.quiz.stage = quiz_vulkan::scene::scene_quiz_stage::question;
-    choice_semantics.quiz.option_state = quiz_vulkan::scene::scene_quiz_option_state::selected;
-    choice_semantics.quiz.option_index = 0;
+    choice_semantics
+        .set_property("flow.stage", quiz_vulkan::scene::scene_value("question"))
+        .set_property("choice.state", quiz_vulkan::scene::scene_value("selected"))
+        .set_property("choice.index", quiz_vulkan::scene::scene_value(0));
 
     quiz_vulkan::scene::scene_layout_edit_data edit("test");
     edit.append_node("", panel)
@@ -76,17 +77,14 @@ int main()
     assert(scene.find_node("choice_a")->event_handlers.front().commands.front().find_arg("payload")->string_if() != nullptr);
     assert(*scene.find_node("choice_a")->event_handlers.front().commands.front().find_arg("payload")->string_if() == "A");
     assert(std::string(quiz_vulkan::scene::to_string(scene.find_node("choice_a")->event_handlers.front().trigger)) == "press");
-    assert(scene.find_node("choice_a")->semantics.role == quiz_vulkan::scene::scene_node_role::quiz_option);
-    assert(scene.find_node("choice_a")->semantics.quiz.option_state == quiz_vulkan::scene::scene_quiz_option_state::selected);
-    assert(scene.find_node("choice_a")->semantics.quiz.option_index == 0);
+    assert(scene.find_node("choice_a")->semantics.role == "choice");
+    assert(*scene.find_node("choice_a")->semantics.string_property("choice.state") == "selected");
+    assert(*scene.find_node("choice_a")->semantics.int_property("choice.index") == 0);
     assert(scene.style_tokens().at("choice").background_color == "#223344");
     assert(scene.route_state().route_id == "quiz/question");
     assert(scene.animation_state().active);
-    assert(std::string(quiz_vulkan::scene::to_string(scene.find_node("choice_a")->semantics.quiz.stage)) == "question");
-    assert(quiz_vulkan::scene::classify_question_length("short prompt") == quiz_vulkan::scene::scene_question_length_class::short_question);
-    assert(quiz_vulkan::scene::classify_question_length(
-        "A prompt that intentionally passes the long question threshold so the scene can switch layout profiles "
-        "without asking the renderer to infer quiz domain state from raw text") == quiz_vulkan::scene::scene_question_length_class::long_question);
+    assert(*scene.find_node("choice_a")->semantics.string_property("flow.stage") == "question");
+    assert(scene.find_node("choice_a")->semantics.find_property("missing") == nullptr);
 
     quiz_vulkan::scene::scene_layout_patch bad_patch;
     bad_patch.set_focus("missing");

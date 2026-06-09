@@ -2,6 +2,7 @@
 
 #include "app/app_action_router.h"
 #include "app/app_command_registry.h"
+#include "app/app_quiz_scene_semantics.h"
 #include "core/layout/input_hit_test.h"
 
 #include <type_traits>
@@ -325,7 +326,7 @@ std::vector<raw_platform_input_event> normalize_platform_input_event(
 std::optional<std::string> keyboard_input_target(const scene::placed_scene& placed_scene)
 {
     for (const scene::placed_scene_node& node : placed_scene.nodes) {
-        if (node.visible && node.input_enabled && node.semantics.quiz.accepts_keyboard_input) {
+        if (node.visible && node.input_enabled && presentation::accepts_keyboard_input(node.semantics)) {
             return node.id;
         }
     }

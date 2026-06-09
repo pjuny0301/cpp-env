@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -236,7 +237,7 @@ void require_start_quiz_action(
 void require_node_role(
     const quiz_vulkan::scene::scene_layout_data& data,
     const char* node_id,
-    quiz_vulkan::scene::scene_node_role role,
+    std::string_view role,
     const char* message)
 {
     const quiz_vulkan::scene::scene_node_data* node = data.find_node(node_id);
@@ -364,7 +365,7 @@ int main()
     require(learning_day_intro_data.route_state().metadata.at("wrong_note_count") == "1", "wrong-note count metadata emitted");
     require(learning_day_intro_data.contains_node("day_intro_start_known"), "known mode action exists when known questions exist");
     require(learning_day_intro_data.contains_node("day_intro_start_wrong_note"), "wrong-note mode action exists when wrong notes exist");
-    require_node_role(learning_day_intro_data, "day_intro_modes", scene::scene_node_role::quiz_controls, "day intro mode actions are tagged as controls");
+    require_node_role(learning_day_intro_data, "day_intro_modes", presentation::quiz_controls_role, "day intro mode actions are tagged as controls");
     require_start_quiz_action(learning_day_intro_data, "day_intro_start_normal", "normal", "learning day intro normal action starts normal quiz");
     require_start_quiz_action(learning_day_intro_data, "day_intro_start_known", "known", "known action starts known quiz");
     require_start_quiz_action(learning_day_intro_data, "day_intro_start_wrong_note", "wrong_note", "wrong-note action starts wrong-note quiz");
@@ -405,12 +406,12 @@ int main()
     const scene::scene_node_data* answer_dock = blank_data.find_node("quiz_active_answer_dock");
     require(answer_dock != nullptr, "blank input answer dock exists");
     require(answer_dock->layout_rule.anchor_to_keyboard, "blank input answer dock anchors to keyboard");
-    require(answer_dock->semantics.role == scene::scene_node_role::quiz_answer_dock, "blank input answer dock is tagged");
+    require(answer_dock->semantics.role == presentation::quiz_answer_dock_role, "blank input answer dock is tagged");
 
     const scene::scene_node_data* text_answer = blank_data.find_node("quiz_active_text_answer");
     require(text_answer != nullptr, "blank input text answer exists");
-    require(text_answer->semantics.role == scene::scene_node_role::quiz_answer_input, "blank input answer is tagged");
-    require(text_answer->semantics.quiz.accepts_keyboard_input, "blank input answer accepts keyboard input");
+    require(text_answer->semantics.role == presentation::quiz_answer_input_role, "blank input answer is tagged");
+    require(presentation::accepts_keyboard_input(text_answer->semantics), "blank input answer accepts keyboard input");
 
     fixed_text_metrics metrics;
     scene::scene_layout_environment keyboard_environment;
@@ -478,7 +479,7 @@ int main()
     require(learning_results_data.route_state().screen_id == "quiz_results", "learning results route selected");
     require(learning_results_data.route_state().metadata.at("known_count") == "1", "results known count metadata emitted");
     require(learning_results_data.route_state().metadata.at("wrong_note_count") == "1", "results wrong-note count metadata emitted");
-    require_node_role(learning_results_data, "quiz_results_actions", scene::scene_node_role::quiz_controls, "results mode actions are tagged as controls");
+    require_node_role(learning_results_data, "quiz_results_actions", presentation::quiz_controls_role, "results mode actions are tagged as controls");
     require_start_quiz_action(learning_results_data, "quiz_results_start_normal", "normal", "results normal action starts normal quiz");
     require_start_quiz_action(learning_results_data, "quiz_results_start_known", "known", "results known action starts known quiz");
     require_start_quiz_action(learning_results_data, "quiz_results_start_wrong_note", "wrong_note", "results wrong-note action starts wrong-note quiz");

@@ -360,178 +360,41 @@ inline scene_event_handler make_scene_event_handler(scene_action_binding binding
     return handler;
 }
 
-enum class scene_node_role {
-    generic,
-    app_shell,
-    quiz_question_stage,
-    quiz_question_header,
-    quiz_question_prompt,
-    quiz_question_body,
-    quiz_question_image,
-    quiz_option_group,
-    quiz_option,
-    quiz_feedback,
-    quiz_answer_input,
-    quiz_answer_dock,
-    quiz_controls,
-};
-
-enum class scene_quiz_stage {
-    none,
-    question,
-    feedback,
-    completed,
-};
-
-enum class scene_quiz_feedback_state {
-    none,
-    correct,
-    incorrect,
-    skipped,
-    marked_unknown,
-};
-
-enum class scene_quiz_option_state {
-    idle,
-    selected,
-    correct,
-    incorrect,
-    disabled,
-};
-
-enum class scene_question_length_class {
-    unspecified,
-    short_question,
-    long_question,
-};
-
-struct scene_quiz_semantics {
-    static constexpr std::size_t no_option_index = std::numeric_limits<std::size_t>::max();
-
-    scene_quiz_stage stage = scene_quiz_stage::none;
-    scene_quiz_feedback_state feedback = scene_quiz_feedback_state::none;
-    scene_quiz_option_state option_state = scene_quiz_option_state::idle;
-    scene_question_length_class question_length = scene_question_length_class::unspecified;
-    std::size_t option_index = no_option_index;
-    bool reveal_correctness = false;
-    bool accepts_keyboard_input = false;
-};
-
 struct scene_node_semantics {
-    scene_node_role role = scene_node_role::generic;
+    std::string role = "generic";
     std::string label;
-    scene_quiz_semantics quiz;
+    std::map<std::string, scene_value> properties;
+
+    const scene_value* find_property(std::string_view key) const
+    {
+        const auto found = properties.find(std::string(key));
+        return found == properties.end() ? nullptr : &found->second;
+    }
+
+    scene_node_semantics& set_property(std::string key, scene_value value)
+    {
+        properties[std::move(key)] = std::move(value);
+        return *this;
+    }
+
+    const std::string* string_property(std::string_view key) const
+    {
+        const scene_value* value = find_property(key);
+        return value == nullptr ? nullptr : value->string_if();
+    }
+
+    const bool* bool_property(std::string_view key) const
+    {
+        const scene_value* value = find_property(key);
+        return value == nullptr ? nullptr : value->bool_if();
+    }
+
+    const std::int64_t* int_property(std::string_view key) const
+    {
+        const scene_value* value = find_property(key);
+        return value == nullptr ? nullptr : value->int_if();
+    }
 };
-
-inline const char* to_string(scene_node_role role)
-{
-    switch (role) {
-        case scene_node_role::generic:
-            return "generic";
-        case scene_node_role::app_shell:
-            return "app_shell";
-        case scene_node_role::quiz_question_stage:
-            return "quiz_question_stage";
-        case scene_node_role::quiz_question_header:
-            return "quiz_question_header";
-        case scene_node_role::quiz_question_prompt:
-            return "quiz_question_prompt";
-        case scene_node_role::quiz_question_body:
-            return "quiz_question_body";
-        case scene_node_role::quiz_question_image:
-            return "quiz_question_image";
-        case scene_node_role::quiz_option_group:
-            return "quiz_option_group";
-        case scene_node_role::quiz_option:
-            return "quiz_option";
-        case scene_node_role::quiz_feedback:
-            return "quiz_feedback";
-        case scene_node_role::quiz_answer_input:
-            return "quiz_answer_input";
-        case scene_node_role::quiz_answer_dock:
-            return "quiz_answer_dock";
-        case scene_node_role::quiz_controls:
-            return "quiz_controls";
-    }
-
-    return "generic";
-}
-
-inline const char* to_string(scene_quiz_stage stage)
-{
-    switch (stage) {
-        case scene_quiz_stage::none:
-            return "none";
-        case scene_quiz_stage::question:
-            return "question";
-        case scene_quiz_stage::feedback:
-            return "feedback";
-        case scene_quiz_stage::completed:
-            return "completed";
-    }
-
-    return "none";
-}
-
-inline const char* to_string(scene_quiz_feedback_state feedback)
-{
-    switch (feedback) {
-        case scene_quiz_feedback_state::none:
-            return "none";
-        case scene_quiz_feedback_state::correct:
-            return "correct";
-        case scene_quiz_feedback_state::incorrect:
-            return "incorrect";
-        case scene_quiz_feedback_state::skipped:
-            return "skipped";
-        case scene_quiz_feedback_state::marked_unknown:
-            return "marked_unknown";
-    }
-
-    return "none";
-}
-
-inline const char* to_string(scene_quiz_option_state state)
-{
-    switch (state) {
-        case scene_quiz_option_state::idle:
-            return "idle";
-        case scene_quiz_option_state::selected:
-            return "selected";
-        case scene_quiz_option_state::correct:
-            return "correct";
-        case scene_quiz_option_state::incorrect:
-            return "incorrect";
-        case scene_quiz_option_state::disabled:
-            return "disabled";
-    }
-
-    return "idle";
-}
-
-inline const char* to_string(scene_question_length_class length_class)
-{
-    switch (length_class) {
-        case scene_question_length_class::unspecified:
-            return "unspecified";
-        case scene_question_length_class::short_question:
-            return "short";
-        case scene_question_length_class::long_question:
-            return "long";
-    }
-
-    return "unspecified";
-}
-
-inline scene_question_length_class classify_question_length(
-    const std::string& prompt,
-    const std::string& body = std::string(),
-    std::size_t long_threshold = 120)
-{
-    return prompt.size() + body.size() >= long_threshold
-        ? scene_question_length_class::long_question
-        : scene_question_length_class::short_question;
-}
 
 struct scene_input_region {
     scene_node_id node_id;

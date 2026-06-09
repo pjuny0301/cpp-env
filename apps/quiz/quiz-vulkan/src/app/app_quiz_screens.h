@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/app_quiz_scene_semantics.h"
 #include "app/app_scene_script.h"
 #include "core/domain/app_snapshot.hpp"
 #include "core/scene/scene_modifier.h"
@@ -366,43 +367,43 @@ inline scene::scene_event_handler gesture_action(
         {command_from_action(press_action(std::move(action_type), std::move(payload)))});
 }
 
-inline scene::scene_quiz_stage quiz_stage_for_screen(quiz_screen_kind screen)
+inline quiz_scene_stage quiz_stage_for_screen(quiz_screen_kind screen)
 {
     return screen == quiz_screen_kind::quiz_feedback
-        ? scene::scene_quiz_stage::feedback
-        : scene::scene_quiz_stage::question;
+        ? quiz_scene_stage::feedback
+        : quiz_scene_stage::question;
 }
 
-inline scene::scene_quiz_feedback_state feedback_state_for_outcome(domain::answer_outcome outcome)
+inline quiz_feedback_state feedback_state_for_outcome(domain::answer_outcome outcome)
 {
     switch (outcome) {
         case domain::answer_outcome::correct:
-            return scene::scene_quiz_feedback_state::correct;
+            return quiz_feedback_state::correct;
         case domain::answer_outcome::incorrect:
-            return scene::scene_quiz_feedback_state::incorrect;
+            return quiz_feedback_state::incorrect;
         case domain::answer_outcome::skipped:
-            return scene::scene_quiz_feedback_state::skipped;
+            return quiz_feedback_state::skipped;
         case domain::answer_outcome::marked_unknown:
-            return scene::scene_quiz_feedback_state::marked_unknown;
+            return quiz_feedback_state::marked_unknown;
         case domain::answer_outcome::marked_known:
         case domain::answer_outcome::unanswered:
-            return scene::scene_quiz_feedback_state::none;
+            return quiz_feedback_state::none;
     }
 
-    return scene::scene_quiz_feedback_state::none;
+    return quiz_feedback_state::none;
 }
 
 inline scene::scene_node_semantics quiz_node_semantics(
-    scene::scene_node_role role,
-    scene::scene_quiz_stage stage,
+    std::string_view role,
+    quiz_scene_stage stage,
     const domain::question_snapshot& question)
 {
-    scene::scene_node_semantics semantics;
-    semantics.role = role;
-    semantics.quiz.stage = stage;
-    semantics.quiz.question_length = scene::classify_question_length(
-        question.prompt,
-        question.long_text.value_or(std::string{}));
+    scene::scene_node_semantics semantics = make_quiz_semantics(role);
+    set_semantic_string(semantics, quiz_stage_property, to_string(stage));
+    set_semantic_string(
+        semantics,
+        quiz_question_length_property,
+        to_string(classify_quiz_question_length(question.prompt, question.long_text.value_or(std::string{}))));
     return semantics;
 }
 
@@ -642,7 +643,7 @@ inline void append_screen_shell(
     root.layout_rule.respect_safe_area = true;
     root.layout_rule.avoid_keyboard = true;
     root.layout_rule.clip_children = true;
-    root.semantics.role = scene::scene_node_role::app_shell;
+    root.semantics.role = std::string(app_shell_role);
     root.event_handlers.push_back(gesture_action(scene::scene_action_trigger::swipe_left, "previous_question"));
     root.event_handlers.push_back(gesture_action(scene::scene_action_trigger::swipe_right, "skip_question"));
     root.event_handlers.push_back(gesture_action(scene::scene_action_trigger::long_press, "mark_question_unknown"));
@@ -883,7 +884,7 @@ inline void append_start_mode_button(
 inline void tag_mode_action_group(scene::scene_layout_edit_data& edit_data, std::string_view node_id)
 {
     scene::scene_node_semantics semantics;
-    semantics.role = scene::scene_node_role::quiz_controls;
+    semantics.role = std::string(quiz_controls_role);
     semantics.label = "Quiz modes";
     edit_data.set_semantics(to_string_copy(node_id), std::move(semantics));
 }
@@ -917,9 +918,9 @@ inline void append_feedback_banner(
         fixed_height_rule(44.0f, {12.0f, 10.0f, 12.0f, 10.0f}),
         style(is_correct ? "feedback_correct" : "feedback_needs_work", is_correct ? "#28503a" : "#5a3d2c", "#ffffff", 6.0f));
     banner.text_runs.push_back({display_outcome(feedback.outcome), banner.style.token});
-    banner.semantics.role = scene::scene_node_role::quiz_feedback;
-    banner.semantics.quiz.stage = scene::scene_quiz_stage::feedback;
-    banner.semantics.quiz.feedback = feedback_state_for_outcome(feedback.outcome);
+    banner.semantics = make_quiz_semantics(quiz_feedback_role);
+    set_semantic_string(banner.semantics, quiz_stage_property, to_string(quiz_scene_stage::feedback));
+    set_semantic_string(banner.semantics, quiz_feedback_property, to_string(feedback_state_for_outcome(feedback.outcome)));
     edit_data.append_node(to_string_copy(parent_id), std::move(banner));
 }
 
@@ -935,8 +936,8 @@ inline void append_question_options(
     edit_data.set_semantics(
         section_id,
         quiz_node_semantics(
-            scene::scene_node_role::quiz_option_group,
-            feedback_visible ? scene::scene_quiz_stage::feedback : scene::scene_quiz_stage::question,
+            quiz_option_group_role,
+            feedback_visible ? quiz_scene_stage::feedback : quiz_scene_stage::question,
             question));
 
     for (std::size_t index = 0; index < question.options.size(); ++index) {
@@ -959,17 +960,18 @@ inline void append_question_options(
         option_node.text_runs.push_back({option.text, option_node.style.token});
         option_node.input_enabled = !feedback_visible;
         option_node.semantics = quiz_node_semantics(
-            scene::scene_node_role::quiz_option,
-            feedback_visible ? scene::scene_quiz_stage::feedback : scene::scene_quiz_stage::question,
+            quiz_option_role,
+            feedback_visible ? quiz_scene_stage::feedback : quiz_scene_stage::question,
             question);
-        option_node.semantics.quiz.option_index = index;
+        set_semantic_index(option_node.semantics, quiz_option_index_property, index);
         if (option.reveal_correctness) {
-            option_node.semantics.quiz.option_state = option.is_correct
-                ? scene::scene_quiz_option_state::correct
-                : scene::scene_quiz_option_state::incorrect;
-            option_node.semantics.quiz.reveal_correctness = true;
+            set_semantic_string(
+                option_node.semantics,
+                quiz_option_state_property,
+                to_string(option.is_correct ? quiz_option_state::correct : quiz_option_state::incorrect));
+            set_semantic_bool(option_node.semantics, quiz_reveal_correctness_property, true);
         } else if (feedback_visible) {
-            option_node.semantics.quiz.option_state = scene::scene_quiz_option_state::disabled;
+            set_semantic_string(option_node.semantics, quiz_option_state_property, to_string(quiz_option_state::disabled));
         }
         edit_data.append_node(section_id, std::move(option_node));
 
@@ -1003,8 +1005,8 @@ inline void append_text_answer_input(
         dock_rule,
         style("answer_dock"));
     dock.semantics = quiz_node_semantics(
-        scene::scene_node_role::quiz_answer_dock,
-        scene::scene_quiz_stage::question,
+        quiz_answer_dock_role,
+        quiz_scene_stage::question,
         question);
     edit_data.append_node(to_string_copy(parent_id), std::move(dock));
 
@@ -1016,10 +1018,10 @@ inline void append_text_answer_input(
         style("text_input", "#162532", "#ffffff", 6.0f));
     input.text_runs.push_back({"Type answer", "text_input"});
     input.semantics = quiz_node_semantics(
-        scene::scene_node_role::quiz_answer_input,
-        scene::scene_quiz_stage::question,
+        quiz_answer_input_role,
+        quiz_scene_stage::question,
         question);
-    input.semantics.quiz.accepts_keyboard_input = true;
+    set_semantic_bool(input.semantics, quiz_accepts_keyboard_input_property, true);
     edit_data.append_node(dock_id, std::move(input));
     edit_data.bind_action(input_id, change_action("submit_text_answer", question.question_id));
 
@@ -1232,7 +1234,7 @@ inline void build_quiz_session_screen(
 
     const domain::question_snapshot& question = *session.current_question;
     const bool feedback_visible = screen == quiz_screen_kind::quiz_feedback || session.feedback.has_value();
-    const scene::scene_quiz_stage quiz_stage = detail::quiz_stage_for_screen(screen);
+    const quiz_scene_stage quiz_stage = detail::quiz_stage_for_screen(screen);
     if (feedback_visible) {
         if (session.feedback.has_value()) {
             detail::append_feedback_banner(edit_data, detail::quiz_screens_root_id, prefix, *session.feedback);
@@ -1252,14 +1254,14 @@ inline void build_quiz_session_screen(
     detail::append_text(edit_data, detail::quiz_screens_root_id, prompt_id, question.prompt, "prompt", "#ffffff");
     edit_data.set_semantics(
         prompt_id,
-        detail::quiz_node_semantics(scene::scene_node_role::quiz_question_prompt, quiz_stage, question));
+        detail::quiz_node_semantics(quiz_question_prompt_role, quiz_stage, question));
 
     if (question.long_text.has_value() && !question.long_text->empty()) {
         const std::string body_id = detail::to_string_copy(prefix) + "_long_text";
         detail::append_text(edit_data, detail::quiz_screens_root_id, body_id, *question.long_text, "body", "#d8e1e7");
         edit_data.set_semantics(
             body_id,
-            detail::quiz_node_semantics(scene::scene_node_role::quiz_question_body, quiz_stage, question));
+            detail::quiz_node_semantics(quiz_question_body_role, quiz_stage, question));
     }
 
     if (question.image_uri.has_value() && !question.image_uri->empty()) {
@@ -1273,7 +1275,7 @@ inline void build_quiz_session_screen(
         image.image.alt_text = question.prompt;
         image.image.aspect_ratio = 1.777778f;
         image.has_image = true;
-        image.semantics = detail::quiz_node_semantics(scene::scene_node_role::quiz_question_image, quiz_stage, question);
+        image.semantics = detail::quiz_node_semantics(quiz_question_image_role, quiz_stage, question);
         edit_data.append_node(detail::to_string_copy(detail::quiz_screens_root_id), std::move(image));
     }
 
@@ -1504,7 +1506,7 @@ inline void append_script_screen_shell(
     root.layout_rule.respect_safe_area = true;
     root.layout_rule.avoid_keyboard = true;
     root.layout_rule.clip_children = true;
-    root.semantics.role = scene::scene_node_role::app_shell;
+    root.semantics.role = std::string(app_shell_role);
 
     app_scene_script_node root_node = script_node_from_scene_node(std::move(root), "");
     root_node.events.push_back(script_gesture_event(scene::scene_action_trigger::swipe_left, "previous_question"));
@@ -1690,7 +1692,7 @@ inline app_scene_script_document make_quiz_results_screen_script_document(const 
 
     append_script_section(document, detail::to_string_copy(detail::quiz_screens_root_id), "quiz_results_actions", 8.0f);
     scene::scene_node_semantics semantics;
-    semantics.role = scene::scene_node_role::quiz_controls;
+    semantics.role = std::string(quiz_controls_role);
     semantics.label = "Quiz modes";
     document.nodes.back().semantics = std::move(semantics);
     append_script_start_mode_button(document, "quiz_results_actions", "quiz_results", domain::quiz_mode::normal, "Restart due questions");

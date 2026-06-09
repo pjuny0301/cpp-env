@@ -535,6 +535,7 @@ target_sources(
         BASE_DIRS src
         FILES
             src/app/app_command_registry.h
+            src/app/app_quiz_scene_semantics.h
             src/app/app_scene_script.h
             src/app/app_quiz_screens.h
             src/app/app_quiz_screens.hpp

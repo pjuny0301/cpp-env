@@ -297,6 +297,49 @@ void test_quiz_scene_text_submit_replay_records_feedback()
     require(feedback.submitted_text_answers.front() == "seoul", "text submit records normalized answer");
 }
 
+void test_quiz_scene_incorrect_text_submit_replay_records_feedback()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_blank_text_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "submit_wrong_text_answer",
+                .input = app_scene_scenario_input_kind::text_submit,
+                .target_node_id = "quiz_active_text_answer",
+                .committed_text = "Busan",
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "incorrect text answer scenario replay succeeds");
+    require(result.trace.size() == 2, "incorrect text answer scenario emits one trace entry per step");
+    require_trace_entry(result.trace[1], "quiz_active", "submit_text_answer", "quiz_feedback", "incorrect text submit trace is stable");
+    require(result.trace[1].event_kind == "text_submit", "incorrect text submit records text event kind");
+    require(result.trace[1].clear_text_after_action, "incorrect text submit requests committed text clear");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::feedback, "incorrect text submit final snapshot is feedback");
+    require(result.final_frame.snapshot.active_session.has_value(), "incorrect text submit final snapshot has session");
+    require(result.final_frame.snapshot.active_session->feedback.has_value(), "incorrect text submit final snapshot has feedback");
+    const domain::answer_record& feedback = *result.final_frame.snapshot.active_session->feedback;
+    require(feedback.outcome == domain::answer_outcome::incorrect, "incorrect text submit feedback is incorrect");
+    require(feedback.submitted_text_answers.size() == 1, "incorrect text submit records one answer");
+    require(feedback.submitted_text_answers.front() == "busan", "incorrect text submit records normalized answer");
+}
+
 void test_quiz_scene_swipe_skip_replay_reaches_results()
 {
     using namespace quiz_vulkan;
@@ -508,6 +551,7 @@ int main()
     test_quiz_scene_deck_navigation_replay_reaches_day_intro();
     test_quiz_scene_error_recovery_replay_selects_deck();
     test_quiz_scene_text_submit_replay_records_feedback();
+    test_quiz_scene_incorrect_text_submit_replay_records_feedback();
     test_quiz_scene_swipe_skip_replay_reaches_results();
     test_quiz_scene_long_press_mark_unknown_updates_learning();
     test_quiz_scene_swipe_previous_replay_returns_to_prior_question();

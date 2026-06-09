@@ -376,11 +376,20 @@ int main()
     apply_patch_to_scene(*day_intro_compiled.patch, scripted_day_intro_data);
     require(scripted_day_intro_data.route_state().screen_id == "day_intro", "scripted day intro route selected");
 
+    const scene::scene_layout_data direct_day_intro_data =
+        build_direct_screen_data("direct_day_intro", day_intro_snapshot, presentation::build_day_intro_screen);
+    const scene::scene_layout_data scripted_day_intro_patch_data =
+        build_patch_screen_data("scripted_day_intro_patch", presentation::make_day_intro_screen_patch(day_intro_snapshot));
+
     fixed_text_metrics day_intro_metrics;
     const scene::scene_rect day_intro_viewport{0.0f, 0.0f, 360.0f, 640.0f};
-    const scene::placed_scene direct_day_intro_render = scene::layout_placer().place(day_intro_data, day_intro_viewport, day_intro_metrics);
+    const scene::placed_scene direct_day_intro_render = scene::layout_placer().place(direct_day_intro_data, day_intro_viewport, day_intro_metrics);
     const scene::placed_scene scripted_day_intro_render = scene::layout_placer().place(scripted_day_intro_data, day_intro_viewport, day_intro_metrics);
     require_same_placed_render(scripted_day_intro_render, direct_day_intro_render, "scripted day intro render equals direct builder");
+    require_same_placed_render(
+        scene::layout_placer().place(scripted_day_intro_patch_data, day_intro_viewport, day_intro_metrics),
+        direct_day_intro_render,
+        "scripted day intro node DSL render equals direct builder");
 
     std::vector<domain::deck> learning_decks;
     learning_decks.push_back(make_learning_groups_deck());

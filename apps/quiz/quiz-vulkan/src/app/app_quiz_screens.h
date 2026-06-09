@@ -1814,6 +1814,48 @@ inline void append_script_text_answer_input(
         "button");
 }
 
+inline app_scene_script_document make_day_intro_screen_script_document(const domain::app_snapshot& snapshot)
+{
+    app_scene_script_document document;
+    document.schema_version = app_scene_script_node_dsl_schema_version;
+    document.template_id = "builtin:quiz.day_intro.v1";
+    document.screen = "day_intro";
+    append_script_screen_shell(document, quiz_screen_kind::day_intro, snapshot);
+
+    const domain::deck* selected_deck = detail::find_selected_deck(snapshot);
+    const domain::day* selected_day = selected_deck == nullptr ? nullptr : detail::find_selected_day(*selected_deck, snapshot);
+    if (selected_deck == nullptr || selected_day == nullptr) {
+        append_script_header(document, detail::to_string_copy(detail::quiz_screens_root_id), "day_intro", "Choose a day");
+        append_script_empty_state(document, detail::to_string_copy(detail::quiz_screens_root_id), "day_intro", "No selected day");
+        return document;
+    }
+
+    append_script_header(
+        document,
+        detail::to_string_copy(detail::quiz_screens_root_id),
+        "day_intro",
+        selected_day->title,
+        selected_deck->title + " / " + std::to_string(selected_day->questions.size()) + " questions");
+    append_script_text(
+        document,
+        detail::to_string_copy(detail::quiz_screens_root_id),
+        "day_intro_summary",
+        detail::learning_summary_text(snapshot.learning),
+        "muted",
+        "#aeb9c2");
+
+    append_script_section(document, detail::to_string_copy(detail::quiz_screens_root_id), "day_intro_modes", 8.0f);
+    scene::scene_node_semantics semantics;
+    semantics.role = std::string(quiz_controls_role);
+    semantics.label = "Quiz modes";
+    document.nodes.back().semantics = std::move(semantics);
+    append_script_start_mode_button(document, "day_intro_modes", "day_intro", domain::quiz_mode::normal, "Start due questions");
+    append_script_start_mode_button(document, "day_intro_modes", "day_intro", domain::quiz_mode::random, "Random order");
+    append_script_learning_mode_buttons(document, "day_intro_modes", "day_intro", snapshot.learning);
+    document.focus_id = "day_intro_start_normal";
+    return document;
+}
+
 inline app_scene_script_document make_deck_list_screen_script_document(const domain::app_snapshot& snapshot)
 {
     app_scene_script_document document;
@@ -2287,9 +2329,9 @@ inline scene::scene_layout_patch make_deck_view_screen_patch(const domain::app_s
 
 inline scene::scene_layout_patch make_day_intro_screen_patch(const domain::app_snapshot& snapshot)
 {
-    scene::scene_layout_edit_data edit_data("day_intro_screen");
-    build_day_intro_screen(snapshot, edit_data);
-    return edit_data.finish_patch();
+    const app_scene_script_compile_result compiled =
+        compile_quiz_screen_script(make_day_intro_screen_script_document(snapshot), snapshot);
+    return std::move(*compiled.patch);
 }
 
 inline scene::scene_layout_patch make_quiz_active_screen_patch(const domain::app_snapshot& snapshot)
@@ -2439,7 +2481,7 @@ public:
                 append_patch_to_edit_data(make_deck_view_screen_patch(snapshot_), edit_data);
                 return;
             case quiz_screen_kind::day_intro:
-                build_day_intro_screen(snapshot_, edit_data);
+                append_patch_to_edit_data(make_day_intro_screen_patch(snapshot_), edit_data);
                 return;
             case quiz_screen_kind::quiz_active:
                 append_patch_to_edit_data(make_quiz_active_screen_patch(snapshot_), edit_data);

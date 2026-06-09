@@ -215,6 +215,40 @@ void test_quiz_scene_deck_navigation_replay_reaches_day_intro()
     require(*result.final_frame.snapshot.selected_day_id == "day1", "deck navigation selects day1");
 }
 
+void test_quiz_scene_error_recovery_replay_selects_deck()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_deck_action("missing"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "recover_with_deck",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "error_deck_deck1",
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "error recovery scenario replay succeeds");
+    require(result.trace.size() == 1, "error recovery scenario emits one trace entry");
+    require_trace_entry(result.trace[0], "error", "select_deck", "deck_view", "error recovery trace is stable");
+    require(result.trace[0].target_node_id == "error_deck_deck1", "error recovery records target node");
+    require(result.trace[0].before_focus_id == "error_deck_deck1", "error recovery starts from recovery deck focus");
+    require(result.trace[0].after_focus_id == "deck_view_day_day1", "error recovery captures deck view focus");
+
+    require(!result.final_frame.snapshot.error_message.has_value(), "error recovery clears error message");
+    require(result.final_frame.snapshot.selected_deck_id.has_value(), "error recovery final snapshot has selected deck");
+    require(*result.final_frame.snapshot.selected_deck_id == "deck1", "error recovery selects deck1");
+    require(result.final_frame.layout.route_state().screen_id == "deck_view", "error recovery final frame is deck view");
+}
+
 void test_quiz_scene_text_submit_replay_records_feedback()
 {
     using namespace quiz_vulkan;
@@ -398,6 +432,7 @@ int main()
 {
     test_quiz_scene_event_replay_reaches_results();
     test_quiz_scene_deck_navigation_replay_reaches_day_intro();
+    test_quiz_scene_error_recovery_replay_selects_deck();
     test_quiz_scene_text_submit_replay_records_feedback();
     test_quiz_scene_swipe_skip_replay_reaches_results();
     test_quiz_scene_long_press_mark_unknown_updates_learning();

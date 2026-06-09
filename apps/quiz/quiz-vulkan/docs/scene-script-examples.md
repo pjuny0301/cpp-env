@@ -132,6 +132,17 @@ nodes:
     kind: text
     binding:
       text: {{ question.prompt | upper }}
+  - id: question_prompt_length
+    parent_id: script_root
+    kind: text
+    binding:
+      text: {{ length(question.prompt) }}
+  - id: prompt_length_gate
+    parent_id: script_root
+    kind: text
+    condition: greater_or_equal(length(question.prompt), 10)
+    binding:
+      text: Long prompt
   - id: question_options
     parent_id: script_root
     kind: container
@@ -207,6 +218,8 @@ condition: not(session.completed)
 condition: contains(question.prompt, "Korea")
 condition: starts_with(selected_deck.source_uri, "fixture://")
 condition: ends_with(selected_deck.source_uri, ".quizdeck")
+condition: greater_or_equal(length(question.prompt), 10)
+condition: less_than(settings.count, 3)
 binding:
   text: {{ format_count(selected_day.question_count, "question") }}
 ```

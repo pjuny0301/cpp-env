@@ -448,7 +448,7 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     length_range.kind = scene::scene_node_kind::text;
     length_range.debug_name = "length range flags";
     length_range.style.token = "muted";
-    length_range.bindings.push_back({"text", "{{ between(length(question.prompt), 10, 20) }} / {{ between(length(question.prompt), 1, 5) }}"});
+    length_range.bindings.push_back({"text", "{{ between(length(question.prompt), 10, 20) }} / {{ between(length(question.prompt), 17, 17) }} / {{ between(length(question.prompt), 1, 5) }}"});
     script.nodes.push_back(std::move(length_range));
 
     presentation::app_scene_script_node choice_label;
@@ -821,7 +821,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(string_predicates->text_runs.front().text == "true / true / true", "string predicate functions render booleans");
     require(prompt_length->text_runs.front().text == "17", "length function renders string length");
     require(length_comparisons->text_runs.front().text == "true / false / true / true", "numeric comparison functions render booleans");
-    require(length_range->text_runs.front().text == "true / false", "between function renders booleans");
+    require(length_range->text_runs.front().text == "true / true / false", "between function renders booleans");
     require(choice_label->text_runs.front().text == "No error", "choose function renders fallback branch");
     require(lazy_choice->text_runs.front().text == "No long text", "choose function only evaluates selected branch");
     require(data.contains_node("function_condition_active"), "function expression can drive conditions");

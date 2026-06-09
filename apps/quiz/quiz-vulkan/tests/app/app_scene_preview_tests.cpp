@@ -220,6 +220,36 @@ void test_preview_request_validation()
     require(missing_metrics.error == "preview request is missing text metrics", "preview reports missing text metrics");
 }
 
+void test_preview_compile_error_is_reported_without_patch()
+{
+    using namespace quiz_vulkan;
+
+    const std::vector<domain::deck> decks{make_test_deck()};
+    const domain::app_snapshot snapshot = make_snapshot(decks);
+    const fixed_text_metrics metrics;
+    const int unsupported_schema_version = presentation::app_scene_script_max_supported_schema_version + 1;
+
+    presentation::app_scene_script_document unsupported;
+    unsupported.schema_version = unsupported_schema_version;
+    unsupported.template_id = "test:unsupported.schema";
+    unsupported.screen = "day_intro";
+
+    const presentation::app_scene_preview_result preview = presentation::preview_app_scene_script(
+        unsupported,
+        snapshot,
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics,
+        "preview_compile_error");
+
+    require(!preview.ok(), "preview rejects unsupported script schema");
+    require(!preview.patch.has_value(), "preview leaves patch empty when compilation fails");
+    require(
+        preview.error == "unsupported app scene script schema_version: " + std::to_string(unsupported_schema_version),
+        "preview reports compile validation error");
+    require(preview.placed.nodes.empty(), "preview does not place failed script");
+    require(preview.placed.input_regions.empty(), "preview does not emit failed script input regions");
+}
+
 } // namespace
 
 int main()
@@ -229,5 +259,6 @@ int main()
     test_scripted_settings_preview();
     test_scripted_error_preview();
     test_preview_request_validation();
+    test_preview_compile_error_is_reported_without_patch();
     return 0;
 }

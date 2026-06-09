@@ -94,13 +94,15 @@ The expression engine also supports pure function calls:
 - `empty(value)`
 - `choose(condition, value_when_true, value_when_false)`
 - `safe_id(value, fallback?)`
+- `setting(name, fallback?)`
 
 Function arguments may be other expressions or quoted string literals, and
 function results can still flow through formatter chains. `choose(...)` only
 evaluates the selected branch, which allows fallback bindings such as
 `{{ choose(question.has_long_text, question.long_text, "No long text") }}`.
 Use `safe_id(...)` when dynamic node IDs need stable slug text, for example
-`option_{{ safe_id(option.text, option.index) }}`.
+`option_{{ safe_id(option.text, option.index) }}`. Use `setting(...)` to read
+app settings by key without exposing the map shape to the renderer.
 
 Text-answer controls may use legacy-only events because the submitted text is
 provided by the input router at runtime. Other script commands should prefer the

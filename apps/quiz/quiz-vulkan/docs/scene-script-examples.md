@@ -64,6 +64,11 @@ nodes:
     kind: text
     binding:
       text: {{ settings.count }}
+  - id: setting_route
+    parent_id: script_root
+    kind: text
+    binding:
+      text: {{ setting("ui_screen", "unset") }}
   - id: feedback_label
     parent_id: script_root
     kind: text

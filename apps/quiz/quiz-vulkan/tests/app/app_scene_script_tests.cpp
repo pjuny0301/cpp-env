@@ -223,6 +223,15 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     settings_count.bindings.push_back({"text", "{{ settings.count }}"});
     script.nodes.push_back(std::move(settings_count));
 
+    presentation::app_scene_script_node setting_route;
+    setting_route.id = "setting_route";
+    setting_route.parent_id = "script_root";
+    setting_route.kind = scene::scene_node_kind::text;
+    setting_route.debug_name = "setting route";
+    setting_route.style.token = "muted";
+    setting_route.bindings.push_back({"text", "{{ setting(\"ui_screen\", \"unset\") }}"});
+    script.nodes.push_back(std::move(setting_route));
+
     presentation::app_scene_script_node error_exists;
     error_exists.id = "error_exists";
     error_exists.parent_id = "script_root";
@@ -549,12 +558,15 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(feedback_selected_count->text_runs.front().text == "0", "feedback selected count fallback renders");
     require(feedback_answered_at->text_runs.front().text == "0", "feedback answered-at fallback renders");
     const scene::scene_node_data* settings_count = data.find_node("settings_count");
+    const scene::scene_node_data* setting_route = data.find_node("setting_route");
     const scene::scene_node_data* error_exists = data.find_node("error_exists");
     const scene::scene_node_data* error_message = data.find_node("error_message");
     require(settings_count != nullptr, "settings count node exists");
+    require(setting_route != nullptr, "setting route node exists");
     require(error_exists != nullptr, "error exists node exists");
     require(error_message != nullptr, "error message node exists");
     require(settings_count->text_runs.front().text == "0", "settings count binding renders");
+    require(setting_route->text_runs.front().text == "unset", "setting function renders fallback");
     require(error_exists->text_runs.front().text == "false", "error exists binding renders");
     require(error_message->text_runs.front().text.empty(), "empty error message binding renders");
 
@@ -567,6 +579,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     scene::scene_layout_data status_data("script_status_test");
     apply_patch_to_scene(*status_compiled.patch, status_data);
     require(status_data.find_node("settings_count")->text_runs.front().text == "1", "settings count renders entries");
+    require(status_data.find_node("setting_route")->text_runs.front().text == "settings", "setting function renders configured value");
     require(status_data.find_node("error_exists")->text_runs.front().text == "true", "error exists binding renders present error");
     require(status_data.find_node("error_message")->text_runs.front().text == "Load failed", "error message binding renders present error");
     require(status_data.find_node("empty_error_flag")->text_runs.front().text == "false", "empty function renders present error");
@@ -820,6 +833,14 @@ void test_expression_function_errors_are_reported()
         snapshot,
         "safe_id expects 1 or 2 argument",
         "safe_id function arg count errors are reported");
+
+    presentation::app_scene_script_document setting_missing_arg = make_active_question_script();
+    append_invalid_function_node(setting_missing_arg, "{{ setting() }}");
+    require_compile_error_contains(
+        setting_missing_arg,
+        snapshot,
+        "setting expects 1 or 2 argument",
+        "setting function arg count errors are reported");
 }
 
 void test_dynamic_node_id_collisions_are_reported()

@@ -716,6 +716,31 @@ inline bool evaluate_script_function(
         return true;
     }
 
+    if (name == "setting") {
+        if (args.empty() || args.size() > 2) {
+            error = "script function setting expects 1 or 2 argument(s), got " + std::to_string(args.size());
+            return false;
+        }
+
+        script_value key_value;
+        if (!evaluate_expression(args.front(), context, key_value, error)) {
+            return false;
+        }
+
+        std::string fallback;
+        if (args.size() == 2) {
+            script_value fallback_value;
+            if (!evaluate_expression(args[1], context, fallback_value, error)) {
+                return false;
+            }
+            fallback = fallback_value.to_string();
+        }
+
+        const auto found = context.snapshot.settings.find(key_value.to_string());
+        value = script_value::string(found == context.snapshot.settings.end() ? std::move(fallback) : found->second);
+        return true;
+    }
+
     error = "unsupported script function: " + std::string(name);
     return false;
 }

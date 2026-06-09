@@ -115,3 +115,13 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: push Track C branch update; continue next independent stretch item
 - blocker(있으면): 없음
 - 검증: `git diff --check` passed
+
+### [CP-track-c-structure-006]
+- 시각 UTC: 2026-06-09T14:51:58Z
+- 태스크: Stretch backlog - rename React app package identities
+- status: done
+- 변경 파일: apps/quiz/android-quiz-app/package.json, apps/quiz/android-quiz-app/package-lock.json, apps/quiz/quiz-editor/package.json, apps/quiz/quiz-editor/package-lock.json
+- commit SHA: 555d41d
+- 다음 단계: push Track C branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `rg -n '@figma/my-make-file|\"name\": \"@quiz/(android-quiz-app|quiz-editor)\"' ...` confirmed package names; `npm --prefix apps/quiz/android-quiz-app run build` passed; `npm --prefix apps/quiz/quiz-editor run build` passed; `git diff --check` passed

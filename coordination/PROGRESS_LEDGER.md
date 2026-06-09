@@ -361,3 +361,13 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: push Track A branch update; continue next independent stretch item
 - blocker(있으면): 없음
 - 검증: `git diff --check` passed
+
+### [CP-track-a-current-029]
+- 시각 UTC: 2026-06-09T12:50:05Z
+- 태스크: Stretch backlog - report Track A inclusive comparison rollup
+- status: done
+- 변경 파일: reports/progress/2026-06-09T124900Z-track-a-inclusive-comparison-rollup.md
+- commit SHA: dcba371
+- 다음 단계: push Track A branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `git diff --check` passed

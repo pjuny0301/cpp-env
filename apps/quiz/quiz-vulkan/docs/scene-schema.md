@@ -58,6 +58,8 @@ Schema version 2 documents contain:
 - data bindings such as `{{ question.prompt }}`
 - session bindings such as `{{ session.progress }}` and
   `{{ session.mode }} / {{ session.phase }}`
+- learning summary bindings such as `{{ learning.summary }}` and
+  `{{ learning.known_count }}`
 - `question.options` repeaters
 - conditions
 - event handlers with typed commands and optional legacy action bindings

@@ -122,6 +122,24 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     session_count.bindings.push_back({"text", "{{ session.question_count }}"});
     script.nodes.push_back(std::move(session_count));
 
+    presentation::app_scene_script_node learning_summary;
+    learning_summary.id = "learning_summary";
+    learning_summary.parent_id = "script_root";
+    learning_summary.kind = scene::scene_node_kind::text;
+    learning_summary.debug_name = "learning summary";
+    learning_summary.style.token = "muted";
+    learning_summary.bindings.push_back({"text", "{{ learning.summary }}"});
+    script.nodes.push_back(std::move(learning_summary));
+
+    presentation::app_scene_script_node known_count;
+    known_count.id = "learning_known_count";
+    known_count.parent_id = "script_root";
+    known_count.kind = scene::scene_node_kind::text;
+    known_count.debug_name = "learning known count";
+    known_count.style.token = "muted";
+    known_count.bindings.push_back({"text", "{{ learning.known_count }}"});
+    script.nodes.push_back(std::move(known_count));
+
     presentation::app_scene_script_node formatted_prompt;
     formatted_prompt.id = "question_prompt_upper";
     formatted_prompt.parent_id = "script_root";
@@ -233,6 +251,12 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(progress->text_runs.front().text == "Question 1 of 1", "session progress binding renders");
     require(session_mode->text_runs.front().text == "normal / active", "session mode and phase render");
     require(session_count->text_runs.front().text == "1", "session question count renders");
+    const scene::scene_node_data* learning_summary = data.find_node("learning_summary");
+    const scene::scene_node_data* known_count = data.find_node("learning_known_count");
+    require(learning_summary != nullptr, "learning summary node exists");
+    require(known_count != nullptr, "known count node exists");
+    require(learning_summary->text_runs.front().text == "Learning 1 / Known 0 / Unknown 0 / Wrong note 0", "learning summary binding renders");
+    require(known_count->text_runs.front().text == "0", "known count binding renders");
     const scene::scene_node_data* formatted_prompt = data.find_node("question_prompt_upper");
     const scene::scene_node_data* formatted_type = data.find_node("question_type_lower");
     require(formatted_prompt != nullptr, "formatted prompt node exists");

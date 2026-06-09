@@ -461,6 +461,35 @@ inline bool evaluate_path(std::string_view raw_expression, const eval_context& c
         return true;
     }
 
+    if (expression == "learning.question_count") {
+        value = script_value::integer(static_cast<std::int64_t>(context.snapshot.learning.question_count));
+        return true;
+    }
+    if (expression == "learning.learning_count") {
+        value = script_value::integer(static_cast<std::int64_t>(context.snapshot.learning.learning_count));
+        return true;
+    }
+    if (expression == "learning.known_count") {
+        value = script_value::integer(static_cast<std::int64_t>(context.snapshot.learning.known_count));
+        return true;
+    }
+    if (expression == "learning.unknown_count") {
+        value = script_value::integer(static_cast<std::int64_t>(context.snapshot.learning.unknown_count));
+        return true;
+    }
+    if (expression == "learning.wrong_note_count") {
+        value = script_value::integer(static_cast<std::int64_t>(context.snapshot.learning.wrong_note_count));
+        return true;
+    }
+    if (expression == "learning.summary") {
+        value = script_value::string(
+            "Learning " + std::to_string(context.snapshot.learning.learning_count)
+            + " / Known " + std::to_string(context.snapshot.learning.known_count)
+            + " / Unknown " + std::to_string(context.snapshot.learning.unknown_count)
+            + " / Wrong note " + std::to_string(context.snapshot.learning.wrong_note_count));
+        return true;
+    }
+
     const domain::question_snapshot* question = current_question(context.snapshot);
     if (expression == "question.prompt") {
         if (question == nullptr) {

@@ -426,6 +426,41 @@ void test_quiz_scene_swipe_previous_replay_returns_to_prior_question()
     require(!session.feedback.has_value(), "previous final snapshot has no pending feedback");
 }
 
+void test_quiz_scene_settings_close_replay_returns_to_deck_list()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_update_setting_action("ui_screen", "settings"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "close_settings",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "settings_close",
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "settings close scenario replay succeeds");
+    require(result.trace.size() == 1, "settings close scenario emits one trace entry");
+    require_trace_entry(result.trace[0], "settings", "update_setting", "deck_list", "settings close trace is stable");
+    require(result.trace[0].target_node_id == "settings_close", "settings close records target node");
+    require(result.trace[0].before_focus_id == "settings_close", "settings close starts from close focus");
+    require(result.trace[0].after_focus_id == "deck_list_deck_deck1", "settings close captures deck list focus");
+
+    require(result.final_frame.layout.route_state().screen_id == "deck_list", "settings close final frame is deck list");
+    require(result.final_frame.layout.contains_node("deck_list_decks"), "settings close final frame emits deck list");
+    const auto setting = result.final_frame.snapshot.settings.find("ui_screen");
+    require(setting != result.final_frame.snapshot.settings.end(), "settings close final snapshot keeps ui_screen setting");
+    require(setting->second == "deck_list", "settings close final snapshot updates route setting");
+}
+
 void test_quiz_scene_missing_target_records_failure_trace()
 {
     using namespace quiz_vulkan;
@@ -476,6 +511,7 @@ int main()
     test_quiz_scene_swipe_skip_replay_reaches_results();
     test_quiz_scene_long_press_mark_unknown_updates_learning();
     test_quiz_scene_swipe_previous_replay_returns_to_prior_question();
+    test_quiz_scene_settings_close_replay_returns_to_deck_list();
     test_quiz_scene_missing_target_records_failure_trace();
     return 0;
 }

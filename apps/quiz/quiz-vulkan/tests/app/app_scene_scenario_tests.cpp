@@ -51,6 +51,37 @@ quiz_vulkan::domain::deck make_test_deck()
     return quiz_deck;
 }
 
+quiz_vulkan::domain::deck make_two_question_deck()
+{
+    using namespace quiz_vulkan::domain;
+
+    question first_question;
+    first_question.id = "q1";
+    first_question.prompt = "Capital of Korea?";
+    first_question.type = question_type::answer;
+    first_question.options.push_back(option{"Seoul", true});
+    first_question.options.push_back(option{"Busan", false});
+
+    question second_question;
+    second_question.id = "q2";
+    second_question.prompt = "Capital of Japan?";
+    second_question.type = question_type::answer;
+    second_question.options.push_back(option{"Tokyo", true});
+    second_question.options.push_back(option{"Osaka", false});
+
+    day quiz_day;
+    quiz_day.id = "day1";
+    quiz_day.title = "Day 1";
+    quiz_day.questions.push_back(std::move(first_question));
+    quiz_day.questions.push_back(std::move(second_question));
+
+    deck quiz_deck;
+    quiz_deck.id = "deck1";
+    quiz_deck.title = "Geography";
+    quiz_deck.days.push_back(std::move(quiz_day));
+    return quiz_deck;
+}
+
 quiz_vulkan::domain::deck make_blank_text_deck()
 {
     using namespace quiz_vulkan::domain;
@@ -260,6 +291,63 @@ void test_quiz_scene_long_press_mark_unknown_updates_learning()
     require(result.final_frame.snapshot.learning.unknown_count == 1, "long press marks question unknown");
 }
 
+void test_quiz_scene_swipe_previous_replay_returns_to_prior_question()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_two_question_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "answer_first_option",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_active_option_0",
+                .now_ms = 200,
+            },
+            app_scene_scenario_step{
+                .name = "continue_feedback",
+                .input = app_scene_scenario_input_kind::swipe_right,
+                .now_ms = 300,
+            },
+            app_scene_scenario_step{
+                .name = "previous_with_swipe",
+                .input = app_scene_scenario_input_kind::swipe_left,
+                .now_ms = 400,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "swipe previous scenario replay succeeds");
+    require(result.trace.size() == 4, "swipe previous scenario emits one trace entry per step");
+    require_trace_entry(result.trace[2], "quiz_feedback", "continue_after_feedback", "quiz_active", "continue to second question trace is stable");
+    require(result.trace[2].event_kind == "swipe_right", "continue to second question records gesture kind");
+    require(result.trace[2].after_focus_id == "quiz_active_option_0", "second question active focus is captured");
+
+    require_trace_entry(result.trace[3], "quiz_active", "previous_question", "quiz_active", "previous question trace is stable");
+    require(result.trace[3].event_kind == "swipe_left", "previous question records gesture kind");
+    require(result.trace[3].before_focus_id == "quiz_active_option_0", "previous question starts from second question focus");
+    require(result.trace[3].after_focus_id == "quiz_active_option_0", "previous question returns to active option focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::quiz, "previous final snapshot remains in quiz");
+    require(result.final_frame.snapshot.active_session.has_value(), "previous final snapshot has session");
+    const domain::session_snapshot& session = *result.final_frame.snapshot.active_session;
+    require(session.current_index == 0, "previous final snapshot returns to first question index");
+    require(session.current_question.has_value(), "previous final snapshot has current question");
+    require(session.current_question->question_id == "q1", "previous final snapshot returns to q1");
+    require(!session.feedback.has_value(), "previous final snapshot has no pending feedback");
+}
+
 } // namespace
 
 int main()
@@ -268,5 +356,6 @@ int main()
     test_quiz_scene_text_submit_replay_records_feedback();
     test_quiz_scene_swipe_skip_replay_reaches_results();
     test_quiz_scene_long_press_mark_unknown_updates_learning();
+    test_quiz_scene_swipe_previous_replay_returns_to_prior_question();
     return 0;
 }

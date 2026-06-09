@@ -56,9 +56,14 @@ Schema version 2 documents contain:
 - node definitions with layout rules, style tokens, text runs, image refs, and
   generic scene semantics
 - data bindings such as `{{ question.prompt }}`
+- current-question learning bindings such as `{{ question.learning }}` and
+  `{{ question.is_known }}`
 - question media bindings such as `{{ question.has_image }}` and
   `{{ question.image_uri }}`
-- node image bindings such as `image.uri` and `image.alt_text`
+- node image bindings such as `image.uri`, `image.alt_text`, and
+  `image.aspect_ratio`
+- numeric style/layout bindings such as `style.opacity`,
+  `style.border_radius`, `layout.width`, `layout.height`, and `layout.gap`
 - session bindings such as `{{ session.progress }}` and
   `{{ session.mode }} / {{ session.phase }}`
 - feedback bindings such as `{{ feedback.exists }}` and
@@ -92,6 +97,10 @@ The expression engine also supports pure function calls:
 - `equals(a, b)`
 - `not(value)`
 - `empty(value)`
+- `contains(value, needle)`
+- `starts_with(value, prefix)`
+- `ends_with(value, suffix)`
+- `format_count(count, singular, plural?)`
 - `choose(condition, value_when_true, value_when_false)`
 - `safe_id(value, fallback?)`
 - `setting(name, fallback?)`
@@ -102,7 +111,9 @@ evaluates the selected branch, which allows fallback bindings such as
 `{{ choose(question.has_long_text, question.long_text, "No long text") }}`.
 Use `safe_id(...)` when dynamic node IDs need stable slug text, for example
 `option_{{ safe_id(option.text, option.index) }}`. Use `setting(...)` to read
-app settings by key without exposing the map shape to the renderer.
+app settings by key without exposing the map shape to the renderer. Use
+`format_count(...)` for stable singular/plural count labels in script-authored
+copy.
 
 Text-answer controls may use legacy-only events because the submitted text is
 provided by the input router at runtime. Other script commands should prefer the

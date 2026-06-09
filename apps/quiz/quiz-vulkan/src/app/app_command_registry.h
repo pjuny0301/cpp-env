@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -159,6 +160,44 @@ inline std::optional<std::string_view> command_non_empty_string_arg(
         return std::nullopt;
     }
     return trim_command_token(*value);
+}
+
+inline std::optional<bool> parse_command_bool(std::string_view value)
+{
+    const std::string normalized = normalize_command_token(value);
+    if (normalized == "true" || normalized == "1" || normalized == "yes" || normalized == "on") {
+        return true;
+    }
+    if (normalized == "false" || normalized == "0" || normalized == "no" || normalized == "off") {
+        return false;
+    }
+    return std::nullopt;
+}
+
+inline std::optional<bool> command_bool_arg(
+    const scene::scene_command& command,
+    std::string_view preferred_key,
+    std::string_view fallback_key = {})
+{
+    const scene::scene_value* value = find_command_arg(command, preferred_key, fallback_key);
+    if (value == nullptr) {
+        return std::nullopt;
+    }
+
+    if (const bool* bool_value = value->bool_if()) {
+        return *bool_value;
+    }
+    if (const std::int64_t* int_value = value->int_if()) {
+        if (*int_value == 0 || *int_value == 1) {
+            return *int_value == 1;
+        }
+        return std::nullopt;
+    }
+    if (const std::string* string_value = value->string_if()) {
+        return parse_command_bool(*string_value);
+    }
+
+    return std::nullopt;
 }
 
 inline bool parse_command_size(std::string_view value, std::size_t& parsed)
@@ -323,7 +362,7 @@ inline app_command_route_result route_scene_command(
     }
 
     if (command.name == "start_quiz") {
-        if (auto arg_check = detail::require_arg_names(command, {"mode", "payload"}); !arg_check.ok()) {
+        if (auto arg_check = detail::require_arg_names(command, {"mode", "payload", "random_seed", "shuffle"}); !arg_check.ok()) {
             return arg_check;
         }
 
@@ -337,7 +376,25 @@ inline app_command_route_result route_scene_command(
             return detail::route_command_error("start_quiz command mode must be normal, random, known, due, wrong, wrong_only, or wrong_note");
         }
 
-        return detail::route_command_action(domain::make_start_quiz_action(*mode));
+        std::optional<unsigned int> random_seed;
+        if (detail::find_command_arg(command, "random_seed") != nullptr) {
+            const std::optional<std::size_t> seed = detail::command_size_arg(command, "random_seed");
+            if (!seed.has_value() || *seed > static_cast<std::size_t>(std::numeric_limits<unsigned int>::max())) {
+                return detail::route_command_error("start_quiz command random_seed must be a non-negative unsigned integer");
+            }
+            random_seed = static_cast<unsigned int>(*seed);
+        }
+
+        bool shuffle = false;
+        if (detail::find_command_arg(command, "shuffle") != nullptr) {
+            const std::optional<bool> parsed_shuffle = detail::command_bool_arg(command, "shuffle");
+            if (!parsed_shuffle.has_value()) {
+                return detail::route_command_error("start_quiz command shuffle must be a boolean value");
+            }
+            shuffle = *parsed_shuffle;
+        }
+
+        return detail::route_command_action(domain::make_start_quiz_action(*mode, random_seed, shuffle));
     }
 
     if (command.name == "submit_option") {

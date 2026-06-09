@@ -128,6 +128,18 @@ Each migrated built-in screen has direct-vs-scripted placed-render coverage in
 Use typed commands for ordinary actions. Command names and argument names must
 pass `validate_scene_command`.
 
+`start_quiz` accepts `mode` plus optional deterministic randomization controls:
+
+```text
+event:
+  trigger: press
+  command:
+    name: start_quiz
+    mode: random
+    random_seed: 123
+    shuffle: true
+```
+
 Text-answer inputs may use a legacy-only event because the submitted text is
 provided by the input router at runtime, after script compilation.
 

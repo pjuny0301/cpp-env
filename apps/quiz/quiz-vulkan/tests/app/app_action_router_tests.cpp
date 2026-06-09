@@ -224,6 +224,33 @@ void test_typed_command_equivalence()
     require(typed_start_payload != nullptr, "typed start_quiz payload exists");
     require(legacy_start_payload->mode == typed_start_payload->mode, "typed start_quiz mode equals legacy route");
 
+    app_command_route_result typed_seeded_start = route_scene_command(
+        command("start_quiz", {
+            {"mode", scene::scene_value("random")},
+            {"random_seed", scene::scene_value(123)},
+            {"shuffle", scene::scene_value(true)},
+        }));
+    require(typed_seeded_start.ok(), "typed start_quiz accepts seed and shuffle");
+    const auto* typed_seeded_start_payload = command_payload_if<domain::start_quiz_action>(typed_seeded_start);
+    require(typed_seeded_start_payload != nullptr, "typed seeded start payload exists");
+    require(typed_seeded_start_payload->mode == domain::quiz_mode::random, "typed seeded start preserves mode");
+    require(typed_seeded_start_payload->random_seed.has_value(), "typed seeded start stores seed");
+    require(*typed_seeded_start_payload->random_seed == 123U, "typed seeded start preserves seed");
+    require(typed_seeded_start_payload->shuffle, "typed seeded start preserves shuffle");
+
+    app_command_route_result typed_string_seeded_start = route_scene_command(
+        command("start_quiz", {
+            {"mode", scene::scene_value("normal")},
+            {"random_seed", scene::scene_value("456")},
+            {"shuffle", scene::scene_value("on")},
+        }));
+    require(typed_string_seeded_start.ok(), "typed start_quiz accepts string seed and shuffle");
+    const auto* typed_string_seeded_start_payload = command_payload_if<domain::start_quiz_action>(typed_string_seeded_start);
+    require(typed_string_seeded_start_payload != nullptr, "typed string seeded start payload exists");
+    require(typed_string_seeded_start_payload->random_seed.has_value(), "typed string seeded start stores seed");
+    require(*typed_string_seeded_start_payload->random_seed == 456U, "typed string seeded start preserves seed");
+    require(typed_string_seeded_start_payload->shuffle, "typed string seeded start parses shuffle string");
+
     app_action_route_result legacy_option = route_scene_action(action("submit_option", "2"));
     app_command_route_result typed_option = route_scene_command(
         command("submit_option", {{"option_index", scene::scene_value(2)}}));
@@ -304,6 +331,16 @@ void test_typed_command_equivalence()
         command("start_quiz", {{"mode", scene::scene_value("normal")}, {"surprise", scene::scene_value("no")}}));
     require(!unknown_arg.ok(), "typed command rejects non-allowlisted args");
     require(contains(unknown_arg.error, "Unsupported argument"), "unknown arg validation reports allowlist failure");
+
+    const app_command_validation_result bad_seed = validate_scene_command(
+        command("start_quiz", {{"mode", scene::scene_value("normal")}, {"random_seed", scene::scene_value("abc")}}));
+    require(!bad_seed.ok(), "typed command rejects malformed random seed");
+    require(contains(bad_seed.error, "random_seed"), "bad seed validation reports random_seed");
+
+    const app_command_validation_result bad_shuffle = validate_scene_command(
+        command("start_quiz", {{"mode", scene::scene_value("normal")}, {"shuffle", scene::scene_value("maybe")}}));
+    require(!bad_shuffle.ok(), "typed command rejects malformed shuffle");
+    require(contains(bad_shuffle.error, "shuffle"), "bad shuffle validation reports shuffle");
 
     const app_command_validation_result unknown_command = validate_scene_command(command("delete_everything"));
     require(!unknown_command.ok(), "typed command rejects non-allowlisted command names");

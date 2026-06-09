@@ -762,6 +762,34 @@ inline bool evaluate_script_function(
         return true;
     }
 
+    if (name == "between") {
+        if (!require_script_function_arg_count(name, args, 3, error)) {
+            return false;
+        }
+
+        script_value value_arg;
+        script_value minimum_arg;
+        script_value maximum_arg;
+        if (!evaluate_expression(args[0], context, value_arg, error)
+            || !evaluate_expression(args[1], context, minimum_arg, error)
+            || !evaluate_expression(args[2], context, maximum_arg, error)) {
+            return false;
+        }
+
+        float numeric_value = 0.0f;
+        float minimum = 0.0f;
+        float maximum = 0.0f;
+        if (!parse_float32(trim(value_arg.to_string()), numeric_value)
+            || !parse_float32(trim(minimum_arg.to_string()), minimum)
+            || !parse_float32(trim(maximum_arg.to_string()), maximum)) {
+            error = "script function between arguments must be numeric";
+            return false;
+        }
+
+        value = script_value::boolean(numeric_value >= minimum && numeric_value <= maximum);
+        return true;
+    }
+
     if (name == "format_count") {
         if (args.size() < 2 || args.size() > 3) {
             error = "script function format_count expects 2 or 3 argument(s), got " + std::to_string(args.size());

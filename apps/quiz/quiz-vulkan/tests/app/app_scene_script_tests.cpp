@@ -442,6 +442,15 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     length_comparisons.bindings.push_back({"text", "{{ greater_than(length(question.prompt), 10) }} / {{ less_than(length(question.prompt), 3) }} / {{ greater_or_equal(length(question.prompt), 17) }} / {{ less_or_equal(length(question.prompt), 17) }}"});
     script.nodes.push_back(std::move(length_comparisons));
 
+    presentation::app_scene_script_node length_range;
+    length_range.id = "length_range_flags";
+    length_range.parent_id = "script_root";
+    length_range.kind = scene::scene_node_kind::text;
+    length_range.debug_name = "length range flags";
+    length_range.style.token = "muted";
+    length_range.bindings.push_back({"text", "{{ between(length(question.prompt), 10, 20) }} / {{ between(length(question.prompt), 1, 5) }}"});
+    script.nodes.push_back(std::move(length_range));
+
     presentation::app_scene_script_node choice_label;
     choice_label.id = "choice_error_label";
     choice_label.parent_id = "script_root";
@@ -519,6 +528,26 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     hidden_length_condition.style.token = "muted";
     hidden_length_condition.text_runs.push_back({"Function condition short prompt", "muted"});
     script.nodes.push_back(std::move(hidden_length_condition));
+
+    presentation::app_scene_script_node range_condition;
+    range_condition.id = "function_condition_prompt_range";
+    range_condition.parent_id = "script_root";
+    range_condition.kind = scene::scene_node_kind::text;
+    range_condition.debug_name = "function condition prompt range";
+    range_condition.condition = "between(length(question.prompt), 10, 20)";
+    range_condition.style.token = "muted";
+    range_condition.text_runs.push_back({"Function condition prompt range", "muted"});
+    script.nodes.push_back(std::move(range_condition));
+
+    presentation::app_scene_script_node hidden_range_condition;
+    hidden_range_condition.id = "function_condition_tiny_prompt_range";
+    hidden_range_condition.parent_id = "script_root";
+    hidden_range_condition.kind = scene::scene_node_kind::text;
+    hidden_range_condition.debug_name = "function condition tiny prompt range";
+    hidden_range_condition.condition = "between(length(question.prompt), 1, 5)";
+    hidden_range_condition.style.token = "muted";
+    hidden_range_condition.text_runs.push_back({"Function condition tiny prompt range", "muted"});
+    script.nodes.push_back(std::move(hidden_range_condition));
 
     presentation::app_scene_script_node seeded_start;
     seeded_start.id = "seeded_start_button";
@@ -768,6 +797,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     const scene::scene_node_data* string_predicates = data.find_node("string_predicate_flags");
     const scene::scene_node_data* prompt_length = data.find_node("question_prompt_length");
     const scene::scene_node_data* length_comparisons = data.find_node("length_comparison_flags");
+    const scene::scene_node_data* length_range = data.find_node("length_range_flags");
     const scene::scene_node_data* choice_label = data.find_node("choice_error_label");
     const scene::scene_node_data* lazy_choice = data.find_node("lazy_choice_missing_long_text");
     require(function_title != nullptr, "function title node exists");
@@ -779,6 +809,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(string_predicates != nullptr, "string predicate function node exists");
     require(prompt_length != nullptr, "length function node exists");
     require(length_comparisons != nullptr, "length comparison function node exists");
+    require(length_range != nullptr, "between function node exists");
     require(choice_label != nullptr, "choose function node exists");
     require(lazy_choice != nullptr, "lazy choose function node exists");
     require(function_title->text_runs.front().text == "Geography / Day 1", "concat function renders text");
@@ -790,6 +821,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(string_predicates->text_runs.front().text == "true / true / true", "string predicate functions render booleans");
     require(prompt_length->text_runs.front().text == "17", "length function renders string length");
     require(length_comparisons->text_runs.front().text == "true / false / true / true", "numeric comparison functions render booleans");
+    require(length_range->text_runs.front().text == "true / false", "between function renders booleans");
     require(choice_label->text_runs.front().text == "No error", "choose function renders fallback branch");
     require(lazy_choice->text_runs.front().text == "No long text", "choose function only evaluates selected branch");
     require(data.contains_node("function_condition_active"), "function expression can drive conditions");
@@ -798,6 +830,8 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(!data.contains_node("function_condition_contains_busan"), "contains function can drive false conditions");
     require(data.contains_node("function_condition_prompt_length"), "numeric comparison function can drive true conditions");
     require(!data.contains_node("function_condition_short_prompt"), "numeric comparison function can drive false conditions");
+    require(data.contains_node("function_condition_prompt_range"), "between function can drive true conditions");
+    require(!data.contains_node("function_condition_tiny_prompt_range"), "between function can drive false conditions");
     require(!data.contains_node("question_long_text"), "false condition suppresses long text node");
 
     const scene::scene_node_data* seeded_start = data.find_node("seeded_start_button");
@@ -1006,6 +1040,22 @@ void test_expression_function_errors_are_reported()
         snapshot,
         "greater_than arguments must be numeric",
         "numeric comparison function numeric errors are reported");
+
+    presentation::app_scene_script_document between_missing_arg = make_active_question_script();
+    append_invalid_function_node(between_missing_arg, "{{ between(length(question.prompt), 10) }}");
+    require_compile_error_contains(
+        between_missing_arg,
+        snapshot,
+        "between expects 3 argument",
+        "between function arg count errors are reported");
+
+    presentation::app_scene_script_document between_bad_number = make_active_question_script();
+    append_invalid_function_node(between_bad_number, "{{ between(question.prompt, 1, 20) }}");
+    require_compile_error_contains(
+        between_bad_number,
+        snapshot,
+        "between arguments must be numeric",
+        "between function numeric errors are reported");
 
     presentation::app_scene_script_document format_count_missing_arg = make_active_question_script();
     append_invalid_function_node(format_count_missing_arg, "{{ format_count(settings.count) }}");

@@ -220,6 +220,7 @@ condition: starts_with(selected_deck.source_uri, "fixture://")
 condition: ends_with(selected_deck.source_uri, ".quizdeck")
 condition: greater_or_equal(length(question.prompt), 10)
 condition: less_than(settings.count, 3)
+condition: between(length(question.prompt), 10, 20)
 binding:
   text: {{ format_count(selected_day.question_count, "question") }}
 ```

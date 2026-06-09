@@ -5,7 +5,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat >&2 <<'USAGE'
-usage: worker-status.sh [--format table|tsv] [--tsv] [repo-root]
+usage: worker-status.sh [--format table|tsv|json] [--tsv] [--json] [repo-root]
 
 Summarizes live Codex tmux sessions, queued prompt counts, and git status for
 the main repo and worker pane paths.
@@ -13,7 +13,7 @@ the main repo and worker pane paths.
 Environment:
   QUIZ_CODEX_BASE_REF           Integration baseline for ahead/behind counts.
   QUIZ_CODEX_WORKER_QUEUE_ROOT  Queue root. Default: codex-workers/queued.
-  QUIZ_CODEX_STATUS_FORMAT      Output format: table or tsv. Default: table.
+  QUIZ_CODEX_STATUS_FORMAT      Output format: table, tsv, or json. Default: table.
   QUIZ_CODEX_STATUS_UNTRACKED   Git untracked scan mode: no, normal, or all.
                                 Default: no.
 USAGE
@@ -44,6 +44,10 @@ while [[ $# -gt 0 ]]; do
       status_format="tsv"
       shift
       ;;
+    --json)
+      status_format="json"
+      shift
+      ;;
     --*)
       usage
       exit 64
@@ -65,9 +69,9 @@ queue_root="${QUIZ_CODEX_WORKER_QUEUE_ROOT:-${script_dir}/queued}"
 status_untracked="${QUIZ_CODEX_STATUS_UNTRACKED:-no}"
 
 case "${status_format}" in
-  table|tsv) ;;
+  table|tsv|json) ;;
   *)
-    echo "QUIZ_CODEX_STATUS_FORMAT must be one of: table, tsv" >&2
+    echo "QUIZ_CODEX_STATUS_FORMAT must be one of: table, tsv, json" >&2
     exit 64
     ;;
 esac
@@ -124,6 +128,48 @@ print_git_status() {
   echo "branch=${branch} ahead=${ahead} behind=${behind} dirty=${dirty} head=${head}"
 }
 
+json_escape() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\t'/\\t}"
+  printf '%s' "${value}"
+}
+
+json_string() {
+  printf '"'
+  json_escape "$1"
+  printf '"'
+}
+
+json_status_object() {
+  local indent="$1"
+  local kind="$2"
+  local session="$3"
+  local state="$4"
+  local queued="$5"
+  local command="$6"
+  local path="$7"
+  local branch ahead behind dirty head
+  IFS=$'\t' read -r branch ahead behind dirty head < <(git_status_values "${path}")
+
+  printf '%s{' "${indent}"
+  printf '"kind":'; json_string "${kind}"
+  printf ',"session":'; json_string "${session}"
+  printf ',"state":'; json_string "${state}"
+  printf ',"queued":'; json_string "${queued}"
+  printf ',"command":'; json_string "${command}"
+  printf ',"path":'; json_string "${path}"
+  printf ',"branch":'; json_string "${branch}"
+  printf ',"ahead":'; json_string "${ahead}"
+  printf ',"behind":'; json_string "${behind}"
+  printf ',"dirty":'; json_string "${dirty}"
+  printf ',"head":'; json_string "${head}"
+  printf '}'
+}
+
 worker_state() {
   local session="$1"
   local pane
@@ -149,6 +195,8 @@ queued_prompt_count() {
   find "${session_queue}" -maxdepth 1 -type f | wc -l | tr -d ' '
 }
 
+tmux_panes="$(tmux list-panes -a -F '#{session_name}|#{pane_current_command}|#{pane_current_path}' 2>/dev/null || true)"
+
 if [[ "${status_format}" == "tsv" ]]; then
   printf 'kind\tsession\tstate\tqueued\tcommand\tpath\tbranch\tahead\tbehind\tdirty\thead\n'
   IFS=$'\t' read -r main_branch main_ahead main_behind main_dirty main_head < <(git_status_values "${repo_root}")
@@ -159,6 +207,14 @@ if [[ "${status_format}" == "tsv" ]]; then
     "${main_behind}" \
     "${main_dirty}" \
     "${main_head}"
+elif [[ "${status_format}" == "json" ]]; then
+  printf '{\n'
+  printf '  "base_ref": '; json_string "${base_ref}"; printf ',\n'
+  printf '  "status_untracked": '; json_string "${status_untracked}"; printf ',\n'
+  printf '  "main": '
+  json_status_object "" "main" "-" "-" "-" "-" "${repo_root}"
+  printf ',\n'
+  printf '  "workers": ['
 else
   echo "base_ref=${base_ref}"
   echo "status_untracked=${status_untracked}"
@@ -167,13 +223,11 @@ else
   printf '%-52s %-8s %-6s %-10s %-70s %s\n' "session" "state" "queued" "command" "path" "git"
 fi
 
-tmux_panes="$(tmux list-panes -a -F '#{session_name}|#{pane_current_command}|#{pane_current_path}' 2>/dev/null || true)"
-if [[ -z "${tmux_panes}" ]]; then
-  exit 0
-fi
-
-printf '%s\n' "${tmux_panes}" |
+first_json_worker=1
 while IFS='|' read -r session command path; do
+  if [[ -z "${session}" ]]; then
+    continue
+  fi
   case "${session}" in
     codex-*) ;;
     *) continue ;;
@@ -194,6 +248,14 @@ while IFS='|' read -r session command path; do
       "${behind}" \
       "${dirty}" \
       "${head}"
+  elif [[ "${status_format}" == "json" ]]; then
+    if [[ "${first_json_worker}" -eq 1 ]]; then
+      printf '\n'
+      first_json_worker=0
+    else
+      printf ',\n'
+    fi
+    json_status_object "    " "worker" "${session}" "${state}" "${queued}" "${command}" "${path}"
   else
     printf '%-52s %-8s %-6s %-10s %-70s %s\n' \
       "${session}" \
@@ -203,4 +265,13 @@ while IFS='|' read -r session command path; do
       "${path}" \
       "$(print_git_status "${path}")"
   fi
-done
+done <<< "${tmux_panes}"
+
+if [[ "${status_format}" == "json" ]]; then
+  if [[ "${first_json_worker}" -eq 1 ]]; then
+    printf ']\n'
+  else
+    printf '\n  ]\n'
+  fi
+  printf '}\n'
+fi

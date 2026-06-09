@@ -184,9 +184,12 @@ repo path when inspecting a different checkout, and set `QUIZ_CODEX_BASE_REF`
 when comparing against a different integration baseline. By default the status
 view skips untracked files so generated scratch trees such as `node_modules/` do
 not make the coordinator view slow; set `QUIZ_CODEX_STATUS_UNTRACKED=normal` or
-`all` when you explicitly need untracked files counted. Use `--tsv` or
-`QUIZ_CODEX_STATUS_FORMAT=tsv` when another script needs machine-readable
-columns instead of the fixed-width table. Read `dirty`, `ahead`, and `behind`
+`all` when you explicitly need untracked files counted. Use `--tsv`,
+`--json`, `QUIZ_CODEX_STATUS_FORMAT=tsv`, or `QUIZ_CODEX_STATUS_FORMAT=json`
+when another script needs machine-readable output instead of the fixed-width
+table. TSV mirrors the table as rows; JSON emits `base_ref`,
+`status_untracked`, `main`, and `workers` objects with escaped string values.
+Read `dirty`, `ahead`, and `behind`
 before assigning more work. A long-lived session is useful when it keeps
 engine-specific context, but new tasks should start from the latest pushed
 baseline when the old worker branch is far behind.

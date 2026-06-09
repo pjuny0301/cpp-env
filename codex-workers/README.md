@@ -28,6 +28,8 @@ The workers are meant to implement behind existing quiz-vulkan interfaces, not r
   to `worker-ledger.tsv`.
 - `worker-ledger.schema.md` and `worker-ledger.tsv`: define and store worker
   session/prompt/role/worktree/branch/base/status/task/blocker/heartbeat rows.
+- `worker-status.schema.md`: documents the stable table, TSV, and JSON fields
+  emitted by `worker-status.sh`.
 - `preflight-worker-env.sh`: reports CMake/Ninja/compiler/path conversion,
   external dependency snapshot, and preset readiness before configure.
 - `verify-source-manifest.sh`: maintains and verifies the generated

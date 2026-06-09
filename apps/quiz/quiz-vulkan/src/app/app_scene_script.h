@@ -676,7 +676,6 @@ inline bool evaluate_script_function(
             return false;
         }
 
-        bool matched = name == "all";
         for (const std::string& arg : args) {
             script_value arg_value;
             if (!evaluate_expression(arg, context, arg_value, error)) {
@@ -684,13 +683,17 @@ inline bool evaluate_script_function(
             }
 
             if (name == "all") {
-                matched = matched && arg_value.truthy();
-            } else {
-                matched = matched || arg_value.truthy();
+                if (!arg_value.truthy()) {
+                    value = script_value::boolean(false);
+                    return true;
+                }
+            } else if (arg_value.truthy()) {
+                value = script_value::boolean(true);
+                return true;
             }
         }
 
-        value = script_value::boolean(matched);
+        value = script_value::boolean(name == "all");
         return true;
     }
 

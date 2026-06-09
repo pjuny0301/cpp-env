@@ -433,6 +433,15 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     boolean_composition.bindings.push_back({"text", "{{ all(question.exists, contains(question.prompt, \"Korea\")) }} / {{ any(error.exists, contains(question.prompt, \"Busan\")) }}"});
     script.nodes.push_back(std::move(boolean_composition));
 
+    presentation::app_scene_script_node lazy_boolean_composition;
+    lazy_boolean_composition.id = "lazy_boolean_composition_flags";
+    lazy_boolean_composition.parent_id = "script_root";
+    lazy_boolean_composition.kind = scene::scene_node_kind::text;
+    lazy_boolean_composition.debug_name = "lazy boolean composition flags";
+    lazy_boolean_composition.style.token = "muted";
+    lazy_boolean_composition.bindings.push_back({"text", "{{ all(false, feedback.outcome) }} / {{ any(true, feedback.outcome) }}"});
+    script.nodes.push_back(std::move(lazy_boolean_composition));
+
     presentation::app_scene_script_node prompt_length;
     prompt_length.id = "question_prompt_length";
     prompt_length.parent_id = "script_root";
@@ -825,6 +834,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     const scene::scene_node_data* empty_error_flag = data.find_node("empty_error_flag");
     const scene::scene_node_data* string_predicates = data.find_node("string_predicate_flags");
     const scene::scene_node_data* boolean_composition = data.find_node("boolean_composition_flags");
+    const scene::scene_node_data* lazy_boolean_composition = data.find_node("lazy_boolean_composition_flags");
     const scene::scene_node_data* prompt_length = data.find_node("question_prompt_length");
     const scene::scene_node_data* length_comparisons = data.find_node("length_comparison_flags");
     const scene::scene_node_data* length_range = data.find_node("length_range_flags");
@@ -838,6 +848,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(empty_error_flag != nullptr, "empty function node exists");
     require(string_predicates != nullptr, "string predicate function node exists");
     require(boolean_composition != nullptr, "boolean composition function node exists");
+    require(lazy_boolean_composition != nullptr, "lazy boolean composition function node exists");
     require(prompt_length != nullptr, "length function node exists");
     require(length_comparisons != nullptr, "length comparison function node exists");
     require(length_range != nullptr, "between function node exists");
@@ -851,6 +862,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(empty_error_flag->text_runs.front().text == "true", "empty function renders boolean");
     require(string_predicates->text_runs.front().text == "true / true / true", "string predicate functions render booleans");
     require(boolean_composition->text_runs.front().text == "true / false", "boolean composition functions render booleans");
+    require(lazy_boolean_composition->text_runs.front().text == "false / true", "boolean composition functions short-circuit");
     require(prompt_length->text_runs.front().text == "17", "length function renders string length");
     require(length_comparisons->text_runs.front().text == "true / false / true / true", "numeric comparison functions render booleans");
     require(length_range->text_runs.front().text == "true / true / false", "between function renders booleans");

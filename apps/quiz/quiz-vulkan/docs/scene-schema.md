@@ -118,7 +118,8 @@ function results can still flow through formatter chains. `choose(...)` only
 evaluates the selected branch, which allows fallback bindings such as
 `{{ choose(question.has_long_text, question.long_text, "No long text") }}`.
 Use `all(...)` and `any(...)` when a condition needs to combine multiple
-boolean-style expressions without moving that logic into renderer code.
+boolean-style expressions without moving that logic into renderer code. They
+evaluate arguments from left to right and stop once the result is known.
 Use `safe_id(...)` when dynamic node IDs need stable slug text, for example
 `option_{{ safe_id(option.text, option.index) }}`. Use `setting(...)` to read
 app settings by key without exposing the map shape to the renderer. Use

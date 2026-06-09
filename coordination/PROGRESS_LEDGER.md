@@ -391,3 +391,13 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: push Track A branch update; continue next independent stretch item
 - blocker(있으면): 없음
 - 검증: `cmake --build --preset linux-debug --target quiz_vulkan_architecture_boundary_tests quiz_vulkan_app_scene_script_tests quiz_vulkan_app_quiz_screens_tests` passed; `ctest --test-dir ../../../build/out/quiz/quiz-vulkan/linux-ninja -R "quiz_vulkan_(app_scene_script_tests|app_quiz_screens_tests|architecture_boundary_tests)$" --output-on-failure` passed 3/3; `git diff --check` passed
+
+### [CP-track-a-current-032]
+- 시각 UTC: 2026-06-09T13:31:56Z
+- 태스크: Stretch backlog - report Track A between function and scene core guard rollup
+- status: done
+- 변경 파일: reports/progress/2026-06-09T133054Z-track-a-between-guard-rollup.md
+- commit SHA: 263583d
+- 다음 단계: push Track A branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `git diff --check` passed

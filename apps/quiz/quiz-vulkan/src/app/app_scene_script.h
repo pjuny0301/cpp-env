@@ -673,6 +673,49 @@ inline bool evaluate_script_function(
         return evaluate_expression(condition_value.truthy() ? args[1] : args[2], context, value, error);
     }
 
+    if (name == "safe_id") {
+        if (args.empty() || args.size() > 2) {
+            error = "script function safe_id expects 1 or 2 argument(s), got " + std::to_string(args.size());
+            return false;
+        }
+
+        script_value raw_value;
+        if (!evaluate_expression(args.front(), context, raw_value, error)) {
+            return false;
+        }
+
+        std::string fallback = "id";
+        if (args.size() == 2) {
+            script_value fallback_value;
+            if (!evaluate_expression(args[1], context, fallback_value, error)) {
+                return false;
+            }
+            fallback = fallback_value.to_string();
+        }
+
+        std::string output;
+        const std::string rendered_value = raw_value.to_string();
+        output.reserve(rendered_value.size());
+        for (unsigned char character : rendered_value) {
+            if (std::isalnum(character) != 0) {
+                output.push_back(static_cast<char>(std::tolower(character)));
+                continue;
+            }
+            if (output.empty() || output.back() != '_') {
+                output.push_back('_');
+            }
+        }
+        while (!output.empty() && output.back() == '_') {
+            output.pop_back();
+        }
+        if (output.empty()) {
+            output = std::move(fallback);
+        }
+
+        value = script_value::string(std::move(output));
+        return true;
+    }
+
     error = "unsupported script function: " + std::string(name);
     return false;
 }

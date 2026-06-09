@@ -245,6 +245,15 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     function_title_pipe_literal.bindings.push_back({"text", "{{ concat(selected_deck.title, \" | \", selected_day.title) }}"});
     script.nodes.push_back(std::move(function_title_pipe_literal));
 
+    presentation::app_scene_script_node safe_deck_id;
+    safe_deck_id.id = "safe_deck_id";
+    safe_deck_id.parent_id = "script_root";
+    safe_deck_id.kind = scene::scene_node_kind::text;
+    safe_deck_id.debug_name = "safe deck id";
+    safe_deck_id.style.token = "muted";
+    safe_deck_id.bindings.push_back({"text", "{{ safe_id(concat(selected_deck.title, \" deck\")) }}"});
+    script.nodes.push_back(std::move(safe_deck_id));
+
     presentation::app_scene_script_node session_active_flag;
     session_active_flag.id = "session_active_flag";
     session_active_flag.parent_id = "script_root";
@@ -365,6 +374,16 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     option.events.push_back(std::move(press));
     script.nodes.push_back(std::move(option));
 
+    presentation::app_scene_script_node stable_option_id;
+    stable_option_id.id = "option_safe_{{ safe_id(option.text, option.index) }}";
+    stable_option_id.parent_id = "question_options";
+    stable_option_id.kind = scene::scene_node_kind::text;
+    stable_option_id.debug_name = "stable option id";
+    stable_option_id.style.token = "muted";
+    stable_option_id.repeater = presentation::app_scene_script_repeater{"option", "question.options"};
+    stable_option_id.bindings.push_back({"text", "{{ option.text }}"});
+    script.nodes.push_back(std::move(stable_option_id));
+
     script.transitions.push_back({"script_enter", 0.2f, "question.exists"});
     return script;
 }
@@ -459,6 +478,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     const scene::scene_node_data* function_title = data.find_node("deck_day_function_title");
     const scene::scene_node_data* function_title_upper = data.find_node("deck_day_function_title_upper");
     const scene::scene_node_data* function_title_pipe_literal = data.find_node("deck_day_function_pipe_literal");
+    const scene::scene_node_data* safe_deck_id = data.find_node("safe_deck_id");
     const scene::scene_node_data* session_active_flag = data.find_node("session_active_flag");
     const scene::scene_node_data* empty_error_flag = data.find_node("empty_error_flag");
     const scene::scene_node_data* choice_label = data.find_node("choice_error_label");
@@ -466,6 +486,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(function_title != nullptr, "function title node exists");
     require(function_title_upper != nullptr, "function title upper node exists");
     require(function_title_pipe_literal != nullptr, "function title pipe literal node exists");
+    require(safe_deck_id != nullptr, "safe id function node exists");
     require(session_active_flag != nullptr, "function active flag node exists");
     require(empty_error_flag != nullptr, "empty function node exists");
     require(choice_label != nullptr, "choose function node exists");
@@ -473,6 +494,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(function_title->text_runs.front().text == "Geography / Day 1", "concat function renders text");
     require(function_title_upper->text_runs.front().text == "GEOGRAPHY / DAY 1", "function result supports formatter chain");
     require(function_title_pipe_literal->text_runs.front().text == "Geography | Day 1", "quoted pipe literal is not treated as formatter");
+    require(safe_deck_id->text_runs.front().text == "geography_deck", "safe_id function renders stable id text");
     require(session_active_flag->text_runs.front().text == "true", "equals function renders boolean");
     require(empty_error_flag->text_runs.front().text == "true", "empty function renders boolean");
     require(choice_label->text_runs.front().text == "No error", "choose function renders fallback branch");
@@ -502,6 +524,8 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(option_1 != nullptr, "second repeated option exists");
     require(option_0->text_runs.front().text == "Seoul", "first option text binding renders");
     require(option_1->text_runs.front().text == "Busan", "second option text binding renders");
+    require(data.contains_node("option_safe_seoul"), "safe_id can render stable repeated option id");
+    require(data.contains_node("option_safe_busan"), "safe_id renders each repeated option id");
     require(!option_0->has_action_binding, "script command does not require legacy action binding");
     require(option_0->has_event_handlers, "script event handler is emitted");
     require(option_0->event_handlers.size() == 1, "script emits one event handler");
@@ -552,7 +576,14 @@ void test_phase3_dsl_validation_and_determinism()
     require(!duplicate_validation.ok(), "duplicate literal node id fails validation");
 
     presentation::app_scene_script_document bad_command = make_active_question_script();
-    bad_command.nodes.back().events.front().commands.front().name = "delete_everything";
+    const auto command_node = std::find_if(
+        bad_command.nodes.begin(),
+        bad_command.nodes.end(),
+        [](const presentation::app_scene_script_node& node) {
+            return node.id == "option_{{ option.index }}";
+        });
+    require(command_node != bad_command.nodes.end(), "bad command fixture finds option command node");
+    command_node->events.front().commands.front().name = "delete_everything";
     const presentation::app_scene_script_validation_result command_validation =
         presentation::validate_app_scene_script_document(bad_command);
     require(!command_validation.ok(), "non-allowlisted command fails validation");
@@ -649,6 +680,14 @@ void test_expression_function_errors_are_reported()
         snapshot,
         "choose expects 3 argument",
         "choose function arg count errors are reported");
+
+    presentation::app_scene_script_document safe_id_missing_arg = make_active_question_script();
+    append_invalid_function_node(safe_id_missing_arg, "{{ safe_id() }}");
+    require_compile_error_contains(
+        safe_id_missing_arg,
+        snapshot,
+        "safe_id expects 1 or 2 argument",
+        "safe_id function arg count errors are reported");
 }
 
 void test_dynamic_node_id_collisions_are_reported()

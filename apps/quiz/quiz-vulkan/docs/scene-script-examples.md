@@ -87,7 +87,7 @@ nodes:
     parent_id: script_root
     kind: container
     condition: question.has_options
-  - id: option_{{ option.index }}
+  - id: option_{{ safe_id(option.text, option.index) }}
     parent_id: question_options
     kind: input
     repeater:

@@ -534,6 +534,8 @@ target_sources(
         FILE_SET HEADERS
         BASE_DIRS src
         FILES
+            src/app/app_command_registry.h
+            src/app/app_scene_script.h
             src/app/app_quiz_screens.h
             src/app/app_quiz_screens.hpp
 )
@@ -600,6 +602,7 @@ target_sources(
         BASE_DIRS src
         FILES
             src/app/app_action_router.h
+            src/app/app_command_registry.h
             src/app/app.h
             src/app/app_deck_loader.h
             src/app/app_demo.h

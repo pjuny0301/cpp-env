@@ -5,6 +5,8 @@
 - Treat `android-quiz-app` and `quiz-editor` as working baselines to absorb and replace in the native C++/Vulkan remake, not as separate final products to preserve unchanged.
 - The source requirement list is `big_plan.md`.
 - Requirement-to-code/document evidence is tracked in `requirements_traceability_matrix.md`.
+- Durable evidence rules are in `evidence_policy.md`; raw logs, large generated outputs, and reproducible command output do not belong in durable requirement docs.
+- Stable ownership rules are in `ownership_rules.md`; volatile branch/session/worktree state belongs in `current.md` or `coordination/`.
 - Requirement numbers are trace IDs, not implementation order. Use the dependency-based execution order in `big_plan.md`.
 - Root implementation connection plans live under `구현/NN.md`. They route each requirement into project-level plans without duplicating project details.
 - Date-based requirements live under `일자별요구사항/YYYY-MM-DD/requirements.md`.
@@ -12,7 +14,7 @@
 - Project-specific implementation plans live under `android-quiz-app/구현/`, `quiz-editor/구현/`, and `quiz-vulkan/구현/`; these contain the detailed prose implementation plans.
 - Plan reading order is `big_plan.md`, then `requirements_traceability_matrix.md`, then root `구현/NN.md`, then the relevant project `big_plan.md`, then project `구현/NN.md`, then dated `requirements.md`, then `archive/` only if historical context is needed.
 - Execution order is phase-based: common contract/domain first, Android UX baseline second, editor/data pipeline third, Vulkan renderer fourth, external AI/OCR/proof workers fifth, study/theme expansion sixth, and deploy/QA last.
-- Generated plan-doc bundles live under dated `generated/` folders. Read their `bundle_manifest.json` and `prompt_overrides.json` before opening render specs, prompts, PDFs, or DOCX files.
+- Generated plan-doc bundles should be external or reproducible. If a dated `generated/` folder exists, read `bundle_manifest.json` and `prompt_overrides.json` before opening render specs, prompts, PDFs, or DOCX files.
 - Items 17 and 18 are duplicates. Items 73 and 73 are separate entries in the source; refer to them as 73a and 73b when needed.
 - Item 48 is blank and item 53 is incomplete; keep them as clarification placeholders.
 - Items 50 through 56 are explicitly marked as work for another branch.

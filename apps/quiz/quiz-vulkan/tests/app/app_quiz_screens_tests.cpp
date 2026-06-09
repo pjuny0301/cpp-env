@@ -1,6 +1,7 @@
 #include "core/layout/layout_placer.h"
 #include "core/domain/app_snapshot.hpp"
 #include "app/app_quiz_screens.h"
+#include "app/app_scene_script.h"
 
 #include <cassert>
 #include <cmath>
@@ -21,6 +22,17 @@ void require(bool condition, const char* message)
 bool near(float actual, float expected)
 {
     return std::fabs(actual - expected) < 0.001f;
+}
+
+void require_same_rect(
+    const quiz_vulkan::scene::scene_rect& actual,
+    const quiz_vulkan::scene::scene_rect& expected,
+    const char* message)
+{
+    require(near(actual.x, expected.x), message);
+    require(near(actual.y, expected.y), message);
+    require(near(actual.width, expected.width), message);
+    require(near(actual.height, expected.height), message);
 }
 
 class fixed_text_metrics final : public quiz_vulkan::scene::text_metrics_interface {
@@ -207,6 +219,45 @@ void require_node_role(
     require(node->semantics.role == role, message);
 }
 
+void require_same_placed_render(
+    const quiz_vulkan::scene::placed_scene& actual,
+    const quiz_vulkan::scene::placed_scene& expected,
+    const char* message)
+{
+    require_same_rect(actual.usable_bounds, expected.usable_bounds, message);
+    require(actual.nodes.size() == expected.nodes.size(), message);
+    require(actual.input_regions.size() == expected.input_regions.size(), message);
+
+    for (std::size_t index = 0; index < actual.nodes.size(); ++index) {
+        const quiz_vulkan::scene::placed_scene_node& actual_node = actual.nodes[index];
+        const quiz_vulkan::scene::placed_scene_node& expected_node = expected.nodes[index];
+        require(actual_node.id == expected_node.id, message);
+        require(actual_node.parent_id == expected_node.parent_id, message);
+        require(actual_node.kind == expected_node.kind, message);
+        require(actual_node.input_enabled == expected_node.input_enabled, message);
+        require(actual_node.visible == expected_node.visible, message);
+        require(actual_node.semantics.role == expected_node.semantics.role, message);
+        require_same_rect(actual_node.bounds, expected_node.bounds, message);
+        require_same_rect(actual_node.content_bounds, expected_node.content_bounds, message);
+        require(actual_node.text_runs.size() == expected_node.text_runs.size(), message);
+        for (std::size_t text_index = 0; text_index < actual_node.text_runs.size(); ++text_index) {
+            require(actual_node.text_runs[text_index].text == expected_node.text_runs[text_index].text, message);
+            require(actual_node.text_runs[text_index].style_token == expected_node.text_runs[text_index].style_token, message);
+        }
+    }
+
+    for (std::size_t index = 0; index < actual.input_regions.size(); ++index) {
+        const quiz_vulkan::scene::scene_input_region& actual_region = actual.input_regions[index];
+        const quiz_vulkan::scene::scene_input_region& expected_region = expected.input_regions[index];
+        require(actual_region.node_id == expected_region.node_id, message);
+        require(actual_region.enabled == expected_region.enabled, message);
+        require(actual_region.action.action_type == expected_region.action.action_type, message);
+        require(actual_region.action.payload == expected_region.action.payload, message);
+        require(actual_region.event_handlers.size() == expected_region.event_handlers.size(), message);
+        require_same_rect(actual_region.bounds, expected_region.bounds, message);
+    }
+}
+
 } // namespace
 
 int main()
@@ -255,6 +306,22 @@ int main()
     require(!day_intro_data.contains_node("day_intro_start_known"), "day intro known action is hidden without known questions");
     require(!day_intro_data.contains_node("day_intro_start_wrong_note"), "day intro wrong-note action is hidden without wrong notes");
     require_start_quiz_action(day_intro_data, "day_intro_start_normal", "normal", "day intro normal action starts normal quiz");
+
+    const presentation::app_scene_script_parse_result day_intro_script =
+        presentation::parse_app_scene_script_json(presentation::day_intro_screen_script_json);
+    require(day_intro_script.ok(), "day intro scene script parses");
+    const presentation::app_scene_script_compile_result day_intro_compiled =
+        presentation::compile_app_scene_script(*day_intro_script.document, day_intro_snapshot);
+    require(day_intro_compiled.ok(), "day intro scene script compiles");
+    scene::scene_layout_data scripted_day_intro_data("test_scripted_day_intro");
+    apply_patch_to_scene(*day_intro_compiled.patch, scripted_day_intro_data);
+    require(scripted_day_intro_data.route_state().screen_id == "day_intro", "scripted day intro route selected");
+
+    fixed_text_metrics day_intro_metrics;
+    const scene::scene_rect day_intro_viewport{0.0f, 0.0f, 360.0f, 640.0f};
+    const scene::placed_scene direct_day_intro_render = scene::layout_placer().place(day_intro_data, day_intro_viewport, day_intro_metrics);
+    const scene::placed_scene scripted_day_intro_render = scene::layout_placer().place(scripted_day_intro_data, day_intro_viewport, day_intro_metrics);
+    require_same_placed_render(scripted_day_intro_render, direct_day_intro_render, "scripted day intro render equals direct builder");
 
     std::vector<domain::deck> learning_decks;
     learning_decks.push_back(make_learning_groups_deck());

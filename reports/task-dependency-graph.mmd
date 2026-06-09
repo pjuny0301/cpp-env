@@ -1,0 +1,26 @@
+flowchart TD
+  T0[Clone repository and read goal files]
+  T1[Map top-level folders and app ownership]
+  T2[Build initial task dependency graph]
+  T3[Build initial project component graph]
+  P1[Analyze folder structure and project organization]
+  P2[Analyze workflow and worker/build system]
+  P3[Analyze UI/event/action architecture and script-engine feasibility]
+  P4[Identify missing future components]
+  I1[Integrate findings into report]
+  I2[Write recommendations and migration plan]
+  V1[Verify report covers every goal item]
+
+  T0 --> T1
+  T1 --> T2
+  T1 --> T3
+  T2 --> P1
+  T2 --> P2
+  T2 --> P3
+  T3 --> P4
+  P1 --> I1
+  P2 --> I1
+  P3 --> I1
+  P4 --> I1
+  I1 --> I2
+  I2 --> V1

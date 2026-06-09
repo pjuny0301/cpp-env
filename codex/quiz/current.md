@@ -1,6 +1,6 @@
 # Quiz Current Handoff
 
-Last updated: 2026-05-19
+Last updated: 2026-06-08
 
 Read this first before `big_plan.md`, `requirements_traceability_matrix.md`,
 or per-requirement implementation notes. Keep this file short; old handoff
@@ -17,17 +17,15 @@ details belong in git history.
 - Keep `apps/quiz` as code only. Build outputs stay under `build/out`;
   external dependency snapshots stay under `build/external`.
 
-## Integrated Baseline
+## Volatile Coordination
 
-- Main branch `codex/quiz-vulkan-remake-baseline` is at `066f6b0`.
-- Integrated since the previous remote baseline:
-  - asset render resource address to byte-payload bridge;
-  - standard PNG decode through the existing STB path;
-  - input gesture route diagnostics;
-  - multiline text atlas frame handoff;
-  - native Vulkan vertex-buffer bind evidence.
-- Full Windows MinGW CTest passed 108/108 in
-  `C:/aa/build/out/quiz/quiz-vulkan/windows-mingw-ascii`.
+- Current branch, worktree, session, and worker heartbeat state belongs in
+  `coordination/PROGRESS_LEDGER.md` and `coordination/SHARED_NOTES.md`.
+- Historical branch names, machine paths, and old worker session IDs in this
+  file are non-authoritative. Refresh them from coordination files before use.
+- Verification summaries should name the command and result. Raw logs and
+  machine-specific output paths belong under `build/out/quiz` or external
+  artifacts, not this handoff.
 
 ## Active Bottlenecks
 
@@ -41,21 +39,6 @@ details belong in git history.
   contracts, not ad hoc file paths.
 - Input/IME: gesture route diagnostics are integrated; only resume when a
   user-visible input route or IME contract becomes the active blocker.
-
-## Active Workers
-
-- `codex-vulkan-native-command-packet-executor-20260516`: latest commit
-  `1cc792d` integrated as `066f6b0`; session remains alive.
-- `codex-text-freetype-prototype-20260514`: latest commit `ac9c110`
-  integrated as `9d0dcf5`; session remains alive.
-- `codex-asset-unified-cache-key-20260514`: latest commit `353bf28`
-  integrated as `3d3878d`; session remains alive.
-- `codex-image-texture-next-20260514`: latest commit `c80a3e6`
-  integrated as `03ce5dc`; session remains alive.
-- `codex-input-ime`: latest commit `5e87138` integrated as `ce94ecd`;
-  session remains alive.
-- Idle sessions are intentionally kept alive. Give them fresh baseline branches
-  before new work; do not re-merge historical ahead commits.
 
 ## Architecture Contract
 

@@ -1,20 +1,24 @@
 {
   "folders": [
     {
-      "name": "quiz-platform",
-      "path": "."
+      "name": "cpp-env",
+      "path": "../../../.."
     },
     {
-      "name": "Android Quiz App",
-      "path": "quizquiz/SimpleAndroidQuizAppBuild"
+      "name": "android-quiz-app",
+      "path": "../../../../apps/quiz/android-quiz-app"
     },
     {
-      "name": "Figma Make Quiz Web",
-      "path": "figma-make/quiz-web"
+      "name": "quiz-editor",
+      "path": "../../../../apps/quiz/quiz-editor"
     },
     {
-      "name": "Quiz Editor",
-      "path": "quiz builder/Quiz app editor"
+      "name": "shared-ui",
+      "path": "../../../../apps/quiz/shared-ui"
+    },
+    {
+      "name": "quiz-external-materials",
+      "path": ".."
     }
   ],
   "settings": {

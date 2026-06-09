@@ -19,7 +19,8 @@ function figmaAssetResolver() {
 }
 
 function quizDataDevApi() {
-  let repoRoot = path.resolve('C:/aa/build/external/quiz/quiz-data')
+  const defaultRepoRoot = path.resolve(__dirname, '../../../build/external/quiz/quiz-data')
+  let repoRoot = path.resolve(process.env.QUIZ_DATA_REPO ?? defaultRepoRoot)
 
   const sendJson = (res, status, payload) => {
     res.statusCode = status
@@ -203,6 +204,7 @@ export default defineConfig({
     alias: {
       // Alias @ to the src directory
       '@': path.resolve(__dirname, './src'),
+      '@quiz/shared-ui': path.resolve(__dirname, '../shared-ui/src'),
     },
   },
 

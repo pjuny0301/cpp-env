@@ -1,0 +1,10 @@
+{
+  "name": "@quiz/shared-ui",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "peerDependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}

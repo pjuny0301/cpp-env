@@ -4,6 +4,7 @@ Reference mobile quiz UX exported from Figma and maintained as a repo workspace.
 
 ## Workspace
 
+- Package identity: `@quiz/android-quiz-app`.
 - App screens, routes, state, and quiz runtime logic live under `src/app/`.
 - Generated shared primitives are consumed from `../shared-ui/src` through the `@quiz/shared-ui` Vite alias.
 - The Tauri shell lives under `src-tauri/`.

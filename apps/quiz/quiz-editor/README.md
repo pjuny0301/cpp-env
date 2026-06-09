@@ -4,6 +4,7 @@ Reference quiz authoring workflow exported from Figma and maintained as a repo w
 
 ## Workspace
 
+- Package identity: `@quiz/quiz-editor`.
 - Editor screens, transforms, dialogs, and quiz-data workflow code live under `src/app/`.
 - Generated shared primitives are consumed from `../shared-ui/src` through the `@quiz/shared-ui` Vite alias.
 - The local development API for quiz-data operations is implemented in `vite.config.ts`.

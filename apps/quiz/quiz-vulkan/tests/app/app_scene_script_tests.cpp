@@ -254,6 +254,33 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     session_active_flag.bindings.push_back({"text", "{{ equals(session.phase, \"active\") }}"});
     script.nodes.push_back(std::move(session_active_flag));
 
+    presentation::app_scene_script_node empty_error_flag;
+    empty_error_flag.id = "empty_error_flag";
+    empty_error_flag.parent_id = "script_root";
+    empty_error_flag.kind = scene::scene_node_kind::text;
+    empty_error_flag.debug_name = "empty error flag";
+    empty_error_flag.style.token = "muted";
+    empty_error_flag.bindings.push_back({"text", "{{ empty(error.message) }}"});
+    script.nodes.push_back(std::move(empty_error_flag));
+
+    presentation::app_scene_script_node choice_label;
+    choice_label.id = "choice_error_label";
+    choice_label.parent_id = "script_root";
+    choice_label.kind = scene::scene_node_kind::text;
+    choice_label.debug_name = "choice error label";
+    choice_label.style.token = "muted";
+    choice_label.bindings.push_back({"text", "{{ choose(error.exists, error.message, \"No error\") }}"});
+    script.nodes.push_back(std::move(choice_label));
+
+    presentation::app_scene_script_node lazy_choice;
+    lazy_choice.id = "lazy_choice_missing_long_text";
+    lazy_choice.parent_id = "script_root";
+    lazy_choice.kind = scene::scene_node_kind::text;
+    lazy_choice.debug_name = "lazy choice missing long text";
+    lazy_choice.style.token = "muted";
+    lazy_choice.bindings.push_back({"text", "{{ choose(question.has_long_text, question.long_text, \"No long text\") }}"});
+    script.nodes.push_back(std::move(lazy_choice));
+
     presentation::app_scene_script_node function_condition;
     function_condition.id = "function_condition_active";
     function_condition.parent_id = "script_root";
@@ -388,6 +415,8 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(status_data.find_node("settings_count")->text_runs.front().text == "1", "settings count renders entries");
     require(status_data.find_node("error_exists")->text_runs.front().text == "true", "error exists binding renders present error");
     require(status_data.find_node("error_message")->text_runs.front().text == "Load failed", "error message binding renders present error");
+    require(status_data.find_node("empty_error_flag")->text_runs.front().text == "false", "empty function renders present error");
+    require(status_data.find_node("choice_error_label")->text_runs.front().text == "Load failed", "choose function renders selected branch");
 
     const scene::scene_node_data* learning_summary = data.find_node("learning_summary");
     const scene::scene_node_data* known_count = data.find_node("learning_known_count");
@@ -414,14 +443,23 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     const scene::scene_node_data* function_title_upper = data.find_node("deck_day_function_title_upper");
     const scene::scene_node_data* function_title_pipe_literal = data.find_node("deck_day_function_pipe_literal");
     const scene::scene_node_data* session_active_flag = data.find_node("session_active_flag");
+    const scene::scene_node_data* empty_error_flag = data.find_node("empty_error_flag");
+    const scene::scene_node_data* choice_label = data.find_node("choice_error_label");
+    const scene::scene_node_data* lazy_choice = data.find_node("lazy_choice_missing_long_text");
     require(function_title != nullptr, "function title node exists");
     require(function_title_upper != nullptr, "function title upper node exists");
     require(function_title_pipe_literal != nullptr, "function title pipe literal node exists");
     require(session_active_flag != nullptr, "function active flag node exists");
+    require(empty_error_flag != nullptr, "empty function node exists");
+    require(choice_label != nullptr, "choose function node exists");
+    require(lazy_choice != nullptr, "lazy choose function node exists");
     require(function_title->text_runs.front().text == "Geography / Day 1", "concat function renders text");
     require(function_title_upper->text_runs.front().text == "GEOGRAPHY / DAY 1", "function result supports formatter chain");
     require(function_title_pipe_literal->text_runs.front().text == "Geography | Day 1", "quoted pipe literal is not treated as formatter");
     require(session_active_flag->text_runs.front().text == "true", "equals function renders boolean");
+    require(empty_error_flag->text_runs.front().text == "true", "empty function renders boolean");
+    require(choice_label->text_runs.front().text == "No error", "choose function renders fallback branch");
+    require(lazy_choice->text_runs.front().text == "No long text", "choose function only evaluates selected branch");
     require(data.contains_node("function_condition_active"), "function expression can drive conditions");
     require(data.contains_node("function_condition_not_completed"), "not function can drive conditions");
     require(!data.contains_node("question_long_text"), "false condition suppresses long text node");
@@ -563,6 +601,22 @@ void test_expression_function_errors_are_reported()
         snapshot,
         "unterminated string literal",
         "unterminated function string errors are reported");
+
+    presentation::app_scene_script_document empty_extra_arg = make_active_question_script();
+    append_invalid_function_node(empty_extra_arg, "{{ empty(error.message, \"fallback\") }}");
+    require_compile_error_contains(
+        empty_extra_arg,
+        snapshot,
+        "empty expects 1 argument",
+        "empty function arg count errors are reported");
+
+    presentation::app_scene_script_document choose_missing_arg = make_active_question_script();
+    append_invalid_function_node(choose_missing_arg, "{{ choose(error.exists, error.message) }}");
+    require_compile_error_contains(
+        choose_missing_arg,
+        snapshot,
+        "choose expects 3 argument",
+        "choose function arg count errors are reported");
 }
 
 void test_dynamic_node_id_collisions_are_reported()

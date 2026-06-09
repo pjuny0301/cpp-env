@@ -68,6 +68,16 @@ nodes:
     kind: text
     binding:
       text: {{ concat(selected_deck.title, " / ", selected_day.title) | upper }}
+  - id: error_label
+    parent_id: script_root
+    kind: text
+    binding:
+      text: {{ choose(error.exists, error.message, "No error") }}
+  - id: long_text_fallback
+    parent_id: script_root
+    kind: text
+    binding:
+      text: {{ choose(question.has_long_text, question.long_text, "No long text") }}
   - id: question_prompt_upper
     parent_id: script_root
     kind: text

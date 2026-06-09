@@ -648,6 +648,31 @@ inline bool evaluate_script_function(
         return true;
     }
 
+    if (name == "empty") {
+        if (!require_script_function_arg_count(name, args, 1, error)) {
+            return false;
+        }
+
+        script_value arg_value;
+        if (!evaluate_expression(args.front(), context, arg_value, error)) {
+            return false;
+        }
+        value = script_value::boolean(trim(arg_value.to_string()).empty());
+        return true;
+    }
+
+    if (name == "choose") {
+        if (!require_script_function_arg_count(name, args, 3, error)) {
+            return false;
+        }
+
+        script_value condition_value;
+        if (!evaluate_expression(args[0], context, condition_value, error)) {
+            return false;
+        }
+        return evaluate_expression(condition_value.truthy() ? args[1] : args[2], context, value, error);
+    }
+
     error = "unsupported script function: " + std::string(name);
     return false;
 }

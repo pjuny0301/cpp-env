@@ -491,3 +491,13 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: push Track A branch update; continue next independent stretch item
 - blocker(있으면): 없음
 - 검증: `git diff --check` passed; `cmake --build --preset linux-debug --target quiz_vulkan_architecture_boundary_tests` passed; `ctest --test-dir ../../../build/out/quiz/quiz-vulkan/linux-ninja -R "quiz_vulkan_architecture_boundary_tests$" --output-on-failure` passed 1/1
+
+### [CP-track-a-current-042]
+- 시각 UTC: 2026-06-09T15:05:19Z
+- 태스크: Stretch backlog - guard scene core against quiz semantic property keys
+- status: done
+- 변경 파일: apps/quiz/quiz-vulkan/tests/architecture/architecture_boundary_tests.cpp
+- commit SHA: ae7cfbd
+- 다음 단계: push Track A branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `cmake --build --preset linux-debug --target quiz_vulkan_architecture_boundary_tests` passed; `ctest --test-dir ../../../build/out/quiz/quiz-vulkan/linux-ninja -R "quiz_vulkan_architecture_boundary_tests$" --output-on-failure` passed 1/1; `git diff --check` passed

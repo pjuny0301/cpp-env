@@ -122,7 +122,8 @@ Use `all(...)` and `any(...)` when a condition needs to combine multiple
 boolean-style expressions without moving that logic into renderer code. They
 evaluate arguments from left to right and stop once the result is known.
 Use `replace(...)` for small deterministic string cleanup in app-owned labels,
-for example removing a known source URI prefix before rendering it.
+for example removing a known source URI prefix before rendering it. It replaces
+all non-overlapping occurrences and rejects an empty needle.
 Use `safe_id(...)` when dynamic node IDs need stable slug text, for example
 `option_{{ safe_id(option.text, option.index) }}`. Use `setting(...)` to read
 app settings by key without exposing the map shape to the renderer. Use

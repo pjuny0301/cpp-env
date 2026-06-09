@@ -288,3 +288,13 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: push Track D branch update; continue next independent stretch item
 - blocker(있으면): 없음
 - 검증: `cmake --build --preset linux-debug --target quiz_vulkan_app_scene_scenario_tests quiz_vulkan_app_scene_preview_tests quiz_vulkan_app_quiz_screens_tests` passed; `ctest --test-dir build/out/quiz/quiz-vulkan/linux-ninja -R "quiz_vulkan_app_(scene_scenario|scene_preview|quiz_screens)_tests$" --output-on-failure` passed 3/3; `git diff --check` passed
+
+### [CP-track-d-validation-018]
+- 시각 UTC: 2026-06-09T13:26:57Z
+- 태스크: Stretch backlog - report Track D day intro mode replay rollup
+- status: done
+- 변경 파일: reports/progress/2026-06-09T132547Z-track-d-day-intro-mode-rollup.md
+- commit SHA: 79c822f
+- 다음 단계: push Track D branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `git diff --check` passed

@@ -1,9 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="${1:-/mnt/c/aa}"
-base_ref="${QUIZ_CODEX_BASE_REF:-origin/codex/quiz-vulkan-remake-baseline}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+  cat >&2 <<'USAGE'
+usage: worker-status.sh [repo-root]
+
+Summarizes live Codex tmux sessions, queued prompt counts, and git status for
+the main repo and worker pane paths.
+
+Environment:
+  QUIZ_CODEX_BASE_REF           Integration baseline for ahead/behind counts.
+  QUIZ_CODEX_WORKER_QUEUE_ROOT  Queue root. Default: codex-workers/queued.
+USAGE
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  usage
+  exit 0
+fi
+
+repo_root="${1:-$(git -C "${script_dir}/.." rev-parse --show-toplevel)}"
+base_ref="${QUIZ_CODEX_BASE_REF:-origin/codex/ui-engine-phase12-secured-20260608T190736Z}"
 queue_root="${QUIZ_CODEX_WORKER_QUEUE_ROOT:-${script_dir}/queued}"
 
 if ! command -v tmux >/dev/null 2>&1; then
@@ -73,7 +92,12 @@ echo "main ${repo_root} $(print_git_status "${repo_root}")"
 echo
 printf '%-52s %-8s %-6s %-10s %-70s %s\n' "session" "state" "queued" "command" "path" "git"
 
-tmux list-panes -a -F '#{session_name}|#{pane_current_command}|#{pane_current_path}' |
+tmux_panes="$(tmux list-panes -a -F '#{session_name}|#{pane_current_command}|#{pane_current_path}' 2>/dev/null || true)"
+if [[ -z "${tmux_panes}" ]]; then
+  exit 0
+fi
+
+printf '%s\n' "${tmux_panes}" |
 while IFS='|' read -r session command path; do
   case "${session}" in
     codex-*) ;;

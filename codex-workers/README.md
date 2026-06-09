@@ -176,12 +176,15 @@ instead of silently reusing stale state.
 For a compact coordinator view:
 
 ```bash
-/mnt/c/aa/codex-workers/worker-status.sh /mnt/c/aa
+/mnt/c/aa/codex-workers/worker-status.sh
 ```
 
-Read `dirty`, `ahead`, and `behind` before assigning more work. A long-lived
-session is useful when it keeps engine-specific context, but new tasks should
-start from the latest pushed baseline when the old worker branch is far behind.
+The default repo root is resolved from the script location. Pass an explicit
+repo path when inspecting a different checkout, and set `QUIZ_CODEX_BASE_REF`
+when comparing against a different integration baseline. Read `dirty`, `ahead`,
+and `behind` before assigning more work. A long-lived session is useful when it
+keeps engine-specific context, but new tasks should start from the latest pushed
+baseline when the old worker branch is far behind.
 
 ## Current Pipeline Limits
 

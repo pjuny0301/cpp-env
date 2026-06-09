@@ -1,3 +1,4 @@
+#include "render/image/image_renderer_resource_packet_bridge.h"
 #include "render/image/image_texture_frame_resource_packet_plan.h"
 
 #include <cassert>
@@ -30,6 +31,8 @@ static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_rende
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_packet_summary_diff>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_draw_payload>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_draw_payload_frame>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_renderer_resource_packet_descriptor>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_renderer_resource_packet_bridge>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_resource_packet_plan_entry>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_frame_resource_packet_plan>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_draw_list_texture_frame_composition_entry>);
@@ -40,6 +43,8 @@ static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_rend
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_packet_summary_diff>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_draw_payload>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_renderer_texture_quad_draw_payload_frame>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_renderer_resource_packet_descriptor>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_renderer_resource_packet_bridge>);
 
 void require(bool condition, const char* message)
 {
@@ -1584,6 +1589,268 @@ void test_renderer_texture_quad_draw_payload_identity_is_stable_and_deterministi
         "payload identity summary is stable across repeated consumption");
 }
 
+void test_renderer_resource_packet_bridge_preserves_ready_draw_payloads()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_renderer_texture_quad_packet_summary summary =
+        make_test_renderer_texture_quad_summary({
+            make_test_renderer_texture_quad_packet("card", 0, true),
+            make_test_renderer_texture_quad_packet("badge", 1, true),
+        });
+    const render_image_renderer_texture_quad_draw_payload_frame frame =
+        make_render_image_renderer_texture_quad_draw_payload_frame(summary);
+
+    const render_image_renderer_resource_packet_bridge bridge =
+        make_render_image_renderer_resource_packet_bridge(frame);
+
+    require(bridge.ok(), "ready renderer resource packet bridge is ok");
+    require(
+        bridge.status == render_image_renderer_resource_packet_bridge_status::ready,
+        "ready renderer resource packet bridge status is ready");
+    require(bridge.status_name == "ready", "ready renderer resource packet bridge status name is stable");
+    require(bridge.source_packet_count == 2, "ready renderer resource packet bridge preserves source packet count");
+    require(bridge.source_payload_count == 2, "ready renderer resource packet bridge preserves source payload count");
+    require(bridge.packet_count == 2, "ready renderer resource packet bridge records packet count");
+    require(bridge.ready_packet_count == 2, "ready renderer resource packet bridge counts ready packets");
+    require(bridge.placeholder_packet_count == 0, "ready renderer resource packet bridge has no placeholders");
+    require(bridge.blocked_packet_count == 0, "ready renderer resource packet bridge has no blockers");
+    require(bridge.renderer_resource_packets_ready, "ready renderer resource packet bridge marks packets ready");
+    require(!bridge.has_placeholders, "ready renderer resource packet bridge does not flag placeholders");
+    require(!bridge.has_blockers, "ready renderer resource packet bridge does not flag blockers");
+    require(bridge.decoded_resource_ready_packet_count == 2, "ready renderer resource packet bridge counts decoded resources");
+    require(bridge.decoded_payload_hash_count == 2, "ready renderer resource packet bridge counts decoded hashes");
+    require(bridge.decoded_byte_count == 513, "ready renderer resource packet bridge sums decoded bytes");
+    require(bridge.staging_payload_byte_count == 513, "ready renderer resource packet bridge sums staging bytes");
+    require(bridge.uploaded_byte_count == 256, "ready renderer resource packet bridge sums upload bytes");
+    require(
+        bridge.decoded_resource_summary
+            == "decoded_resources=2; payload_hashes=2; decoded_bytes=513; staging_bytes=513",
+        "ready renderer resource packet bridge decoded summary is stable");
+    require(
+        bridge.resource_packet_identity_summary.find("resource_packet=asset://textures/card.ppm")
+            != std::string::npos,
+        "ready renderer resource packet bridge identity summary includes resource packet cache key");
+    require(
+        bridge.diagnostic == "image renderer resource packet bridge is ready",
+        "ready renderer resource packet bridge diagnostic is stable");
+
+    const render_image_renderer_resource_packet_descriptor& first = bridge.packets[0];
+    require(first.ok(), "ready renderer resource packet descriptor is ok");
+    require(
+        first.status == render_image_renderer_resource_packet_descriptor_status::ready,
+        "ready renderer resource packet descriptor status is ready");
+    require(first.status_name == "ready", "ready renderer resource packet descriptor status name is stable");
+    require(first.renderer_ready, "ready renderer resource packet descriptor records renderer-ready flag");
+    require(first.real_texture, "ready renderer resource packet descriptor records real texture flag");
+    require(!first.placeholder_backed, "ready renderer resource packet descriptor is not placeholder-backed");
+    require(!first.blocked, "ready renderer resource packet descriptor is not blocked");
+    require(first.descriptor_index == 0, "ready renderer resource packet descriptor index is deterministic");
+    require(first.source_payload_index == 0, "ready renderer resource packet descriptor preserves payload index");
+    require(first.source_packet_index == 0, "ready renderer resource packet descriptor preserves packet index");
+    require(first.node_id == "card", "ready renderer resource packet descriptor preserves node id");
+    require(first.parent_node_id == "root", "ready renderer resource packet descriptor preserves parent node id");
+    require(first.bounds.width == 32.0f, "ready renderer resource packet descriptor preserves bounds");
+    require(first.content_bounds.width == 30.0f, "ready renderer resource packet descriptor preserves content bounds");
+    require(first.uri == "asset://textures/card.ppm", "ready renderer resource packet descriptor preserves uri");
+    require(first.alt_text == "card", "ready renderer resource packet descriptor preserves alt text");
+    require(
+        first.stable_draw_command_identity == "frame=diff-frame|node=card|parent=root",
+        "ready renderer resource packet descriptor preserves draw command identity");
+    require(
+        first.stable_quad_packet_identity.find("texture=asset://textures/card.ppm") != std::string::npos,
+        "ready renderer resource packet descriptor preserves quad packet identity");
+    require(first.texture_key.source_key == "asset://textures/card.ppm", "ready renderer resource packet descriptor preserves texture key");
+    require(first.texture_id == 900, "ready renderer resource packet descriptor preserves texture id");
+    require(first.texture_revision == 4, "ready renderer resource packet descriptor preserves texture revision");
+    require(first.texture_width == 64, "ready renderer resource packet descriptor preserves texture width");
+    require(first.texture_height == 32, "ready renderer resource packet descriptor preserves texture height");
+    require(first.upload_request_id == 1200, "ready renderer resource packet descriptor preserves upload request");
+    require(first.upload_generation_id == 8, "ready renderer resource packet descriptor preserves upload generation");
+    require(first.uploaded_byte_count == 128, "ready renderer resource packet descriptor preserves uploaded bytes");
+    require(first.decoded_resource_evidence_present, "ready renderer resource packet descriptor preserves decoded evidence flag");
+    require(first.decoded_resource_ready, "ready renderer resource packet descriptor preserves decoded readiness");
+    require(first.decoded_payload_hash == 10000, "ready renderer resource packet descriptor preserves decoded hash");
+    require(first.decoded_byte_count == 256, "ready renderer resource packet descriptor preserves decoded bytes");
+    require(first.staging_payload_byte_count == 256, "ready renderer resource packet descriptor preserves staging bytes");
+    require(first.sampler_key.find("min=linear") != std::string::npos, "ready renderer resource packet descriptor preserves sampler key");
+    require(
+        first.stable_resource_packet_identity.find("payload=texture:900:4") != std::string::npos,
+        "ready renderer resource packet descriptor identity includes texture handle");
+    require(
+        first.stable_resource_packet_identity.find("resource_packet=asset://textures/card.ppm")
+            != std::string::npos,
+        "ready renderer resource packet descriptor identity includes resource packet cache key");
+    require(
+        first.source_packet_status == render_image_renderer_texture_quad_packet_status::ready,
+        "ready renderer resource packet descriptor preserves source packet status");
+    require(
+        first.resource_packet_status == render_image_texture_frame_resource_packet_status::resource_packet_ready,
+        "ready renderer resource packet descriptor preserves resource packet status");
+    require(
+        first.source_payload_status == render_image_renderer_texture_quad_draw_payload_status::draw_ready,
+        "ready renderer resource packet descriptor preserves source payload status");
+    require(
+        first.diagnostic == "image renderer resource packet descriptor is ready",
+        "ready renderer resource packet descriptor diagnostic is stable");
+}
+
+void test_renderer_resource_packet_bridge_preserves_placeholder_packets()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_renderer_texture_quad_packet_summary summary =
+        make_test_renderer_texture_quad_summary({
+            make_test_renderer_texture_quad_packet("blocked", 0, false),
+        });
+    render_image_renderer_texture_quad_draw_payload_options options;
+    options.placeholder_policy.enabled = true;
+    options.placeholder_policy.width = 3;
+    options.placeholder_policy.height = 5;
+    options.placeholder_policy.source_key_prefix = "placeholder://quad/";
+
+    const render_image_renderer_texture_quad_draw_payload_frame frame =
+        make_render_image_renderer_texture_quad_draw_payload_frame(summary, options);
+    const render_image_renderer_resource_packet_bridge bridge =
+        make_render_image_renderer_resource_packet_bridge(frame);
+
+    require(bridge.ok(), "placeholder renderer resource packet bridge is ok");
+    require(
+        bridge.status == render_image_renderer_resource_packet_bridge_status::placeholder_backed,
+        "placeholder renderer resource packet bridge status is placeholder-backed");
+    require(bridge.placeholder_packet_count == 1, "placeholder renderer resource packet bridge counts placeholder");
+    require(bridge.fallback_placeholder_packet_count == 1, "placeholder renderer resource packet bridge counts fallback placeholder");
+    require(bridge.blocked_packet_count == 0, "placeholder renderer resource packet bridge has no blockers");
+    require(bridge.decoded_resource_blocked_packet_count == 1, "placeholder renderer resource packet bridge preserves decoded blocker count");
+    require(bridge.has_placeholders, "placeholder renderer resource packet bridge flags placeholders");
+    require(bridge.has_fallback_placeholders, "placeholder renderer resource packet bridge flags fallback placeholders");
+    require(!bridge.has_blockers, "placeholder renderer resource packet bridge has no bridge blockers");
+    require(
+        bridge.diagnostic == "image renderer resource packet bridge is placeholder-backed",
+        "placeholder renderer resource packet bridge diagnostic is stable");
+
+    const render_image_renderer_resource_packet_descriptor& descriptor = bridge.packets[0];
+    require(descriptor.ok(), "placeholder renderer resource packet descriptor is ok");
+    require(
+        descriptor.status == render_image_renderer_resource_packet_descriptor_status::placeholder_backed,
+        "placeholder renderer resource packet descriptor status is placeholder-backed");
+    require(descriptor.renderer_ready, "placeholder renderer resource packet descriptor is renderer-ready");
+    require(!descriptor.real_texture, "placeholder renderer resource packet descriptor is not real texture");
+    require(descriptor.placeholder_backed, "placeholder renderer resource packet descriptor records placeholder");
+    require(descriptor.fallback_placeholder, "placeholder renderer resource packet descriptor records fallback placeholder");
+    require(!descriptor.blocked, "placeholder renderer resource packet descriptor is not blocked");
+    require(descriptor.texture_id == 0, "placeholder renderer resource packet descriptor does not invent texture id");
+    require(descriptor.texture_width == 3, "placeholder renderer resource packet descriptor preserves policy width");
+    require(descriptor.texture_height == 5, "placeholder renderer resource packet descriptor preserves policy height");
+    require(descriptor.decoded_resource_blocked, "placeholder renderer resource packet descriptor preserves decoded blocker");
+    require(
+        descriptor.decoded_resource_blocker_summary == "resource packet blocked renderer texture quad packet",
+        "placeholder renderer resource packet descriptor preserves decoded blocker summary");
+    require(
+        descriptor.placeholder_key.source_key.find("placeholder://quad/upload_failed/asset://textures/blocked.ppm")
+            == 0,
+        "placeholder renderer resource packet descriptor preserves deterministic placeholder key");
+    require(
+        descriptor.stable_resource_packet_identity.find("payload=placeholder:") != std::string::npos,
+        "placeholder renderer resource packet descriptor identity records placeholder");
+    require(
+        descriptor.stable_resource_packet_identity.find("resource_packet=placeholder://quad/upload_failed/asset://textures/blocked.ppm")
+            != std::string::npos,
+        "placeholder renderer resource packet descriptor identity records placeholder resource packet");
+}
+
+void test_renderer_resource_packet_bridge_records_blocked_payloads()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_renderer_texture_quad_packet_summary summary =
+        make_test_renderer_texture_quad_summary({
+            make_test_renderer_texture_quad_packet("blocked", 0, false),
+        });
+    const render_image_renderer_texture_quad_draw_payload_frame frame =
+        make_render_image_renderer_texture_quad_draw_payload_frame(summary);
+
+    const render_image_renderer_resource_packet_bridge bridge =
+        make_render_image_renderer_resource_packet_bridge(frame);
+
+    require(!bridge.ok(), "blocked renderer resource packet bridge is not ok");
+    require(
+        bridge.status == render_image_renderer_resource_packet_bridge_status::blocked,
+        "blocked renderer resource packet bridge status is blocked");
+    require(bridge.blocked_packet_count == 1, "blocked renderer resource packet bridge counts blocker");
+    require(bridge.has_blockers, "blocked renderer resource packet bridge flags blocker");
+    require(
+        bridge.blocker_summary == "resource packet blocked renderer texture quad packet",
+        "blocked renderer resource packet bridge preserves blocker summary");
+    require(
+        bridge.diagnostic == "image renderer resource packet bridge has blocked packets",
+        "blocked renderer resource packet bridge diagnostic is stable");
+
+    const render_image_renderer_resource_packet_descriptor& descriptor = bridge.packets[0];
+    require(!descriptor.ok(), "blocked renderer resource packet descriptor is not ok");
+    require(
+        descriptor.status == render_image_renderer_resource_packet_descriptor_status::blocked_source_payload,
+        "blocked renderer resource packet descriptor status records source payload blocker");
+    require(!descriptor.renderer_ready, "blocked renderer resource packet descriptor is not renderer-ready");
+    require(descriptor.blocked, "blocked renderer resource packet descriptor records blocked flag");
+    require(
+        descriptor.blocker_summary == "resource packet blocked renderer texture quad packet",
+        "blocked renderer resource packet descriptor preserves blocker summary");
+    require(
+        descriptor.stable_resource_packet_identity.find("payload=blocked:blocked_resource_packet")
+            != std::string::npos,
+        "blocked renderer resource packet descriptor identity records blocked payload reason");
+    require(
+        descriptor.source_packet_status == render_image_renderer_texture_quad_packet_status::blocked_resource_packet,
+        "blocked renderer resource packet descriptor preserves source packet blocker status");
+    require(
+        descriptor.source_payload_status == render_image_renderer_texture_quad_draw_payload_status::blocked,
+        "blocked renderer resource packet descriptor preserves source payload blocker status");
+}
+
+void test_renderer_resource_packet_bridge_blocks_duplicate_packet_identity()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_image_renderer_texture_quad_packet_summary summary =
+        make_test_renderer_texture_quad_summary({
+            make_test_renderer_texture_quad_packet("card", 0, true),
+            make_test_renderer_texture_quad_packet("badge", 1, true),
+        });
+    render_image_renderer_texture_quad_draw_payload_frame frame =
+        make_render_image_renderer_texture_quad_draw_payload_frame(summary);
+    frame.payloads[1].stable_payload_identity = frame.payloads[0].stable_payload_identity;
+    frame.payloads[1].texture_key = frame.payloads[0].texture_key;
+    frame.payloads[1].stable_texture_cache_key = frame.payloads[0].stable_texture_cache_key;
+    frame.payloads[1].sampler_key = frame.payloads[0].sampler_key;
+
+    const render_image_renderer_resource_packet_bridge bridge =
+        make_render_image_renderer_resource_packet_bridge(frame);
+
+    require(!bridge.ok(), "duplicate renderer resource packet bridge is not ok");
+    require(
+        bridge.status == render_image_renderer_resource_packet_bridge_status::blocked,
+        "duplicate renderer resource packet bridge status is blocked");
+    require(bridge.packet_count == 2, "duplicate renderer resource packet bridge preserves packet count");
+    require(bridge.blocked_packet_count == 2, "duplicate renderer resource packet bridge blocks both duplicates");
+    require(bridge.duplicate_packet_identity_count == 2, "duplicate renderer resource packet bridge counts duplicate identities");
+    require(bridge.has_duplicate_packet_identities, "duplicate renderer resource packet bridge flags duplicate identities");
+    require(bridge.decoded_resource_ready_packet_count == 2, "duplicate renderer resource packet bridge keeps decoded resource evidence");
+    require(bridge.decoded_byte_count == 513, "duplicate renderer resource packet bridge preserves decoded bytes");
+
+    require(
+        bridge.packets[0].status == render_image_renderer_resource_packet_descriptor_status::blocked_duplicate_packet_identity,
+        "duplicate renderer resource packet bridge blocks first duplicate descriptor");
+    require(
+        bridge.packets[1].status == render_image_renderer_resource_packet_descriptor_status::blocked_duplicate_packet_identity,
+        "duplicate renderer resource packet bridge blocks second duplicate descriptor");
+    require(bridge.packets[0].duplicate_packet_identity, "first duplicate descriptor records duplicate identity flag");
+    require(bridge.packets[1].duplicate_packet_identity, "second duplicate descriptor records duplicate identity flag");
+    require(
+        bridge.packets[0].stable_resource_packet_identity == bridge.packets[1].stable_resource_packet_identity,
+        "duplicate renderer resource packet bridge exposes matching resource packet identities");
+}
+
 void test_resource_packet_status_helpers_are_stable()
 {
     using namespace quiz_vulkan::render;
@@ -1640,6 +1907,21 @@ void test_resource_packet_status_helpers_are_stable()
             render_image_renderer_texture_quad_draw_payload_frame_status::draw_ready)
             == "draw_ready",
         "renderer texture quad draw payload frame status name is stable");
+    require(
+        render_image_renderer_resource_packet_descriptor_status_name(
+            render_image_renderer_resource_packet_descriptor_status::ready)
+            == "ready",
+        "renderer resource packet descriptor ready status name is stable");
+    require(
+        render_image_renderer_resource_packet_descriptor_status_name(
+            render_image_renderer_resource_packet_descriptor_status::blocked_source_payload)
+            == "blocked_source_payload",
+        "renderer resource packet descriptor blocked status name is stable");
+    require(
+        render_image_renderer_resource_packet_bridge_status_name(
+            render_image_renderer_resource_packet_bridge_status::placeholder_backed)
+            == "placeholder_backed",
+        "renderer resource packet bridge placeholder status name is stable");
 }
 
 } // namespace
@@ -1660,6 +1942,10 @@ int main()
     test_renderer_texture_quad_draw_payloads_use_policy_placeholder_for_blocked_packets();
     test_renderer_texture_quad_draw_payloads_keep_blocked_packets_blocked_without_policy();
     test_renderer_texture_quad_draw_payload_identity_is_stable_and_deterministic();
+    test_renderer_resource_packet_bridge_preserves_ready_draw_payloads();
+    test_renderer_resource_packet_bridge_preserves_placeholder_packets();
+    test_renderer_resource_packet_bridge_records_blocked_payloads();
+    test_renderer_resource_packet_bridge_blocks_duplicate_packet_identity();
     test_resource_packet_status_helpers_are_stable();
     return 0;
 }

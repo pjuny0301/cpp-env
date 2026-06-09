@@ -1,5 +1,6 @@
 #include "render/image/image_decoder.h"
 #include "render/image/image_manifest_texture_pipeline.h"
+#include "render/image/image_renderer_resource_packet_bridge.h"
 #include "render/image/image_resolver.h"
 #include "render/image/image_source_bytes_loader.h"
 #include "render/image/image_texture_cache.h"
@@ -351,6 +352,10 @@ static_assert(requires(
     render::render_image_renderer_texture_quad_draw_payload_options renderer_texture_quad_draw_payload_options,
     render::render_image_renderer_texture_quad_draw_payload renderer_texture_quad_draw_payload,
     render::render_image_renderer_texture_quad_draw_payload_frame renderer_texture_quad_draw_payload_frame,
+    render::render_image_renderer_resource_packet_descriptor_status renderer_resource_packet_descriptor_status,
+    render::render_image_renderer_resource_packet_bridge_status renderer_resource_packet_bridge_status,
+    render::render_image_renderer_resource_packet_descriptor renderer_resource_packet_descriptor,
+    render::render_image_renderer_resource_packet_bridge renderer_resource_packet_bridge,
     render::render_image_texture_frame_resource_packet_materialization_status
         texture_frame_resource_packet_materialization_status,
     render::render_image_texture_frame_resource_cache_handoff_record texture_frame_resource_cache_handoff,
@@ -1984,6 +1989,25 @@ static_assert(requires(
     { render::make_render_image_renderer_texture_quad_draw_payload_frame(
         renderer_texture_quad_packet_summary, renderer_texture_quad_draw_payload_options) }
         -> std::same_as<render::render_image_renderer_texture_quad_draw_payload_frame>;
+    { render::render_image_renderer_resource_packet_descriptor_status_name(
+        renderer_resource_packet_descriptor_status) } -> std::same_as<std::string>;
+    { render::render_image_renderer_resource_packet_bridge_status_name(
+        renderer_resource_packet_bridge_status) } -> std::same_as<std::string>;
+    { render::render_image_renderer_resource_packet_identity_for(
+        renderer_texture_quad_draw_payload) } -> std::same_as<std::string>;
+    { render::render_image_renderer_resource_packet_descriptor_status_for(
+        renderer_texture_quad_draw_payload, std::string{}, bool{}) }
+        -> std::same_as<render::render_image_renderer_resource_packet_descriptor_status>;
+    { render::make_render_image_renderer_resource_packet_descriptor(
+        renderer_texture_quad_draw_payload, std::size_t{}, bool{}) }
+        -> std::same_as<render::render_image_renderer_resource_packet_descriptor>;
+    { render::count_render_image_renderer_resource_packet_descriptor(
+        renderer_resource_packet_bridge, renderer_resource_packet_descriptor) }
+        -> std::same_as<void>;
+    { render::finalize_render_image_renderer_resource_packet_bridge(
+        renderer_resource_packet_bridge) } -> std::same_as<void>;
+    { render::make_render_image_renderer_resource_packet_bridge(renderer_texture_quad_draw_payload_frame) }
+        -> std::same_as<render::render_image_renderer_resource_packet_bridge>;
     { render::render_image_texture_frame_resource_packet_materialization_status_name(
         texture_frame_resource_packet_materialization_status) } -> std::same_as<std::string>;
     { render::render_image_texture_frame_resource_packet_materialization_status_is_blocked(
@@ -3665,6 +3689,137 @@ static_assert(requires(
     { renderer_texture_quad_draw_payload_frame.decoded_resource_blocker_summary } -> std::same_as<std::string&>;
     { renderer_texture_quad_draw_payload_frame.diagnostic } -> std::same_as<std::string&>;
     { renderer_texture_quad_draw_payload_frame.ok() } -> std::same_as<bool>;
+    { renderer_resource_packet_descriptor.descriptor_index } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_descriptor.source_payload_index } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_descriptor.source_packet_index } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_descriptor.frame_label } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.draw_command_index } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_descriptor.image_command_index } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_descriptor.texture_request_index } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_descriptor.node_id } -> std::same_as<render::render_node_id&>;
+    { renderer_resource_packet_descriptor.parent_node_id } -> std::same_as<render::render_node_id&>;
+    { renderer_resource_packet_descriptor.bounds } -> std::same_as<render::render_rect&>;
+    { renderer_resource_packet_descriptor.content_bounds } -> std::same_as<render::render_rect&>;
+    { renderer_resource_packet_descriptor.uri } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.alt_text } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.aspect_ratio } -> std::same_as<float&>;
+    { renderer_resource_packet_descriptor.stable_draw_command_identity } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.stable_quad_packet_identity } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.texture_key } -> std::same_as<render::render_image_texture_key&>;
+    { renderer_resource_packet_descriptor.placeholder_key } -> std::same_as<render::render_image_texture_key&>;
+    { renderer_resource_packet_descriptor.stable_payload_identity } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.stable_resource_packet_identity } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.stable_texture_cache_key } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.upload_cache_stable_cache_key } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.upload_cache_requested_stable_cache_key }
+        -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.sampler } -> std::same_as<render::render_image_sampler_policy&>;
+    { renderer_resource_packet_descriptor.sampler_key } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.texture_id } -> std::same_as<render::render_image_texture_id&>;
+    { renderer_resource_packet_descriptor.texture_revision } -> std::same_as<render::render_image_revision&>;
+    { renderer_resource_packet_descriptor.texture_width } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_descriptor.texture_height } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_descriptor.upload_request_id } -> std::same_as<std::uint64_t&>;
+    { renderer_resource_packet_descriptor.upload_generation_id } -> std::same_as<std::uint64_t&>;
+    { renderer_resource_packet_descriptor.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_descriptor.decoded_payload_hash } -> std::same_as<std::uint64_t&>;
+    { renderer_resource_packet_descriptor.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_descriptor.upload_layout_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_descriptor.upload_layout_row_stride_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_descriptor.staging_payload_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_descriptor.staging_row_copy_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_descriptor.upload_cache_decoded_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_descriptor.upload_cache_staging_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_descriptor.upload_cache_uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_descriptor.upload_cache_decoded_payload_hash } -> std::same_as<std::uint64_t&>;
+    { renderer_resource_packet_descriptor.upload_cache_placeholder_reason }
+        -> std::same_as<render::fake_image_texture_placeholder_reason&>;
+    { renderer_resource_packet_descriptor.upload_cache_placeholder_reason_name } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.source_packet_status }
+        -> std::same_as<render::render_image_renderer_texture_quad_packet_status&>;
+    { renderer_resource_packet_descriptor.source_packet_status_name } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.resource_packet_status }
+        -> std::same_as<render::render_image_texture_frame_resource_packet_status&>;
+    { renderer_resource_packet_descriptor.resource_packet_status_name } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.source_payload_status }
+        -> std::same_as<render::render_image_renderer_texture_quad_draw_payload_status&>;
+    { renderer_resource_packet_descriptor.source_payload_status_name } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.upload_cache_payload_status }
+        -> std::same_as<render::render_image_texture_pipeline_upload_cache_payload_status&>;
+    { renderer_resource_packet_descriptor.upload_cache_payload_status_name } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.status }
+        -> std::same_as<render::render_image_renderer_resource_packet_descriptor_status&>;
+    { renderer_resource_packet_descriptor.status_name } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.renderer_ready } -> std::same_as<bool&>;
+    { renderer_resource_packet_descriptor.real_texture } -> std::same_as<bool&>;
+    { renderer_resource_packet_descriptor.placeholder_backed } -> std::same_as<bool&>;
+    { renderer_resource_packet_descriptor.fallback_placeholder } -> std::same_as<bool&>;
+    { renderer_resource_packet_descriptor.blocked } -> std::same_as<bool&>;
+    { renderer_resource_packet_descriptor.missing_payload_identity } -> std::same_as<bool&>;
+    { renderer_resource_packet_descriptor.duplicate_packet_identity } -> std::same_as<bool&>;
+    { renderer_resource_packet_descriptor.decoded_resource_evidence_present } -> std::same_as<bool&>;
+    { renderer_resource_packet_descriptor.decoded_payload_valid } -> std::same_as<bool&>;
+    { renderer_resource_packet_descriptor.upload_payload_layout_ready } -> std::same_as<bool&>;
+    { renderer_resource_packet_descriptor.staging_payload_ready } -> std::same_as<bool&>;
+    { renderer_resource_packet_descriptor.decoded_resource_ready } -> std::same_as<bool&>;
+    { renderer_resource_packet_descriptor.decoded_resource_blocked } -> std::same_as<bool&>;
+    { renderer_resource_packet_descriptor.upload_cache_payload_evidence_present } -> std::same_as<bool&>;
+    { renderer_resource_packet_descriptor.upload_cache_payload_identity_matched } -> std::same_as<bool&>;
+    { renderer_resource_packet_descriptor.upload_cache_payload_ready } -> std::same_as<bool&>;
+    { renderer_resource_packet_descriptor.upload_cache_placeholder_backed } -> std::same_as<bool&>;
+    { renderer_resource_packet_descriptor.upload_cache_payload_blocked } -> std::same_as<bool&>;
+    { renderer_resource_packet_descriptor.blocker_summary } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.decoded_resource_summary } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.decoded_resource_blocker_summary } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.upload_cache_payload_summary } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.upload_cache_payload_blocker_summary } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.diagnostic } -> std::same_as<std::string&>;
+    { renderer_resource_packet_descriptor.ok() } -> std::same_as<bool>;
+    { renderer_resource_packet_bridge.status }
+        -> std::same_as<render::render_image_renderer_resource_packet_bridge_status&>;
+    { renderer_resource_packet_bridge.status_name } -> std::same_as<std::string&>;
+    { renderer_resource_packet_bridge.frame_label } -> std::same_as<std::string&>;
+    { renderer_resource_packet_bridge.source_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.source_payload_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.packet_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.ready_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.placeholder_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.fallback_placeholder_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.blocked_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.missing_payload_identity_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.duplicate_packet_identity_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.decoded_resource_evidence_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.decoded_resource_ready_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.decoded_resource_blocked_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.upload_cache_payload_evidence_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.upload_cache_payload_ready_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.upload_cache_placeholder_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.upload_cache_payload_blocked_packet_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.decoded_payload_hash_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.upload_cache_payload_hash_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.decoded_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.staging_payload_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.upload_cache_decoded_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.upload_cache_staging_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.upload_cache_uploaded_byte_count } -> std::same_as<std::size_t&>;
+    { renderer_resource_packet_bridge.renderer_resource_packets_ready } -> std::same_as<bool&>;
+    { renderer_resource_packet_bridge.has_placeholders } -> std::same_as<bool&>;
+    { renderer_resource_packet_bridge.has_fallback_placeholders } -> std::same_as<bool&>;
+    { renderer_resource_packet_bridge.has_blockers } -> std::same_as<bool&>;
+    { renderer_resource_packet_bridge.has_duplicate_packet_identities } -> std::same_as<bool&>;
+    { renderer_resource_packet_bridge.packets }
+        -> std::same_as<std::vector<render::render_image_renderer_resource_packet_descriptor>&>;
+    { renderer_resource_packet_bridge.resource_packet_identity_summary } -> std::same_as<std::string&>;
+    { renderer_resource_packet_bridge.texture_cache_key_summary } -> std::same_as<std::string&>;
+    { renderer_resource_packet_bridge.sampler_summary } -> std::same_as<std::string&>;
+    { renderer_resource_packet_bridge.blocker_summary } -> std::same_as<std::string&>;
+    { renderer_resource_packet_bridge.decoded_resource_summary } -> std::same_as<std::string&>;
+    { renderer_resource_packet_bridge.decoded_resource_blocker_summary } -> std::same_as<std::string&>;
+    { renderer_resource_packet_bridge.upload_cache_payload_summary } -> std::same_as<std::string&>;
+    { renderer_resource_packet_bridge.upload_cache_payload_blocker_summary } -> std::same_as<std::string&>;
+    { renderer_resource_packet_bridge.diagnostic } -> std::same_as<std::string&>;
+    { renderer_resource_packet_bridge.ok() } -> std::same_as<bool>;
     { texture_frame_resource_cache_handoff.materialization_index } -> std::same_as<std::size_t&>;
     { texture_frame_resource_cache_handoff.request_index } -> std::same_as<std::size_t&>;
     { texture_frame_resource_cache_handoff.render_image_uri } -> std::same_as<std::string&>;
@@ -4404,6 +4559,8 @@ static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_rendere
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_renderer_texture_quad_packet_summary_diff>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_renderer_texture_quad_draw_payload>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_renderer_texture_quad_draw_payload_frame>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_renderer_resource_packet_descriptor>);
+static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_renderer_resource_packet_bridge>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_cache_handoff_record>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_upload_handoff_record>);
 static_assert(!ExposesFakeImageTextureCacheSnapshot<render::render_image_texture_frame_resource_sampler_handoff_record>);
@@ -4465,6 +4622,8 @@ static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_render
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_renderer_texture_quad_packet_summary_diff>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_renderer_texture_quad_draw_payload>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_renderer_texture_quad_draw_payload_frame>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_renderer_resource_packet_descriptor>);
+static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_renderer_resource_packet_bridge>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_cache_handoff_record>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_upload_handoff_record>);
 static_assert(!ExposesFakeImageTextureUploadSnapshot<render::render_image_texture_frame_resource_sampler_handoff_record>);
@@ -4526,6 +4685,8 @@ static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_rendere
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_renderer_texture_quad_packet_summary_diff>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_renderer_texture_quad_draw_payload>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_renderer_texture_quad_draw_payload_frame>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_renderer_resource_packet_descriptor>);
+static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_renderer_resource_packet_bridge>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_cache_handoff_record>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_upload_handoff_record>);
 static_assert(!ExposesRenderImageDecoderDiagnostics<render::render_image_texture_frame_resource_sampler_handoff_record>);
@@ -4571,6 +4732,8 @@ static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_rende
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_renderer_texture_quad_packet_summary_diff>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_renderer_texture_quad_draw_payload>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_renderer_texture_quad_draw_payload_frame>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_renderer_resource_packet_descriptor>);
+static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_renderer_resource_packet_bridge>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_resource_packet_plan_entry>);
 static_assert(!ExposesFakeImageTexturePipelineEntries<render::render_image_texture_frame_resource_packet_plan>);
 static_assert(

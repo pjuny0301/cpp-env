@@ -181,3 +181,13 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: push Track A branch update; continue next independent stretch item
 - blocker(있으면): 없음
 - 검증: `cmake --build --preset linux-debug --target quiz_vulkan_app_quiz_screens_tests quiz_vulkan_app_scene_script_tests quiz_vulkan_architecture_boundary_tests quiz_vulkan_interface_contract_compile_tests` passed; `ctest --test-dir build/out/quiz/quiz-vulkan/linux-ninja -R "quiz_vulkan_(app_quiz_screens_tests|app_scene_script_tests|architecture_boundary_tests)$" --output-on-failure` passed 3/3; `git diff --check` passed; `git diff --cached --check` passed
+
+### [CP-track-a-current-011]
+- 시각 UTC: 2026-06-09T07:34:35Z
+- 태스크: Stretch backlog - document scene script node DSL coverage
+- status: done
+- 변경 파일: apps/quiz/quiz-vulkan/docs/scene-schema.md
+- commit SHA: d37f7c4
+- 다음 단계: push Track A branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `git diff --check` passed; `git diff --cached --check` passed

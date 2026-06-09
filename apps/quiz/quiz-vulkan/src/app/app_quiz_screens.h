@@ -1711,6 +1711,61 @@ inline app_scene_script_document make_deck_list_screen_script_document(const dom
     return document;
 }
 
+inline app_scene_script_document make_deck_view_screen_script_document(const domain::app_snapshot& snapshot)
+{
+    app_scene_script_document document;
+    document.schema_version = app_scene_script_node_dsl_schema_version;
+    document.template_id = "builtin:quiz.deck_view.v1";
+    document.screen = "deck_view";
+    append_script_screen_shell(document, quiz_screen_kind::deck_view, snapshot);
+
+    const domain::deck* selected_deck = detail::find_selected_deck(snapshot);
+    if (selected_deck == nullptr) {
+        append_script_header(document, detail::to_string_copy(detail::quiz_screens_root_id), "deck_view", "Select a deck");
+        append_script_empty_state(document, detail::to_string_copy(detail::quiz_screens_root_id), "deck_view", "No selected deck");
+        return document;
+    }
+
+    append_script_header(
+        document,
+        detail::to_string_copy(detail::quiz_screens_root_id),
+        "deck_view",
+        selected_deck->title,
+        detail::deck_summary(*selected_deck));
+    append_script_learning_summary(document, detail::to_string_copy(detail::quiz_screens_root_id), "deck_view", snapshot.learning);
+    append_script_button(
+        document,
+        detail::to_string_copy(detail::quiz_screens_root_id),
+        "deck_view_start_all",
+        "Start all due questions",
+        detail::press_action("start_quiz", "normal"),
+        "button");
+
+    append_script_section(document, detail::to_string_copy(detail::quiz_screens_root_id), "deck_view_days", 8.0f);
+    append_script_text(document, "deck_view_days", "deck_view_days_label", "Days", "section_label", "#d8e1e7");
+
+    if (selected_deck->days.empty()) {
+        append_script_empty_state(document, "deck_view_days", "deck_view_days", "No days in this deck");
+        document.focus_id = "deck_view_start_all";
+        return document;
+    }
+
+    for (std::size_t index = 0; index < selected_deck->days.size(); ++index) {
+        const domain::day& quiz_day = selected_deck->days[index];
+        const std::string day_id = "deck_view_day_" + detail::safe_id(quiz_day.id, std::to_string(index));
+        append_script_button(
+            document,
+            "deck_view_days",
+            day_id,
+            quiz_day.title + " - " + std::to_string(quiz_day.questions.size()) + " questions",
+            detail::press_action("select_day", quiz_day.id),
+            "day_button");
+    }
+
+    document.focus_id = "deck_view_day_" + detail::safe_id(selected_deck->days.front().id, "0");
+    return document;
+}
+
 inline app_scene_script_document make_quiz_results_screen_script_document(const domain::app_snapshot& snapshot)
 {
     app_scene_script_document document;
@@ -1906,9 +1961,9 @@ inline scene::scene_layout_patch make_home_screen_patch(const domain::app_snapsh
 
 inline scene::scene_layout_patch make_deck_view_screen_patch(const domain::app_snapshot& snapshot)
 {
-    scene::scene_layout_edit_data edit_data("deck_view_screen");
-    build_deck_view_screen(snapshot, edit_data);
-    return edit_data.finish_patch();
+    const app_scene_script_compile_result compiled =
+        compile_quiz_screen_script(make_deck_view_screen_script_document(snapshot), snapshot);
+    return std::move(*compiled.patch);
 }
 
 inline scene::scene_layout_patch make_day_intro_screen_patch(const domain::app_snapshot& snapshot)
@@ -2062,7 +2117,7 @@ public:
                 append_patch_to_edit_data(make_deck_list_screen_patch(snapshot_), edit_data);
                 return;
             case quiz_screen_kind::deck_view:
-                build_deck_view_screen(snapshot_, edit_data);
+                append_patch_to_edit_data(make_deck_view_screen_patch(snapshot_), edit_data);
                 return;
             case quiz_screen_kind::day_intro:
                 build_day_intro_screen(snapshot_, edit_data);

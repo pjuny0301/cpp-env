@@ -333,6 +333,28 @@ int main()
         scene::layout_placer().place(direct_deck_list_data, deck_list_viewport, deck_list_metrics),
         "scripted deck list render equals direct builder");
 
+    const domain::app_snapshot deck_view_snapshot = domain::make_app_snapshot(
+        decks,
+        std::optional<std::string>{"deck1"},
+        std::nullopt,
+        nullptr,
+        learning);
+    scene::scene_layout_data deck_view_data("test_deck_view");
+    apply_patch_to_scene(presentation::make_quiz_screen_patch(deck_view_snapshot), deck_view_data);
+    require(deck_view_data.route_state().screen_id == "deck_view", "deck view route selected");
+    require(deck_view_data.contains_node("deck_view_day_day1"), "deck view day action exists");
+    require(deck_view_data.has_focus(), "deck view has focus");
+    require(deck_view_data.focus_id() == "deck_view_day_day1", "deck view focuses first day");
+
+    const scene::scene_layout_data direct_deck_view_data =
+        build_direct_screen_data("direct_deck_view", deck_view_snapshot, presentation::build_deck_view_screen);
+    const scene::scene_layout_data scripted_deck_view_data =
+        build_patch_screen_data("scripted_deck_view", presentation::make_deck_view_screen_patch(deck_view_snapshot));
+    require_same_placed_render(
+        scene::layout_placer().place(scripted_deck_view_data, deck_list_viewport, deck_list_metrics),
+        scene::layout_placer().place(direct_deck_view_data, deck_list_viewport, deck_list_metrics),
+        "scripted deck view render equals direct builder");
+
     const domain::app_snapshot day_intro_snapshot = make_snapshot(decks);
     scene::scene_layout_data day_intro_data("test_day_intro");
     apply_patch_to_scene(presentation::make_quiz_screen_patch(day_intro_snapshot), day_intro_data);

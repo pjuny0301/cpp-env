@@ -5,7 +5,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat >&2 <<'USAGE'
-usage: worker-status.sh [repo-root]
+usage: worker-status.sh [--format table|tsv] [--tsv] [repo-root]
 
 Summarizes live Codex tmux sessions, queued prompt counts, and git status for
 the main repo and worker pane paths.
@@ -13,20 +13,64 @@ the main repo and worker pane paths.
 Environment:
   QUIZ_CODEX_BASE_REF           Integration baseline for ahead/behind counts.
   QUIZ_CODEX_WORKER_QUEUE_ROOT  Queue root. Default: codex-workers/queued.
+  QUIZ_CODEX_STATUS_FORMAT      Output format: table or tsv. Default: table.
   QUIZ_CODEX_STATUS_UNTRACKED   Git untracked scan mode: no, normal, or all.
                                 Default: no.
 USAGE
 }
 
-if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-  usage
-  exit 0
-fi
+status_format="${QUIZ_CODEX_STATUS_FORMAT:-table}"
+repo_root_arg=""
 
-repo_root="${1:-$(git -C "${script_dir}/.." rev-parse --show-toplevel)}"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    --format)
+      if [[ $# -lt 2 ]]; then
+        usage
+        exit 64
+      fi
+      status_format="$2"
+      shift 2
+      ;;
+    --format=*)
+      status_format="${1#--format=}"
+      shift
+      ;;
+    --tsv)
+      status_format="tsv"
+      shift
+      ;;
+    --*)
+      usage
+      exit 64
+      ;;
+    *)
+      if [[ -n "${repo_root_arg}" ]]; then
+        usage
+        exit 64
+      fi
+      repo_root_arg="$1"
+      shift
+      ;;
+  esac
+done
+
+repo_root="${repo_root_arg:-$(git -C "${script_dir}/.." rev-parse --show-toplevel)}"
 base_ref="${QUIZ_CODEX_BASE_REF:-origin/codex/ui-engine-phase12-secured-20260608T190736Z}"
 queue_root="${QUIZ_CODEX_WORKER_QUEUE_ROOT:-${script_dir}/queued}"
 status_untracked="${QUIZ_CODEX_STATUS_UNTRACKED:-no}"
+
+case "${status_format}" in
+  table|tsv) ;;
+  *)
+    echo "QUIZ_CODEX_STATUS_FORMAT must be one of: table, tsv" >&2
+    exit 64
+    ;;
+esac
 
 case "${status_untracked}" in
   no|normal|all) ;;
@@ -41,11 +85,11 @@ if ! command -v tmux >/dev/null 2>&1; then
   exit 1
 fi
 
-print_git_status() {
+git_status_values() {
   local path="$1"
 
   if [[ ! -d "${path}/.git" && ! -f "${path}/.git" ]]; then
-    echo "branch=- ahead=- behind=- dirty=- head=-"
+    printf -- '-\t-\t-\t-\t-\n'
     return
   fi
 
@@ -70,6 +114,13 @@ print_git_status() {
   local head
   head="$(git -C "${path}" rev-parse --short HEAD 2>/dev/null || true)"
 
+  printf '%s\t%s\t%s\t%s\t%s\n' "${branch}" "${ahead}" "${behind}" "${dirty}" "${head}"
+}
+
+print_git_status() {
+  local path="$1"
+  local branch ahead behind dirty head
+  IFS=$'\t' read -r branch ahead behind dirty head < <(git_status_values "${path}")
   echo "branch=${branch} ahead=${ahead} behind=${behind} dirty=${dirty} head=${head}"
 }
 
@@ -98,11 +149,23 @@ queued_prompt_count() {
   find "${session_queue}" -maxdepth 1 -type f | wc -l | tr -d ' '
 }
 
-echo "base_ref=${base_ref}"
-echo "status_untracked=${status_untracked}"
-echo "main ${repo_root} $(print_git_status "${repo_root}")"
-echo
-printf '%-52s %-8s %-6s %-10s %-70s %s\n' "session" "state" "queued" "command" "path" "git"
+if [[ "${status_format}" == "tsv" ]]; then
+  printf 'kind\tsession\tstate\tqueued\tcommand\tpath\tbranch\tahead\tbehind\tdirty\thead\n'
+  IFS=$'\t' read -r main_branch main_ahead main_behind main_dirty main_head < <(git_status_values "${repo_root}")
+  printf 'main\t-\t-\t-\t-\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "${repo_root}" \
+    "${main_branch}" \
+    "${main_ahead}" \
+    "${main_behind}" \
+    "${main_dirty}" \
+    "${main_head}"
+else
+  echo "base_ref=${base_ref}"
+  echo "status_untracked=${status_untracked}"
+  echo "main ${repo_root} $(print_git_status "${repo_root}")"
+  echo
+  printf '%-52s %-8s %-6s %-10s %-70s %s\n' "session" "state" "queued" "command" "path" "git"
+fi
 
 tmux_panes="$(tmux list-panes -a -F '#{session_name}|#{pane_current_command}|#{pane_current_path}' 2>/dev/null || true)"
 if [[ -z "${tmux_panes}" ]]; then
@@ -116,11 +179,28 @@ while IFS='|' read -r session command path; do
     *) continue ;;
   esac
 
-  printf '%-52s %-8s %-6s %-10s %-70s %s\n' \
-    "${session}" \
-    "$(worker_state "${session}")" \
-    "$(queued_prompt_count "${session}")" \
-    "${command}" \
-    "${path}" \
-    "$(print_git_status "${path}")"
+  state="$(worker_state "${session}")"
+  queued="$(queued_prompt_count "${session}")"
+  if [[ "${status_format}" == "tsv" ]]; then
+    IFS=$'\t' read -r branch ahead behind dirty head < <(git_status_values "${path}")
+    printf 'worker\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "${session}" \
+      "${state}" \
+      "${queued}" \
+      "${command}" \
+      "${path}" \
+      "${branch}" \
+      "${ahead}" \
+      "${behind}" \
+      "${dirty}" \
+      "${head}"
+  else
+    printf '%-52s %-8s %-6s %-10s %-70s %s\n' \
+      "${session}" \
+      "${state}" \
+      "${queued}" \
+      "${command}" \
+      "${path}" \
+      "$(print_git_status "${path}")"
+  fi
 done

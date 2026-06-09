@@ -725,7 +725,10 @@ inline bool evaluate_script_function(
         return true;
     }
 
-    if (name == "greater_than" || name == "less_than") {
+    if (name == "greater_than"
+        || name == "less_than"
+        || name == "greater_or_equal"
+        || name == "less_or_equal") {
         if (!require_script_function_arg_count(name, args, 2, error)) {
             return false;
         }
@@ -745,7 +748,17 @@ inline bool evaluate_script_function(
             return false;
         }
 
-        value = script_value::boolean(name == "greater_than" ? left > right : left < right);
+        bool matched = false;
+        if (name == "greater_than") {
+            matched = left > right;
+        } else if (name == "less_than") {
+            matched = left < right;
+        } else if (name == "greater_or_equal") {
+            matched = left >= right;
+        } else {
+            matched = left <= right;
+        }
+        value = script_value::boolean(matched);
         return true;
     }
 

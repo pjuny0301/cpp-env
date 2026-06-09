@@ -103,6 +103,8 @@ The expression engine also supports pure function calls:
 - `length(value)`
 - `greater_than(left, right)`
 - `less_than(left, right)`
+- `greater_or_equal(left, right)`
+- `less_or_equal(left, right)`
 - `format_count(count, singular, plural?)`
 - `choose(condition, value_when_true, value_when_false)`
 - `safe_id(value, fallback?)`
@@ -116,9 +118,9 @@ Use `safe_id(...)` when dynamic node IDs need stable slug text, for example
 `option_{{ safe_id(option.text, option.index) }}`. Use `setting(...)` to read
 app settings by key without exposing the map shape to the renderer. Use
 `length(...)` when script-authored copy or conditions need the rendered string
-length, and pair it with `greater_than(...)` or `less_than(...)` for simple
-numeric conditions. Use `format_count(...)` for stable singular/plural count
-labels in script-authored copy.
+length, and pair it with comparison helpers for simple numeric conditions. Use
+`format_count(...)` for stable singular/plural count labels in script-authored
+copy.
 
 Text-answer controls may use legacy-only events because the submitted text is
 provided by the input router at runtime. Other script commands should prefer the

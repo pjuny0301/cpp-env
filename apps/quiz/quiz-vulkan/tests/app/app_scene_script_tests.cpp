@@ -439,7 +439,7 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     length_comparisons.kind = scene::scene_node_kind::text;
     length_comparisons.debug_name = "length comparison flags";
     length_comparisons.style.token = "muted";
-    length_comparisons.bindings.push_back({"text", "{{ greater_than(length(question.prompt), 10) }} / {{ less_than(length(question.prompt), 3) }}"});
+    length_comparisons.bindings.push_back({"text", "{{ greater_than(length(question.prompt), 10) }} / {{ less_than(length(question.prompt), 3) }} / {{ greater_or_equal(length(question.prompt), 17) }} / {{ less_or_equal(length(question.prompt), 17) }}"});
     script.nodes.push_back(std::move(length_comparisons));
 
     presentation::app_scene_script_node choice_label;
@@ -789,7 +789,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(empty_error_flag->text_runs.front().text == "true", "empty function renders boolean");
     require(string_predicates->text_runs.front().text == "true / true / true", "string predicate functions render booleans");
     require(prompt_length->text_runs.front().text == "17", "length function renders string length");
-    require(length_comparisons->text_runs.front().text == "true / false", "numeric comparison functions render booleans");
+    require(length_comparisons->text_runs.front().text == "true / false / true / true", "numeric comparison functions render booleans");
     require(choice_label->text_runs.front().text == "No error", "choose function renders fallback branch");
     require(lazy_choice->text_runs.front().text == "No long text", "choose function only evaluates selected branch");
     require(data.contains_node("function_condition_active"), "function expression can drive conditions");

@@ -301,6 +301,23 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     not_condition.text_runs.push_back({"Function condition not completed", "muted"});
     script.nodes.push_back(std::move(not_condition));
 
+    presentation::app_scene_script_node seeded_start;
+    seeded_start.id = "seeded_start_button";
+    seeded_start.parent_id = "script_root";
+    seeded_start.kind = scene::scene_node_kind::input;
+    seeded_start.debug_name = "seeded start";
+    seeded_start.style.token = "button";
+    seeded_start.text_runs.push_back({"Seeded random start", "button"});
+    presentation::app_scene_script_event_handler_template seeded_start_press;
+    seeded_start_press.trigger = scene::scene_action_trigger::press;
+    seeded_start_press.commands.push_back({"start_quiz", {
+        {"mode", "random"},
+        {"random_seed", "{{ 123 }}"},
+        {"shuffle", "{{ true }}"},
+    }});
+    seeded_start.events.push_back(std::move(seeded_start_press));
+    script.nodes.push_back(std::move(seeded_start));
+
     presentation::app_scene_script_node long_text;
     long_text.id = "question_long_text";
     long_text.parent_id = "script_root";
@@ -463,6 +480,21 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(data.contains_node("function_condition_active"), "function expression can drive conditions");
     require(data.contains_node("function_condition_not_completed"), "not function can drive conditions");
     require(!data.contains_node("question_long_text"), "false condition suppresses long text node");
+
+    const scene::scene_node_data* seeded_start = data.find_node("seeded_start_button");
+    require(seeded_start != nullptr, "seeded start node exists");
+    require(seeded_start->has_event_handlers, "seeded start emits event handler");
+    require(seeded_start->event_handlers.size() == 1, "seeded start emits one event handler");
+    require(seeded_start->event_handlers.front().commands.size() == 1, "seeded start emits one command");
+    const scene::scene_command& seeded_start_command = seeded_start->event_handlers.front().commands.front();
+    const app_command_route_result seeded_start_routed = route_scene_command(seeded_start_command);
+    require(seeded_start_routed.ok(), "seeded start command routes through registry");
+    const auto* seeded_start_action = std::get_if<domain::start_quiz_action>(&seeded_start_routed.action->payload);
+    require(seeded_start_action != nullptr, "seeded start command routes to start_quiz action");
+    require(seeded_start_action->mode == domain::quiz_mode::random, "seeded start preserves mode");
+    require(seeded_start_action->random_seed.has_value(), "seeded start preserves random seed");
+    require(*seeded_start_action->random_seed == 123U, "seeded start random seed is deterministic");
+    require(seeded_start_action->shuffle, "seeded start preserves shuffle");
 
     const scene::scene_node_data* option_0 = data.find_node("option_0");
     const scene::scene_node_data* option_1 = data.find_node("option_1");

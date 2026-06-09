@@ -339,6 +339,130 @@ struct render_text_renderer_draw_payload_diff_snapshot {
   }
 };
 
+enum class render_text_renderer_runtime_draw_packet_status {
+  draw_packet_ready,
+  blocked_draw_payload,
+  blocked_missing_payload_identity,
+  blocked_duplicate_packet_identity,
+  blocked_missing_atlas_page,
+  blocked_missing_uv_bounds,
+  blocked_missing_sampler_key,
+};
+
+struct render_text_renderer_runtime_draw_packet_descriptor {
+  std::string draw_packet_descriptor_id{};
+  std::string stable_draw_packet_identity{};
+  std::string source_payload_id{};
+  std::string quad_packet_id{};
+  std::string resource_packet_id{};
+  std::string stable_packet_key{};
+  std::string source_label{};
+  render_node_id source_node_id_hint{};
+  std::string draw_packet_id{};
+  std::string upload_handoff_id{};
+  std::string upload_operation_id{};
+  std::string upload_request_id{};
+  std::string stable_page_id{};
+  std::string sampler_key{};
+  std::string sampler_summary{};
+  std::size_t descriptor_index{};
+  std::size_t source_payload_index{};
+  std::size_t packet_index{};
+  std::size_t materialization_index{};
+  std::size_t glyph_run_index{};
+  std::string glyph_run_key{};
+  std::size_t glyph_count{};
+  std::size_t cluster_byte_offset{};
+  std::size_t cluster_byte_count{};
+  glyph_atlas_key cache_key{};
+  std::uint32_t resolved_glyph_id{};
+  font_face_id resolved_face_id{};
+  render_text_atlas_page_id atlas_page_id{};
+  render_text_revision atlas_page_revision{};
+  std::size_t atlas_page_width{};
+  std::size_t atlas_page_height{};
+  render_rect quad_bounds{};
+  render_rect atlas_bounds{};
+  render_text_frame_draw_uv_rect uv_bounds{};
+  render_text_renderer_draw_payload_status source_payload_status{
+      render_text_renderer_draw_payload_status::blocked_glyph_quad};
+  render_text_renderer_runtime_draw_packet_status status{
+      render_text_renderer_runtime_draw_packet_status::blocked_draw_payload};
+  bool ready{};
+  bool blocked{true};
+  bool renderer_boundary_ready{};
+  bool duplicate_packet_identity{};
+  bool missing_payload_identity{};
+  bool uploaded{};
+  bool clean_reuse{};
+  bool used_deterministic_fallback{};
+  bool used_real_backend{};
+  bool glyph_supported{};
+  bool upload_consumed{};
+  std::size_t upload_rgba_bytes{};
+  render_text_atlas_packet_consumption_evidence atlas_consumption{};
+  std::string blocker_summary{};
+  std::string diagnostic{};
+
+  [[nodiscard]] constexpr bool drawable() const noexcept {
+    return ready && !blocked;
+  }
+};
+
+struct render_text_renderer_runtime_draw_packet_policy_snapshot {
+  std::size_t source_payload_count{};
+  std::size_t draw_packet_count{};
+  std::size_t ready_draw_packet_count{};
+  std::size_t blocked_draw_packet_count{};
+  std::size_t draw_payload_blocked_count{};
+  std::size_t missing_payload_identity_count{};
+  std::size_t duplicate_packet_identity_count{};
+  std::size_t missing_atlas_page_count{};
+  std::size_t missing_uv_bounds_count{};
+  std::size_t missing_sampler_key_count{};
+  std::size_t glyph_run_count{};
+  std::size_t glyph_count{};
+  std::size_t atlas_page_count{};
+  std::size_t uploaded_draw_packet_count{};
+  std::size_t clean_reuse_draw_packet_count{};
+  std::size_t missing_glyph_count{};
+  std::size_t fallback_glyph_count{};
+  std::size_t deterministic_fallback_count{};
+  std::size_t real_backend_count{};
+  std::size_t consumed_upload_count{};
+  std::size_t total_upload_rgba_bytes{};
+  bool frame_ready_for_renderer{};
+  bool has_blockers{};
+  bool used_deterministic_fallback{};
+  bool used_real_backend{};
+};
+
+struct render_text_renderer_runtime_draw_packet_request {
+  render_text_renderer_draw_payload_snapshot draw_payloads{};
+};
+
+struct render_text_renderer_runtime_draw_packet_snapshot {
+  std::string frame_id{};
+  std::string source_label{};
+  bool frame_ready_for_renderer{};
+  render_text_renderer_runtime_draw_packet_policy_snapshot policy{};
+  std::vector<render_text_renderer_runtime_draw_packet_descriptor> draw_packets{};
+  std::vector<std::string> ready_draw_packet_ids{};
+  std::vector<std::string> blocker_draw_packet_ids{};
+  std::vector<std::string> duplicate_draw_packet_ids{};
+  std::vector<std::string> missing_identity_draw_packet_ids{};
+  std::string blocker_summary{};
+  std::string diagnostic{};
+
+  [[nodiscard]] constexpr bool ok() const noexcept {
+    return frame_ready_for_renderer && !policy.has_blockers;
+  }
+
+  [[nodiscard]] constexpr bool has_blockers() const noexcept {
+    return policy.has_blockers;
+  }
+};
+
 struct render_text_renderer_glyph_quad_packet_diff_policy {
   std::ptrdiff_t quad_packet_count_delta{};
   std::ptrdiff_t ready_quad_count_delta{};
@@ -989,6 +1113,338 @@ make_render_text_renderer_draw_payloads(
     snapshot.blocker_summary =
         std::to_string(snapshot.policy.blocked_payload_count) +
         " renderer text draw payload(s) blocked";
+  }
+  return snapshot;
+}
+
+[[nodiscard]] inline std::string
+render_text_renderer_runtime_draw_packet_status_name(
+    const render_text_renderer_runtime_draw_packet_status status) {
+  switch (status) {
+    case render_text_renderer_runtime_draw_packet_status::draw_packet_ready:
+      return "draw_packet_ready";
+    case render_text_renderer_runtime_draw_packet_status::blocked_draw_payload:
+      return "blocked_draw_payload";
+    case render_text_renderer_runtime_draw_packet_status::
+        blocked_missing_payload_identity:
+      return "blocked_missing_payload_identity";
+    case render_text_renderer_runtime_draw_packet_status::
+        blocked_duplicate_packet_identity:
+      return "blocked_duplicate_packet_identity";
+    case render_text_renderer_runtime_draw_packet_status::
+        blocked_missing_atlas_page:
+      return "blocked_missing_atlas_page";
+    case render_text_renderer_runtime_draw_packet_status::
+        blocked_missing_uv_bounds:
+      return "blocked_missing_uv_bounds";
+    case render_text_renderer_runtime_draw_packet_status::
+        blocked_missing_sampler_key:
+      return "blocked_missing_sampler_key";
+  }
+  return "unknown";
+}
+
+[[nodiscard]] inline std::string render_text_renderer_runtime_draw_packet_id_for(
+    const render_text_renderer_draw_payload_record& payload,
+    const std::size_t descriptor_index) {
+  if (!payload.payload_id.empty()) {
+    return "text-renderer-runtime-draw-packet:v1:payload=" +
+           payload.payload_id;
+  }
+  if (!payload.stable_packet_key.empty()) {
+    return "text-renderer-runtime-draw-packet:v1:stable=" +
+           payload.stable_packet_key;
+  }
+  return "text-renderer-runtime-draw-packet:v1:source=" +
+         payload.source_label + ":missing-payload-id:index=" +
+         std::to_string(descriptor_index);
+}
+
+[[nodiscard]] inline bool
+render_text_renderer_runtime_draw_packet_identity_duplicate(
+    const std::vector<render_text_renderer_draw_payload_record>& payloads,
+    const std::string& descriptor_id) {
+  if (descriptor_id.empty()) {
+    return false;
+  }
+  std::size_t count = 0;
+  for (std::size_t index = 0; index < payloads.size(); ++index) {
+    if (render_text_renderer_runtime_draw_packet_id_for(payloads[index],
+                                                        index) ==
+        descriptor_id) {
+      ++count;
+    }
+  }
+  return count > 1U;
+}
+
+[[nodiscard]] inline std::size_t
+render_text_renderer_runtime_draw_packet_glyph_count_for(
+    const render_text_renderer_draw_payload_record& payload) {
+  return payload.resolved_glyph_id != 0U ||
+                 payload.atlas_consumption.resolved_glyph_id != 0U
+             ? 1U
+             : 0U;
+}
+
+[[nodiscard]] inline std::string
+render_text_renderer_runtime_draw_packet_glyph_run_key_for(
+    const render_text_renderer_draw_payload_record& payload) {
+  return "run=" + std::to_string(payload.run_index) +
+         ":cluster=" + std::to_string(payload.cluster_byte_offset) + "+" +
+         std::to_string(payload.cluster_byte_count);
+}
+
+[[nodiscard]] inline render_text_renderer_runtime_draw_packet_status
+render_text_renderer_runtime_draw_packet_status_for(
+    const render_text_renderer_draw_payload_record& payload,
+    const bool duplicate_packet_identity) {
+  if (payload.payload_id.empty() && payload.stable_packet_key.empty()) {
+    return render_text_renderer_runtime_draw_packet_status::
+        blocked_missing_payload_identity;
+  }
+  if (duplicate_packet_identity) {
+    return render_text_renderer_runtime_draw_packet_status::
+        blocked_duplicate_packet_identity;
+  }
+  if (!payload.drawable()) {
+    return render_text_renderer_runtime_draw_packet_status::blocked_draw_payload;
+  }
+  if (payload.page_id == 0U) {
+    return render_text_renderer_runtime_draw_packet_status::
+        blocked_missing_atlas_page;
+  }
+  if (!payload.uv_bounds.valid) {
+    return render_text_renderer_runtime_draw_packet_status::
+        blocked_missing_uv_bounds;
+  }
+  if (payload.sampler_key.empty()) {
+    return render_text_renderer_runtime_draw_packet_status::
+        blocked_missing_sampler_key;
+  }
+  return render_text_renderer_runtime_draw_packet_status::draw_packet_ready;
+}
+
+[[nodiscard]] inline std::string
+render_text_renderer_runtime_draw_packet_blocker_summary_for(
+    const render_text_renderer_draw_payload_record& payload,
+    const render_text_renderer_runtime_draw_packet_status status) {
+  switch (status) {
+    case render_text_renderer_runtime_draw_packet_status::draw_packet_ready:
+      return {};
+    case render_text_renderer_runtime_draw_packet_status::
+        blocked_missing_payload_identity:
+      return "runtime draw packet is missing source draw payload identity";
+    case render_text_renderer_runtime_draw_packet_status::
+        blocked_duplicate_packet_identity:
+      return "runtime draw packet source payload identity is duplicated";
+    case render_text_renderer_runtime_draw_packet_status::
+        blocked_missing_atlas_page:
+      return "runtime draw packet is missing atlas page identity";
+    case render_text_renderer_runtime_draw_packet_status::
+        blocked_missing_uv_bounds:
+      return "runtime draw packet is missing atlas UV bounds";
+    case render_text_renderer_runtime_draw_packet_status::
+        blocked_missing_sampler_key:
+      return "runtime draw packet is missing text atlas sampler key";
+    case render_text_renderer_runtime_draw_packet_status::blocked_draw_payload:
+      if (!payload.blocker_summary.empty()) {
+        return payload.blocker_summary;
+      }
+      return "source renderer draw payload is not drawable";
+  }
+  return "unknown runtime draw packet blocker";
+}
+
+[[nodiscard]] inline render_text_renderer_runtime_draw_packet_descriptor
+make_render_text_renderer_runtime_draw_packet(
+    const render_text_renderer_draw_payload_record& payload,
+    const std::size_t descriptor_index,
+    const bool duplicate_packet_identity) {
+  const std::string descriptor_id =
+      render_text_renderer_runtime_draw_packet_id_for(payload,
+                                                      descriptor_index);
+  const render_text_renderer_runtime_draw_packet_status status =
+      render_text_renderer_runtime_draw_packet_status_for(
+          payload, duplicate_packet_identity);
+  const bool ready =
+      status == render_text_renderer_runtime_draw_packet_status::
+                    draw_packet_ready;
+  const std::string blocker =
+      render_text_renderer_runtime_draw_packet_blocker_summary_for(payload,
+                                                                   status);
+  const std::size_t glyph_count =
+      render_text_renderer_runtime_draw_packet_glyph_count_for(payload);
+  return {
+      .draw_packet_descriptor_id = descriptor_id,
+      .stable_draw_packet_identity = descriptor_id,
+      .source_payload_id = payload.payload_id,
+      .quad_packet_id = payload.quad_packet_id,
+      .resource_packet_id = payload.resource_packet_id,
+      .stable_packet_key = payload.stable_packet_key,
+      .source_label = payload.source_label,
+      .source_node_id_hint = payload.source_node_id_hint,
+      .draw_packet_id = payload.draw_packet_id,
+      .upload_handoff_id = payload.upload_handoff_id,
+      .upload_operation_id = payload.upload_operation_id,
+      .upload_request_id = payload.upload_request_id,
+      .stable_page_id = payload.stable_page_id,
+      .sampler_key = payload.sampler_key,
+      .sampler_summary = payload.sampler_summary,
+      .descriptor_index = descriptor_index,
+      .source_payload_index = payload.payload_index,
+      .packet_index = payload.packet_index,
+      .materialization_index = payload.materialization_index,
+      .glyph_run_index = payload.run_index,
+      .glyph_run_key =
+          render_text_renderer_runtime_draw_packet_glyph_run_key_for(payload),
+      .glyph_count = glyph_count,
+      .cluster_byte_offset = payload.cluster_byte_offset,
+      .cluster_byte_count = payload.cluster_byte_count,
+      .cache_key = payload.cache_key,
+      .resolved_glyph_id = payload.resolved_glyph_id,
+      .resolved_face_id = payload.resolved_face_id,
+      .atlas_page_id = payload.page_id,
+      .atlas_page_revision = payload.page_revision,
+      .atlas_page_width = payload.page_width,
+      .atlas_page_height = payload.page_height,
+      .quad_bounds = payload.quad_bounds,
+      .atlas_bounds = payload.atlas_bounds,
+      .uv_bounds = payload.uv_bounds,
+      .source_payload_status = payload.status,
+      .status = status,
+      .ready = ready,
+      .blocked = !ready,
+      .renderer_boundary_ready = ready,
+      .duplicate_packet_identity = duplicate_packet_identity,
+      .missing_payload_identity =
+          status == render_text_renderer_runtime_draw_packet_status::
+                        blocked_missing_payload_identity,
+      .uploaded = payload.uploaded,
+      .clean_reuse = payload.clean_reuse,
+      .used_deterministic_fallback = payload.used_deterministic_fallback,
+      .used_real_backend = payload.used_real_backend,
+      .glyph_supported = payload.glyph_supported,
+      .upload_consumed = payload.upload_consumed,
+      .upload_rgba_bytes = payload.upload_rgba_bytes,
+      .atlas_consumption = payload.atlas_consumption,
+      .blocker_summary = blocker,
+      .diagnostic = ready ? "runtime text draw packet is renderer-ready"
+                          : blocker,
+  };
+}
+
+inline void append_render_text_renderer_runtime_draw_packet(
+    render_text_renderer_runtime_draw_packet_snapshot& snapshot,
+    render_text_renderer_runtime_draw_packet_descriptor packet) {
+  auto& policy = snapshot.policy;
+  ++policy.draw_packet_count;
+  if (packet.ready) {
+    ++policy.ready_draw_packet_count;
+    snapshot.ready_draw_packet_ids.push_back(packet.draw_packet_descriptor_id);
+  } else {
+    ++policy.blocked_draw_packet_count;
+    snapshot.blocker_draw_packet_ids.push_back(packet.draw_packet_descriptor_id);
+    policy.has_blockers = true;
+  }
+  if (packet.status ==
+      render_text_renderer_runtime_draw_packet_status::blocked_draw_payload) {
+    ++policy.draw_payload_blocked_count;
+  }
+  if (packet.duplicate_packet_identity) {
+    ++policy.duplicate_packet_identity_count;
+    detail::append_unique_string(snapshot.duplicate_draw_packet_ids,
+                                 packet.draw_packet_descriptor_id);
+  }
+  if (packet.missing_payload_identity) {
+    ++policy.missing_payload_identity_count;
+    detail::append_unique_string(snapshot.missing_identity_draw_packet_ids,
+                                 packet.draw_packet_descriptor_id);
+  }
+  if (packet.status ==
+      render_text_renderer_runtime_draw_packet_status::blocked_missing_atlas_page) {
+    ++policy.missing_atlas_page_count;
+  }
+  if (packet.status ==
+      render_text_renderer_runtime_draw_packet_status::blocked_missing_uv_bounds) {
+    ++policy.missing_uv_bounds_count;
+  }
+  if (packet.status ==
+      render_text_renderer_runtime_draw_packet_status::blocked_missing_sampler_key) {
+    ++policy.missing_sampler_key_count;
+  }
+  if (packet.glyph_count != 0U) {
+    ++policy.glyph_run_count;
+    policy.glyph_count += packet.glyph_count;
+  }
+  if (packet.atlas_page_id != 0U) {
+    ++policy.atlas_page_count;
+  }
+  if (packet.uploaded) {
+    ++policy.uploaded_draw_packet_count;
+  }
+  if (packet.clean_reuse) {
+    ++policy.clean_reuse_draw_packet_count;
+  }
+  if (packet.atlas_consumption.missing_glyph) {
+    ++policy.missing_glyph_count;
+  }
+  if (packet.atlas_consumption.used_fallback_glyph_id) {
+    ++policy.fallback_glyph_count;
+  }
+  if (packet.used_deterministic_fallback) {
+    ++policy.deterministic_fallback_count;
+    policy.used_deterministic_fallback = true;
+  }
+  if (packet.used_real_backend) {
+    ++policy.real_backend_count;
+    policy.used_real_backend = true;
+  }
+  if (packet.upload_consumed) {
+    ++policy.consumed_upload_count;
+  }
+  policy.total_upload_rgba_bytes += packet.upload_rgba_bytes;
+  snapshot.draw_packets.push_back(std::move(packet));
+}
+
+[[nodiscard]] inline render_text_renderer_runtime_draw_packet_snapshot
+make_render_text_renderer_runtime_draw_packets(
+    render_text_renderer_runtime_draw_packet_request request) {
+  render_text_renderer_runtime_draw_packet_snapshot snapshot{
+      .frame_id = request.draw_payloads.frame_id,
+      .source_label = request.draw_payloads.source_label,
+      .frame_ready_for_renderer = request.draw_payloads.frame_ready_for_renderer,
+      .diagnostic =
+          "runtime text draw packets built from renderer draw payload evidence",
+  };
+  snapshot.policy.source_payload_count = request.draw_payloads.payloads.size();
+  snapshot.policy.frame_ready_for_renderer =
+      request.draw_payloads.frame_ready_for_renderer;
+  snapshot.draw_packets.reserve(request.draw_payloads.payloads.size());
+
+  for (std::size_t index = 0; index < request.draw_payloads.payloads.size();
+       ++index) {
+    const render_text_renderer_draw_payload_record& payload =
+        request.draw_payloads.payloads[index];
+    const std::string descriptor_id =
+        render_text_renderer_runtime_draw_packet_id_for(payload, index);
+    const bool duplicate_packet_identity =
+        render_text_renderer_runtime_draw_packet_identity_duplicate(
+            request.draw_payloads.payloads, descriptor_id);
+    append_render_text_renderer_runtime_draw_packet(
+        snapshot,
+        make_render_text_renderer_runtime_draw_packet(
+            payload, index, duplicate_packet_identity));
+  }
+
+  if (!snapshot.frame_ready_for_renderer && snapshot.draw_packets.empty()) {
+    snapshot.policy.has_blockers = true;
+    snapshot.blocker_summary =
+        "renderer draw payloads are not ready for runtime text draw packets";
+  } else if (snapshot.policy.has_blockers) {
+    snapshot.blocker_summary =
+        std::to_string(snapshot.policy.blocked_draw_packet_count) +
+        " runtime text draw packet(s) blocked";
   }
   return snapshot;
 }

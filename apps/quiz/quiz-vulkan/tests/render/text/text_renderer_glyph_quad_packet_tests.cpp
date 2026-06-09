@@ -136,6 +136,15 @@ quiz_vulkan::render::render_text_renderer_draw_payload_snapshot make_payloads(
         });
 }
 
+quiz_vulkan::render::render_text_renderer_runtime_draw_packet_snapshot make_runtime_packets(
+    quiz_vulkan::render::render_text_renderer_draw_payload_snapshot payloads)
+{
+    return quiz_vulkan::render::make_render_text_renderer_runtime_draw_packets(
+        quiz_vulkan::render::render_text_renderer_runtime_draw_packet_request{
+            .draw_payloads = std::move(payloads),
+        });
+}
+
 quiz_vulkan::render::render_text_frame_draw_packet_snapshot draw_packet_for_resource(
     const quiz_vulkan::render::render_text_frame_resource_packet_materialization_entry& entry)
 {
@@ -406,6 +415,166 @@ void test_clean_reuse_glyph_quads_become_renderer_draw_payloads()
     require(payload.upload_rgba_bytes == 0U, "clean-reuse payload has no upload byte count");
     require(payload.atlas_consumption.clean_reuse, "atlas consumption records clean reuse");
     require(payload.uv_bounds.valid, "clean-reuse payload still preserves UVs");
+}
+
+void test_ready_draw_payloads_become_runtime_draw_packets()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_renderer_draw_payload_snapshot payloads =
+        make_payloads(make_quads(resources_for({
+            ready_resource_packet("resource-runtime-packet", U'R', 0),
+        })));
+    const render_text_renderer_runtime_draw_packet_snapshot runtime =
+        make_runtime_packets(payloads);
+
+    require(runtime.ok(), "ready draw payload produces runtime draw packet snapshot");
+    require(runtime.policy.source_payload_count == 1U, "runtime packet snapshot counts source payloads");
+    require(runtime.policy.draw_packet_count == 1U, "runtime packet snapshot emits one descriptor");
+    require(runtime.policy.ready_draw_packet_count == 1U, "runtime packet snapshot counts ready descriptor");
+    require(runtime.policy.blocked_draw_packet_count == 0U, "runtime packet snapshot has no blockers");
+    require(runtime.policy.glyph_run_count == 1U, "runtime packet snapshot counts glyph run");
+    require(runtime.policy.glyph_count == 1U, "runtime packet snapshot counts glyph");
+    require(runtime.policy.atlas_page_count == 1U, "runtime packet snapshot counts atlas page reference");
+    require(runtime.policy.uploaded_draw_packet_count == 1U, "runtime packet snapshot counts uploaded descriptor");
+    require(runtime.policy.total_upload_rgba_bytes == 256U, "runtime packet snapshot preserves upload bytes");
+    require(runtime.policy.used_real_backend, "runtime packet snapshot preserves real backend evidence");
+    require(runtime.ready_draw_packet_ids.size() == 1U, "runtime packet snapshot exposes ready descriptor id");
+
+    const render_text_renderer_draw_payload_record& payload = payloads.payloads.front();
+    const render_text_renderer_runtime_draw_packet_descriptor& packet = runtime.draw_packets.front();
+    require(packet.drawable(), "runtime draw packet is drawable");
+    require(
+        packet.status == render_text_renderer_runtime_draw_packet_status::draw_packet_ready,
+        "runtime draw packet status is ready");
+    require(
+        packet.draw_packet_descriptor_id.find(payload.payload_id) != std::string::npos,
+        "runtime draw packet id includes source payload id");
+    require(packet.stable_draw_packet_identity == packet.draw_packet_descriptor_id, "runtime draw packet identity is stable");
+    require(packet.source_payload_id == payload.payload_id, "runtime draw packet preserves source payload id");
+    require(packet.quad_packet_id == payload.quad_packet_id, "runtime draw packet preserves quad packet id");
+    require(packet.resource_packet_id == payload.resource_packet_id, "runtime draw packet preserves resource packet id");
+    require(packet.draw_packet_id == payload.draw_packet_id, "runtime draw packet preserves draw packet id");
+    require(packet.source_node_id_hint == payload.source_node_id_hint, "runtime draw packet preserves node hint");
+    require(packet.glyph_run_index == payload.run_index, "runtime draw packet preserves glyph run index");
+    require(packet.glyph_run_key == "run=1:cluster=4+1", "runtime draw packet exposes stable run key");
+    require(packet.glyph_count == 1U, "runtime draw packet records one glyph");
+    require(packet.cluster_byte_offset == payload.cluster_byte_offset, "runtime draw packet preserves cluster offset");
+    require(packet.resolved_glyph_id == payload.resolved_glyph_id, "runtime draw packet preserves glyph id");
+    require(packet.atlas_page_id == payload.page_id, "runtime draw packet preserves atlas page id");
+    require(packet.atlas_page_revision == payload.page_revision, "runtime draw packet preserves atlas page revision");
+    require(packet.quad_bounds.x == payload.quad_bounds.x, "runtime draw packet preserves quad bounds");
+    require(packet.atlas_bounds.y == payload.atlas_bounds.y, "runtime draw packet preserves atlas bounds");
+    require(packet.uv_bounds.valid && packet.uv_bounds.u1 == payload.uv_bounds.u1, "runtime draw packet preserves UV bounds");
+    require(packet.sampler_key == payload.sampler_key, "runtime draw packet preserves sampler key");
+    require(packet.upload_request_id == payload.upload_request_id, "runtime draw packet preserves upload request");
+    require(packet.upload_operation_id == payload.upload_operation_id, "runtime draw packet preserves upload operation");
+    require(packet.upload_consumed, "runtime draw packet preserves upload consumption");
+    require(packet.upload_rgba_bytes == payload.upload_rgba_bytes, "runtime draw packet preserves upload byte count");
+    require(
+        packet.source_payload_status == render_text_renderer_draw_payload_status::payload_ready,
+        "runtime draw packet records source payload status");
+    require(
+        packet.atlas_consumption.upload_generation == packet.atlas_page_revision,
+        "runtime draw packet preserves atlas consumption generation");
+}
+
+void test_blocked_draw_payloads_stay_blocked_as_runtime_draw_packets()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_frame_resource_packet_materialization_entry blocked =
+        ready_resource_packet("resource-runtime-blocked", U'B', 0);
+    blocked.status = render_text_frame_resource_packet_materialization_status::blocked_upload_rejected;
+    blocked.ready = false;
+    blocked.blocked = true;
+    blocked.renderer_boundary_ready = false;
+    blocked.uploaded = false;
+    blocked.upload_consumed = false;
+    blocked.upload_rgba_bytes = 0U;
+    blocked.blocker_summary = "upload handoff rejected the draw packet upload";
+
+    const render_text_renderer_runtime_draw_packet_snapshot runtime =
+        make_runtime_packets(make_payloads(make_quads(resources_for({blocked}))));
+
+    require(!runtime.ok(), "blocked draw payload keeps runtime packet snapshot blocked");
+    require(runtime.has_blockers(), "runtime packet snapshot exposes blockers");
+    require(runtime.policy.blocked_draw_packet_count == 1U, "runtime packet snapshot counts blocked descriptor");
+    require(runtime.policy.draw_payload_blocked_count == 1U, "runtime packet snapshot counts source payload blocker");
+    require(runtime.blocker_draw_packet_ids.size() == 1U, "runtime packet snapshot exposes blocked descriptor id");
+
+    const render_text_renderer_runtime_draw_packet_descriptor& packet = runtime.draw_packets.front();
+    require(!packet.drawable(), "blocked runtime draw packet is not drawable");
+    require(
+        packet.status == render_text_renderer_runtime_draw_packet_status::blocked_draw_payload,
+        "blocked runtime draw packet records source payload blocker");
+    require(
+        packet.source_payload_status == render_text_renderer_draw_payload_status::blocked_glyph_quad,
+        "blocked runtime draw packet preserves source payload status");
+    require(
+        packet.blocker_summary == "upload handoff rejected the draw packet upload",
+        "blocked runtime draw packet preserves blocker summary");
+}
+
+void test_runtime_draw_packets_block_duplicate_payload_identity()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_renderer_draw_payload_snapshot payloads =
+        make_payloads(make_quads(resources_for({
+            ready_resource_packet("resource-runtime-duplicate-a", U'A', 0),
+            ready_resource_packet("resource-runtime-duplicate-b", U'B', 1),
+        })));
+    payloads.payloads[1].payload_id = payloads.payloads[0].payload_id;
+
+    const render_text_renderer_runtime_draw_packet_snapshot runtime =
+        make_runtime_packets(payloads);
+
+    require(!runtime.ok(), "duplicate runtime draw packet identity blocks snapshot");
+    require(runtime.policy.draw_packet_count == 2U, "duplicate runtime packet snapshot preserves descriptor count");
+    require(runtime.policy.blocked_draw_packet_count == 2U, "duplicate runtime packet snapshot blocks both descriptors");
+    require(runtime.policy.duplicate_packet_identity_count == 2U, "duplicate runtime packet identities are counted");
+    require(runtime.duplicate_draw_packet_ids.size() == 1U, "duplicate runtime packet ids are de-duplicated");
+    require(runtime.policy.glyph_count == 2U, "duplicate runtime packet snapshot still preserves glyph evidence");
+    require(
+        runtime.draw_packets[0].status
+            == render_text_renderer_runtime_draw_packet_status::blocked_duplicate_packet_identity,
+        "first duplicate runtime descriptor is blocked");
+    require(
+        runtime.draw_packets[1].status
+            == render_text_renderer_runtime_draw_packet_status::blocked_duplicate_packet_identity,
+        "second duplicate runtime descriptor is blocked");
+    require(
+        runtime.draw_packets[0].stable_draw_packet_identity
+            == runtime.draw_packets[1].stable_draw_packet_identity,
+        "duplicate runtime descriptors expose matching stable identities");
+}
+
+void test_runtime_draw_packets_report_missing_payload_identity()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_renderer_draw_payload_snapshot payloads =
+        make_payloads(make_quads(resources_for({
+            ready_resource_packet("resource-runtime-missing-id", U'R', 0),
+        })));
+    payloads.payloads.front().payload_id.clear();
+    payloads.payloads.front().stable_packet_key.clear();
+
+    const render_text_renderer_runtime_draw_packet_snapshot runtime =
+        make_runtime_packets(payloads);
+
+    require(!runtime.ok(), "missing runtime payload identity blocks snapshot");
+    require(runtime.policy.missing_payload_identity_count == 1U, "missing runtime payload identity is counted");
+    require(runtime.missing_identity_draw_packet_ids.size() == 1U, "missing runtime payload identity id is exposed");
+    require(
+        runtime.draw_packets.front().status
+            == render_text_renderer_runtime_draw_packet_status::blocked_missing_payload_identity,
+        "missing runtime payload identity records stable status");
+    require(
+        runtime.draw_packets.front().blocker_summary
+            == "runtime draw packet is missing source draw payload identity",
+        "missing runtime payload identity records blocker summary");
 }
 
 void test_draw_payload_diff_reports_stable_no_change()
@@ -978,6 +1147,10 @@ int main()
     test_ready_resource_packets_become_glyph_quads();
     test_ready_glyph_quads_become_renderer_draw_payloads();
     test_clean_reuse_glyph_quads_become_renderer_draw_payloads();
+    test_ready_draw_payloads_become_runtime_draw_packets();
+    test_blocked_draw_payloads_stay_blocked_as_runtime_draw_packets();
+    test_runtime_draw_packets_block_duplicate_payload_identity();
+    test_runtime_draw_packets_report_missing_payload_identity();
     test_draw_payload_diff_reports_stable_no_change();
     test_draw_payload_diff_reports_uploaded_to_clean_reuse();
     test_draw_payload_diff_counts_atlas_uv_and_bounds_changes();

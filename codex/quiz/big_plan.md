@@ -4,7 +4,7 @@
 
 요구사항 번호는 실행 순서가 아니라 추적 ID다. 실제 구현은 아래 의존관계 기반 단계 순서를 따르며, 뒤 단계는 앞 단계의 계약과 검증 결과를 소비한다.
 
-요구사항별 문서, 하위 프로젝트 계획, 현재 코드/테스트 증거는 [requirements_traceability_matrix.md](requirements_traceability_matrix.md)에서 추적한다.
+요구사항별 문서, 하위 프로젝트 계획, 현재 코드/테스트 증거는 [requirements_traceability_matrix.md](requirements_traceability_matrix.md)에서 추적한다. Evidence 보존 규칙은 [evidence_policy.md](evidence_policy.md), 안정 소유권 규칙은 [ownership_rules.md](ownership_rules.md)를 따른다.
 
 ## 목표
 
@@ -44,8 +44,8 @@
 4. 세부 구현계획은 담당 프로젝트의 `big_plan.md`와 `구현/NN.md`에 둔다.
 5. 루트 `구현/NN.md`에는 하위 프로젝트 세부 구현 순서를 중복 작성하지 않는다.
 6. 과거 plan은 지우지 않고 같은 날짜의 `archive/`에 둔다.
-7. plan-doc 렌더링 결과는 같은 날짜의 `generated/`에 둔다.
-8. 스크린샷과 검증 자료는 같은 날짜의 `screenshots/` 또는 `verification-artifacts/`에 둔다.
+7. plan-doc 렌더링 결과, raw 로그, 대용량 출력은 재현 가능한 경우 `build/out/quiz` 또는 외부 artifact 위치에 둔다. Git에는 manifest, hash, 요약, 핵심 스크린샷처럼 durable evidence만 남긴다.
+8. 날짜 폴더는 `requirements.md`, notes, archive, manifest 중심으로 유지한다. 상세 구현은 루트 `구현/NN.md`와 담당 프로젝트 `구현/NN.md`가 권위다.
 
 ## 구현 문서 인덱스
 

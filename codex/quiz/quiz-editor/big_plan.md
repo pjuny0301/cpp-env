@@ -12,7 +12,7 @@
 
 ## 선행조건
 
-- 기본 data repo는 `C:/aa/build/external/quiz/quiz-data`다.
+- 기본 data repo는 repo-relative `build/external/quiz/quiz-data`이며, 로컬 작업자는 필요할 때 `QUIZ_DATA_REPO`로 명시 override한다.
 - 앱 source는 `apps/quiz/quiz-editor`만 canonical로 본다.
 - 생성 결과는 앱 런타임에 바로 의존시키지 말고 파일 artifact와 schema-compatible export로 남긴다.
 

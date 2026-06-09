@@ -38,6 +38,11 @@ nodes:
     kind: text
     binding:
       text: {{ question.prompt }}
+  - id: question_image_uri
+    parent_id: script_root
+    kind: text
+    binding:
+      text: {{ choose(question.has_image, question.image_uri, "no-image") }}
   - id: session_progress
     parent_id: script_root
     kind: text

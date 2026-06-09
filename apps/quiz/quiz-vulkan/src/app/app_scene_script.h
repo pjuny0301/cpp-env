@@ -975,6 +975,18 @@ inline bool evaluate_path(std::string_view raw_expression, const eval_context& c
         value = script_value::boolean(question != nullptr && question->long_text.has_value() && !question->long_text->empty());
         return true;
     }
+    if (expression == "question.image_uri") {
+        if (question == nullptr) {
+            error = "expression question.image_uri requires an active question";
+            return false;
+        }
+        value = script_value::string(question->image_uri.value_or(std::string{}));
+        return true;
+    }
+    if (expression == "question.has_image") {
+        value = script_value::boolean(question != nullptr && question->image_uri.has_value() && !question->image_uri->empty());
+        return true;
+    }
     if (expression == "question.has_options") {
         value = script_value::boolean(question != nullptr && !question->options.empty());
         return true;

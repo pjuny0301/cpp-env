@@ -56,6 +56,8 @@ Schema version 2 documents contain:
 - node definitions with layout rules, style tokens, text runs, image refs, and
   generic scene semantics
 - data bindings such as `{{ question.prompt }}`
+- question media bindings such as `{{ question.has_image }}` and
+  `{{ question.image_uri }}`
 - session bindings such as `{{ session.progress }}` and
   `{{ session.mode }} / {{ session.phase }}`
 - feedback bindings such as `{{ feedback.exists }}` and

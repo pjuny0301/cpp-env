@@ -32,6 +32,7 @@ quiz_vulkan::domain::deck make_test_deck()
     question quiz_question;
     quiz_question.id = "q1";
     quiz_question.prompt = "Capital of Korea?";
+    quiz_question.image_uri = "asset://korea-map.png";
     quiz_question.type = question_type::answer;
     quiz_question.options.push_back(option{"Seoul", true});
     quiz_question.options.push_back(option{"Busan", false});
@@ -120,6 +121,24 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     prompt.style.foreground_color = "#ffffff";
     prompt.bindings.push_back({"text", "{{ question.prompt }}"});
     script.nodes.push_back(std::move(prompt));
+
+    presentation::app_scene_script_node question_has_image;
+    question_has_image.id = "question_has_image";
+    question_has_image.parent_id = "script_root";
+    question_has_image.kind = scene::scene_node_kind::text;
+    question_has_image.debug_name = "question has image";
+    question_has_image.style.token = "muted";
+    question_has_image.bindings.push_back({"text", "{{ question.has_image }}"});
+    script.nodes.push_back(std::move(question_has_image));
+
+    presentation::app_scene_script_node question_image_uri;
+    question_image_uri.id = "question_image_uri";
+    question_image_uri.parent_id = "script_root";
+    question_image_uri.kind = scene::scene_node_kind::text;
+    question_image_uri.debug_name = "question image uri";
+    question_image_uri.style.token = "muted";
+    question_image_uri.bindings.push_back({"text", "{{ choose(question.has_image, question.image_uri, \"no-image\") }}"});
+    script.nodes.push_back(std::move(question_image_uri));
 
     presentation::app_scene_script_node progress;
     progress.id = "session_progress";
@@ -477,6 +496,12 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(prompt != nullptr, "prompt node exists");
     require(prompt->text_runs.size() == 1, "prompt text run exists");
     require(prompt->text_runs.front().text == "Capital of Korea?", "prompt binding renders question.prompt");
+    const scene::scene_node_data* question_has_image = data.find_node("question_has_image");
+    const scene::scene_node_data* question_image_uri = data.find_node("question_image_uri");
+    require(question_has_image != nullptr, "question has image node exists");
+    require(question_image_uri != nullptr, "question image uri node exists");
+    require(question_has_image->text_runs.front().text == "true", "question has image binding renders");
+    require(question_image_uri->text_runs.front().text == "asset://korea-map.png", "question image uri binding renders");
     const scene::scene_node_data* progress = data.find_node("session_progress");
     const scene::scene_node_data* session_mode = data.find_node("session_mode_phase");
     const scene::scene_node_data* session_count = data.find_node("session_question_count");

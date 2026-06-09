@@ -420,6 +420,15 @@ int main()
     require(first_option->has_action_binding, "active first option action exists");
     require(first_option->action_binding.action_type == "submit_option", "active first option submits option");
 
+    const scene::scene_layout_data direct_active_data =
+        build_direct_screen_data("direct_active", active_snapshot, presentation::build_quiz_active_screen);
+    const scene::scene_layout_data scripted_active_data =
+        build_patch_screen_data("scripted_active", presentation::make_quiz_active_screen_patch(active_snapshot));
+    require_same_placed_render(
+        scene::layout_placer().place(scripted_active_data, day_intro_viewport, day_intro_metrics),
+        scene::layout_placer().place(direct_active_data, day_intro_viewport, day_intro_metrics),
+        "scripted active quiz render equals direct builder");
+
     std::vector<domain::deck> blank_decks;
     blank_decks.push_back(make_blank_input_deck());
     domain::quiz_session blank_session = make_active_session(blank_decks.front());
@@ -445,6 +454,15 @@ int main()
     require(text_answer != nullptr, "blank input text answer exists");
     require(text_answer->semantics.role == presentation::quiz_answer_input_role, "blank input answer is tagged");
     require(presentation::accepts_keyboard_input(text_answer->semantics), "blank input answer accepts keyboard input");
+
+    const scene::scene_layout_data direct_blank_data =
+        build_direct_screen_data("direct_blank", blank_snapshot, presentation::build_quiz_active_screen);
+    const scene::scene_layout_data scripted_blank_data =
+        build_patch_screen_data("scripted_blank", presentation::make_quiz_active_screen_patch(blank_snapshot));
+    require_same_placed_render(
+        scene::layout_placer().place(scripted_blank_data, day_intro_viewport, day_intro_metrics),
+        scene::layout_placer().place(direct_blank_data, day_intro_viewport, day_intro_metrics),
+        "scripted blank input quiz render equals direct builder");
 
     fixed_text_metrics metrics;
     scene::scene_layout_environment keyboard_environment;
@@ -489,6 +507,15 @@ int main()
     require(feedback_option != nullptr, "feedback submitted option exists");
     require(!feedback_option->input_enabled, "feedback option is disabled");
     require(!feedback_option->has_action_binding, "feedback option cannot submit again");
+
+    const scene::scene_layout_data direct_feedback_data =
+        build_direct_screen_data("direct_feedback", feedback_snapshot, presentation::build_quiz_feedback_screen);
+    const scene::scene_layout_data scripted_feedback_data =
+        build_patch_screen_data("scripted_feedback", presentation::make_quiz_feedback_screen_patch(feedback_snapshot));
+    require_same_placed_render(
+        scene::layout_placer().place(scripted_feedback_data, day_intro_viewport, day_intro_metrics),
+        scene::layout_placer().place(direct_feedback_data, day_intro_viewport, day_intro_metrics),
+        "scripted feedback render equals direct builder");
 
     domain::continue_after_feedback(feedback_session);
     const domain::app_snapshot results_snapshot = make_snapshot(decks, &feedback_session);

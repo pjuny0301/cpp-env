@@ -66,6 +66,7 @@ struct app_scene_script_node {
     scene::scene_layout_rule layout_rule;
     scene::scene_style style;
     std::vector<scene::scene_text_run> text_runs;
+    scene::scene_image_ref image;
     std::vector<app_scene_script_data_binding> bindings;
     std::optional<app_scene_script_repeater> repeater;
     std::string condition;
@@ -74,6 +75,7 @@ struct app_scene_script_node {
     scene::scene_node_semantics semantics;
     bool visible = true;
     bool input_enabled = true;
+    bool has_image = false;
 };
 
 struct app_scene_script_style_definition {
@@ -859,6 +861,8 @@ inline bool compile_node_instance(
     node.layout_rule = script_node.layout_rule;
     node.style = script_node.style;
     node.text_runs = script_node.text_runs;
+    node.image = script_node.image;
+    node.has_image = script_node.has_image;
     for (scene::scene_text_run& run : node.text_runs) {
         if (run.style_token.empty()) {
             run.style_token = node.style.token;
@@ -1042,8 +1046,11 @@ inline app_scene_script_validation_result validate_app_scene_script_document(con
             }
         }
         for (const app_scene_script_event_handler_template& event : node.events) {
-            if (event.commands.empty()) {
-                result.errors.push_back("script event on node " + node.id + " has no commands");
+            if (event.commands.empty() && !event.legacy_binding.has_value()) {
+                result.errors.push_back("script event on node " + node.id + " has no commands or legacy binding");
+            }
+            if (event.legacy_binding.has_value() && !is_scene_command_allowed(event.legacy_binding->action_type)) {
+                result.errors.push_back("script legacy binding is not allowlisted: " + event.legacy_binding->action_type);
             }
             for (const app_scene_script_command_template& command : event.commands) {
                 if (!is_scene_command_allowed(command.name)) {

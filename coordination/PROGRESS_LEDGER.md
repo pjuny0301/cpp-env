@@ -147,3 +147,4 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: Push branch and create Track D PR; continue Track C/A7
 - blocker(있으면): 없음
 - 검증: `cmake --build --preset linux-debug --target quiz_vulkan_app_scene_preview_tests quiz_vulkan_app_scene_script_tests quiz_vulkan_app_quiz_screens_tests quiz_vulkan_app_scene_scenario_tests quiz_vulkan_architecture_boundary_tests` passed; `ctest --test-dir build/out/quiz/quiz-vulkan/linux-ninja -R "quiz_vulkan_(app_scene_preview_tests|app_scene_script_tests|app_quiz_screens_tests|app_scene_scenario_tests|architecture_boundary_tests)$" --output-on-failure` passed 5/5; `git diff --check` passed
+- PR: https://github.com/pjuny0301/cpp-env/pull/25

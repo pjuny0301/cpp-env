@@ -209,6 +209,15 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     function_title_upper.bindings.push_back({"text", "{{ concat(selected_deck.title, \" / \", selected_day.title) | upper }}"});
     script.nodes.push_back(std::move(function_title_upper));
 
+    presentation::app_scene_script_node function_title_pipe_literal;
+    function_title_pipe_literal.id = "deck_day_function_pipe_literal";
+    function_title_pipe_literal.parent_id = "script_root";
+    function_title_pipe_literal.kind = scene::scene_node_kind::text;
+    function_title_pipe_literal.debug_name = "deck day function pipe literal";
+    function_title_pipe_literal.style.token = "muted";
+    function_title_pipe_literal.bindings.push_back({"text", "{{ concat(selected_deck.title, \" | \", selected_day.title) }}"});
+    script.nodes.push_back(std::move(function_title_pipe_literal));
+
     presentation::app_scene_script_node session_active_flag;
     session_active_flag.id = "session_active_flag";
     session_active_flag.parent_id = "script_root";
@@ -354,12 +363,15 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(formatted_type->text_runs.front().text == "answer", "formatter chain renders question type");
     const scene::scene_node_data* function_title = data.find_node("deck_day_function_title");
     const scene::scene_node_data* function_title_upper = data.find_node("deck_day_function_title_upper");
+    const scene::scene_node_data* function_title_pipe_literal = data.find_node("deck_day_function_pipe_literal");
     const scene::scene_node_data* session_active_flag = data.find_node("session_active_flag");
     require(function_title != nullptr, "function title node exists");
     require(function_title_upper != nullptr, "function title upper node exists");
+    require(function_title_pipe_literal != nullptr, "function title pipe literal node exists");
     require(session_active_flag != nullptr, "function active flag node exists");
     require(function_title->text_runs.front().text == "Geography / Day 1", "concat function renders text");
     require(function_title_upper->text_runs.front().text == "GEOGRAPHY / DAY 1", "function result supports formatter chain");
+    require(function_title_pipe_literal->text_runs.front().text == "Geography | Day 1", "quoted pipe literal is not treated as formatter");
     require(session_active_flag->text_runs.front().text == "true", "equals function renders boolean");
     require(data.contains_node("function_condition_active"), "function expression can drive conditions");
     require(data.contains_node("function_condition_not_completed"), "not function can drive conditions");

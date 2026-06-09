@@ -541,6 +541,50 @@ inline bool parse_function_call(
     return parse_function_arguments(raw_expression.substr(open + 1, raw_expression.size() - open - 2), args, error);
 }
 
+inline std::size_t find_top_level_pipe(std::string_view value, std::size_t start = 0)
+{
+    int nested_parentheses = 0;
+    char quote = '\0';
+    bool escaping = false;
+
+    for (std::size_t index = start; index < value.size(); ++index) {
+        const char ch = value[index];
+
+        if (quote != '\0') {
+            if (escaping) {
+                escaping = false;
+                continue;
+            }
+            if (ch == '\\') {
+                escaping = true;
+                continue;
+            }
+            if (ch == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+
+        if (ch == '"' || ch == '\'') {
+            quote = ch;
+            continue;
+        }
+        if (ch == '(') {
+            ++nested_parentheses;
+            continue;
+        }
+        if (ch == ')' && nested_parentheses > 0) {
+            --nested_parentheses;
+            continue;
+        }
+        if (ch == '|' && nested_parentheses == 0) {
+            return index;
+        }
+    }
+
+    return std::string_view::npos;
+}
+
 inline bool require_script_function_arg_count(
     std::string_view name,
     const std::vector<std::string>& args,
@@ -907,7 +951,7 @@ inline bool apply_script_formatter(std::string_view raw_formatter, script_value&
 inline bool evaluate_expression(std::string_view raw_expression, const eval_context& context, script_value& value, std::string& error)
 {
     raw_expression = trim(raw_expression);
-    const std::size_t first_pipe = raw_expression.find('|');
+    const std::size_t first_pipe = find_top_level_pipe(raw_expression);
     if (first_pipe == std::string_view::npos) {
         return evaluate_path(raw_expression, context, value, error);
     }
@@ -918,7 +962,7 @@ inline bool evaluate_expression(std::string_view raw_expression, const eval_cont
 
     std::size_t cursor = first_pipe + 1;
     while (cursor <= raw_expression.size()) {
-        const std::size_t next_pipe = raw_expression.find('|', cursor);
+        const std::size_t next_pipe = find_top_level_pipe(raw_expression, cursor);
         const std::string_view formatter = next_pipe == std::string_view::npos
             ? raw_expression.substr(cursor)
             : raw_expression.substr(cursor, next_pipe - cursor);

@@ -70,7 +70,7 @@ status: pending | active | blocked | waiting | done
 - 태스크: Track C start, worktree isolation
 - status: active
 - 변경 파일: coordination/SHARED_NOTES.md, coordination/PROGRESS_LEDGER.md
-- commit SHA: 23f0de6
+- commit SHA: pending
 - 다음 단계: C1 requirements authority audit and normalization
 - blocker(있으면): 없음
 - worktree: /mnt/c/Users/박준용/Desktop/goal/worktrees/track-c-structure
@@ -101,7 +101,17 @@ status: pending | active | blocked | waiting | done
 - 태스크: Track C shared-ui/app README handoff refresh
 - status: done
 - 변경 파일: apps/quiz/android-quiz-app/README.md, apps/quiz/quiz-editor/README.md, apps/quiz/shared-ui/README.md, coordination/PROGRESS_LEDGER.md
-- commit SHA: pending
+- commit SHA: 23f0de6
 - 다음 단계: Push README handoff refresh to PR #26, then re-check open PR merge states
 - blocker(있으면): 없음
 - 검증: `git diff --check` passed.
+
+### [CP-track-c-structure-005]
+- 시각 UTC: 2026-06-09T12:31:11Z
+- 태스크: Track C README handoff rollup report
+- status: done
+- 변경 파일: reports/progress/2026-06-09T123200Z-track-c-readme-handoff-rollup.md
+- commit SHA: f2ccefa
+- 다음 단계: push Track C branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `git diff --check` passed

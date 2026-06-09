@@ -516,6 +516,30 @@ void test_expression_function_errors_are_reported()
         "unterminated function string errors are reported");
 }
 
+void test_dynamic_node_id_collisions_are_reported()
+{
+    using namespace quiz_vulkan;
+
+    const domain::app_snapshot snapshot = make_active_snapshot();
+    presentation::app_scene_script_document duplicate_dynamic_id = make_active_question_script();
+
+    presentation::app_scene_script_node duplicate;
+    duplicate.id = "duplicate_{{ true }}";
+    duplicate.parent_id = "script_root";
+    duplicate.kind = scene::scene_node_kind::text;
+    duplicate.debug_name = "duplicate dynamic id";
+    duplicate.style.token = "muted";
+    duplicate.repeater = presentation::app_scene_script_repeater{"option", "question.options"};
+    duplicate.bindings.push_back({"text", "{{ option.text }}"});
+    duplicate_dynamic_id.nodes.push_back(std::move(duplicate));
+
+    const presentation::app_scene_script_compile_result compiled =
+        presentation::compile_app_scene_script(duplicate_dynamic_id, snapshot);
+    require(!compiled.ok(), "duplicate dynamic node ids fail compile");
+    require(contains(compiled.error, "duplicate id"), "duplicate dynamic node id error is reported");
+    require(contains(compiled.error, "duplicate_true"), "duplicate dynamic node id value is reported");
+}
+
 }  // namespace
 
 int main()
@@ -524,5 +548,6 @@ int main()
     test_phase3_dsl_validation_and_determinism();
     test_compiled_patch_unwrap_reports_failure_context();
     test_expression_function_errors_are_reported();
+    test_dynamic_node_id_collisions_are_reported();
     return 0;
 }

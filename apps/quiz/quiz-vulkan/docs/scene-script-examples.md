@@ -53,6 +53,11 @@ nodes:
     kind: text
     binding:
       text: {{ learning.summary }}
+  - id: selected_day_summary
+    parent_id: script_root
+    kind: text
+    binding:
+      text: {{ selected_day.title }} / {{ selected_day.question_count }} questions
   - id: question_prompt_upper
     parent_id: script_root
     kind: text

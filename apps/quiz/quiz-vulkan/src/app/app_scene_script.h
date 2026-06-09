@@ -388,6 +388,45 @@ inline const domain::session_snapshot* current_session(const domain::app_snapsho
     return snapshot.active_session.has_value() ? &(*snapshot.active_session) : nullptr;
 }
 
+inline const domain::deck* selected_deck(const domain::app_snapshot& snapshot)
+{
+    if (!snapshot.selected_deck_id.has_value()) {
+        return nullptr;
+    }
+
+    const auto found = std::find_if(
+        snapshot.decks.begin(),
+        snapshot.decks.end(),
+        [&snapshot](const domain::deck& candidate) {
+            return candidate.id == *snapshot.selected_deck_id;
+        });
+    return found == snapshot.decks.end() ? nullptr : &(*found);
+}
+
+inline const domain::day* selected_day(const domain::deck& deck, const domain::app_snapshot& snapshot)
+{
+    if (!snapshot.selected_day_id.has_value()) {
+        return nullptr;
+    }
+
+    const auto found = std::find_if(
+        deck.days.begin(),
+        deck.days.end(),
+        [&snapshot](const domain::day& candidate) {
+            return candidate.id == *snapshot.selected_day_id;
+        });
+    return found == deck.days.end() ? nullptr : &(*found);
+}
+
+inline std::size_t deck_question_count(const domain::deck& deck)
+{
+    std::size_t count = 0;
+    for (const domain::day& quiz_day : deck.days) {
+        count += quiz_day.questions.size();
+    }
+    return count;
+}
+
 inline bool evaluate_path(std::string_view raw_expression, const eval_context& context, script_value& value, std::string& error)
 {
     const std::string expression = strip_optional_quotes(raw_expression);
@@ -487,6 +526,65 @@ inline bool evaluate_path(std::string_view raw_expression, const eval_context& c
             + " / Known " + std::to_string(context.snapshot.learning.known_count)
             + " / Unknown " + std::to_string(context.snapshot.learning.unknown_count)
             + " / Wrong note " + std::to_string(context.snapshot.learning.wrong_note_count));
+        return true;
+    }
+
+    const domain::deck* deck = selected_deck(context.snapshot);
+    const domain::day* day = deck == nullptr ? nullptr : selected_day(*deck, context.snapshot);
+    if (expression == "deck.count") {
+        value = script_value::integer(static_cast<std::int64_t>(context.snapshot.decks.size()));
+        return true;
+    }
+    if (expression == "selected_deck.exists") {
+        value = script_value::boolean(deck != nullptr);
+        return true;
+    }
+    if (expression == "selected_deck.id") {
+        if (deck == nullptr) {
+            error = "expression selected_deck.id requires a selected deck";
+            return false;
+        }
+        value = script_value::string(deck->id);
+        return true;
+    }
+    if (expression == "selected_deck.title") {
+        if (deck == nullptr) {
+            error = "expression selected_deck.title requires a selected deck";
+            return false;
+        }
+        value = script_value::string(deck->title);
+        return true;
+    }
+    if (expression == "selected_deck.day_count") {
+        value = script_value::integer(deck == nullptr ? 0 : static_cast<std::int64_t>(deck->days.size()));
+        return true;
+    }
+    if (expression == "selected_deck.question_count") {
+        value = script_value::integer(deck == nullptr ? 0 : static_cast<std::int64_t>(deck_question_count(*deck)));
+        return true;
+    }
+    if (expression == "selected_day.exists") {
+        value = script_value::boolean(day != nullptr);
+        return true;
+    }
+    if (expression == "selected_day.id") {
+        if (day == nullptr) {
+            error = "expression selected_day.id requires a selected day";
+            return false;
+        }
+        value = script_value::string(day->id);
+        return true;
+    }
+    if (expression == "selected_day.title") {
+        if (day == nullptr) {
+            error = "expression selected_day.title requires a selected day";
+            return false;
+        }
+        value = script_value::string(day->title);
+        return true;
+    }
+    if (expression == "selected_day.question_count") {
+        value = script_value::integer(day == nullptr ? 0 : static_cast<std::int64_t>(day->questions.size()));
         return true;
     }
 

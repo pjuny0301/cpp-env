@@ -140,6 +140,33 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     known_count.bindings.push_back({"text", "{{ learning.known_count }}"});
     script.nodes.push_back(std::move(known_count));
 
+    presentation::app_scene_script_node deck_title;
+    deck_title.id = "selected_deck_title";
+    deck_title.parent_id = "script_root";
+    deck_title.kind = scene::scene_node_kind::text;
+    deck_title.debug_name = "selected deck title";
+    deck_title.style.token = "muted";
+    deck_title.bindings.push_back({"text", "{{ selected_deck.title }}"});
+    script.nodes.push_back(std::move(deck_title));
+
+    presentation::app_scene_script_node day_summary;
+    day_summary.id = "selected_day_summary";
+    day_summary.parent_id = "script_root";
+    day_summary.kind = scene::scene_node_kind::text;
+    day_summary.debug_name = "selected day summary";
+    day_summary.style.token = "muted";
+    day_summary.bindings.push_back({"text", "{{ selected_day.title }} / {{ selected_day.question_count }} questions"});
+    script.nodes.push_back(std::move(day_summary));
+
+    presentation::app_scene_script_node deck_count;
+    deck_count.id = "deck_count";
+    deck_count.parent_id = "script_root";
+    deck_count.kind = scene::scene_node_kind::text;
+    deck_count.debug_name = "deck count";
+    deck_count.style.token = "muted";
+    deck_count.bindings.push_back({"text", "{{ deck.count }}"});
+    script.nodes.push_back(std::move(deck_count));
+
     presentation::app_scene_script_node formatted_prompt;
     formatted_prompt.id = "question_prompt_upper";
     formatted_prompt.parent_id = "script_root";
@@ -257,6 +284,15 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(known_count != nullptr, "known count node exists");
     require(learning_summary->text_runs.front().text == "Learning 1 / Known 0 / Unknown 0 / Wrong note 0", "learning summary binding renders");
     require(known_count->text_runs.front().text == "0", "known count binding renders");
+    const scene::scene_node_data* deck_title = data.find_node("selected_deck_title");
+    const scene::scene_node_data* day_summary = data.find_node("selected_day_summary");
+    const scene::scene_node_data* deck_count = data.find_node("deck_count");
+    require(deck_title != nullptr, "selected deck title node exists");
+    require(day_summary != nullptr, "selected day summary node exists");
+    require(deck_count != nullptr, "deck count node exists");
+    require(deck_title->text_runs.front().text == "Geography", "selected deck title binding renders");
+    require(day_summary->text_runs.front().text == "Day 1 / 1 questions", "selected day summary binding renders");
+    require(deck_count->text_runs.front().text == "1", "deck count binding renders");
     const scene::scene_node_data* formatted_prompt = data.find_node("question_prompt_upper");
     const scene::scene_node_data* formatted_type = data.find_node("question_type_lower");
     require(formatted_prompt != nullptr, "formatted prompt node exists");

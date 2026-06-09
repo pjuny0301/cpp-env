@@ -273,6 +273,7 @@ int main()
                 "quiz_active",
                 "quiz_feedback",
                 "quiz_results",
+                "quiz.",
                 "question_stage",
                 "question_id",
                 "answer_outcome",

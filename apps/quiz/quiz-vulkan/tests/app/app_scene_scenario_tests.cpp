@@ -443,6 +443,46 @@ void test_quiz_scene_results_known_mode_replay_starts_known_session()
     require(result.final_frame.snapshot.learning.known_count == 1, "known mode final snapshot preserves known count");
 }
 
+void test_quiz_scene_results_wrong_note_mode_replay_starts_wrong_note_session()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_update_setting_action("wrong_note_enabled", "yes"), 5);
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+    state.dispatch(domain::make_start_quiz_action(domain::quiz_mode::normal), 20);
+    state.dispatch(domain::make_submit_option_action(1), 30);
+    state.dispatch(domain::make_continue_after_feedback_action(), 40);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_wrong_note_from_results",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_results_start_wrong_note",
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "wrong-note mode results scenario replay succeeds");
+    require(result.trace.size() == 1, "wrong-note mode results scenario emits one trace entry");
+    require_trace_entry(result.trace[0], "quiz_results", "start_quiz", "quiz_active", "wrong-note mode start trace is stable");
+    require(result.trace[0].target_node_id == "quiz_results_start_wrong_note", "wrong-note mode start records target node");
+    require(result.trace[0].after_focus_id == "quiz_active_option_0", "wrong-note mode start captures active option focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::quiz, "wrong-note mode final snapshot is quiz");
+    require(result.final_frame.snapshot.active_session.has_value(), "wrong-note mode final snapshot has session");
+    const domain::session_snapshot& session = *result.final_frame.snapshot.active_session;
+    require(session.mode == domain::quiz_mode::wrong_note, "wrong-note mode final session is wrong_note");
+    require(session.current_question.has_value(), "wrong-note mode final session has current question");
+    require(session.current_question->question_id == "q1", "wrong-note mode final session starts wrong-note question");
+    require(result.final_frame.snapshot.learning.wrong_note_count == 1, "wrong-note mode final snapshot preserves wrong-note count");
+}
+
 void test_quiz_scene_swipe_skip_replay_reaches_results()
 {
     using namespace quiz_vulkan;
@@ -657,6 +697,7 @@ int main()
     test_quiz_scene_incorrect_text_submit_replay_records_feedback();
     test_quiz_scene_multiselect_replay_records_feedback();
     test_quiz_scene_results_known_mode_replay_starts_known_session();
+    test_quiz_scene_results_wrong_note_mode_replay_starts_wrong_note_session();
     test_quiz_scene_swipe_skip_replay_reaches_results();
     test_quiz_scene_long_press_mark_unknown_updates_learning();
     test_quiz_scene_swipe_previous_replay_returns_to_prior_question();

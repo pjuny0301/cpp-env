@@ -188,6 +188,9 @@ binding:
   text: {{ concat(selected_deck.title, " / ", selected_day.title) }}
 condition: equals(session.phase, "active")
 condition: not(session.completed)
+condition: contains(question.prompt, "Korea")
+condition: starts_with(selected_deck.source_uri, "fixture://")
+condition: ends_with(selected_deck.source_uri, ".quizdeck")
 ```
 
 Function calls are app/presentation concerns and stay outside renderer code.

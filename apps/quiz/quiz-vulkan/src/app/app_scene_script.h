@@ -661,6 +661,34 @@ inline bool evaluate_script_function(
         return true;
     }
 
+    if (name == "contains" || name == "starts_with" || name == "ends_with") {
+        if (!require_script_function_arg_count(name, args, 2, error)) {
+            return false;
+        }
+
+        script_value rendered_value;
+        script_value needle_value;
+        if (!evaluate_expression(args[0], context, rendered_value, error)
+            || !evaluate_expression(args[1], context, needle_value, error)) {
+            return false;
+        }
+
+        const std::string rendered = rendered_value.to_string();
+        const std::string needle = needle_value.to_string();
+        bool matched = false;
+        if (name == "contains") {
+            matched = rendered.find(needle) != std::string::npos;
+        } else if (name == "starts_with") {
+            matched = rendered.size() >= needle.size()
+                && rendered.compare(0, needle.size(), needle) == 0;
+        } else {
+            matched = rendered.size() >= needle.size()
+                && rendered.compare(rendered.size() - needle.size(), needle.size(), needle) == 0;
+        }
+        value = script_value::boolean(matched);
+        return true;
+    }
+
     if (name == "choose") {
         if (!require_script_function_arg_count(name, args, 3, error)) {
             return false;

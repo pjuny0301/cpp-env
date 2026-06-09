@@ -394,6 +394,15 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     empty_error_flag.bindings.push_back({"text", "{{ empty(error.message) }}"});
     script.nodes.push_back(std::move(empty_error_flag));
 
+    presentation::app_scene_script_node string_predicates;
+    string_predicates.id = "string_predicate_flags";
+    string_predicates.parent_id = "script_root";
+    string_predicates.kind = scene::scene_node_kind::text;
+    string_predicates.debug_name = "string predicate flags";
+    string_predicates.style.token = "muted";
+    string_predicates.bindings.push_back({"text", "{{ contains(question.prompt, \"Korea\") }} / {{ starts_with(selected_deck.source_uri, \"fixture://\") }} / {{ ends_with(selected_deck.source_uri, \".quizdeck\") }}"});
+    script.nodes.push_back(std::move(string_predicates));
+
     presentation::app_scene_script_node choice_label;
     choice_label.id = "choice_error_label";
     choice_label.parent_id = "script_root";
@@ -431,6 +440,26 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     not_condition.style.token = "muted";
     not_condition.text_runs.push_back({"Function condition not completed", "muted"});
     script.nodes.push_back(std::move(not_condition));
+
+    presentation::app_scene_script_node contains_condition;
+    contains_condition.id = "function_condition_contains_korea";
+    contains_condition.parent_id = "script_root";
+    contains_condition.kind = scene::scene_node_kind::text;
+    contains_condition.debug_name = "function condition contains Korea";
+    contains_condition.condition = "contains(question.prompt, \"Korea\")";
+    contains_condition.style.token = "muted";
+    contains_condition.text_runs.push_back({"Function condition contains Korea", "muted"});
+    script.nodes.push_back(std::move(contains_condition));
+
+    presentation::app_scene_script_node hidden_contains_condition;
+    hidden_contains_condition.id = "function_condition_contains_busan";
+    hidden_contains_condition.parent_id = "script_root";
+    hidden_contains_condition.kind = scene::scene_node_kind::text;
+    hidden_contains_condition.debug_name = "function condition contains Busan";
+    hidden_contains_condition.condition = "contains(question.prompt, \"Busan\")";
+    hidden_contains_condition.style.token = "muted";
+    hidden_contains_condition.text_runs.push_back({"Function condition contains Busan", "muted"});
+    script.nodes.push_back(std::move(hidden_contains_condition));
 
     presentation::app_scene_script_node seeded_start;
     seeded_start.id = "seeded_start_button";
@@ -665,6 +694,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     const scene::scene_node_data* safe_deck_id = data.find_node("safe_deck_id");
     const scene::scene_node_data* session_active_flag = data.find_node("session_active_flag");
     const scene::scene_node_data* empty_error_flag = data.find_node("empty_error_flag");
+    const scene::scene_node_data* string_predicates = data.find_node("string_predicate_flags");
     const scene::scene_node_data* choice_label = data.find_node("choice_error_label");
     const scene::scene_node_data* lazy_choice = data.find_node("lazy_choice_missing_long_text");
     require(function_title != nullptr, "function title node exists");
@@ -673,6 +703,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(safe_deck_id != nullptr, "safe id function node exists");
     require(session_active_flag != nullptr, "function active flag node exists");
     require(empty_error_flag != nullptr, "empty function node exists");
+    require(string_predicates != nullptr, "string predicate function node exists");
     require(choice_label != nullptr, "choose function node exists");
     require(lazy_choice != nullptr, "lazy choose function node exists");
     require(function_title->text_runs.front().text == "Geography / Day 1", "concat function renders text");
@@ -681,10 +712,13 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(safe_deck_id->text_runs.front().text == "geography_deck", "safe_id function renders stable id text");
     require(session_active_flag->text_runs.front().text == "true", "equals function renders boolean");
     require(empty_error_flag->text_runs.front().text == "true", "empty function renders boolean");
+    require(string_predicates->text_runs.front().text == "true / true / true", "string predicate functions render booleans");
     require(choice_label->text_runs.front().text == "No error", "choose function renders fallback branch");
     require(lazy_choice->text_runs.front().text == "No long text", "choose function only evaluates selected branch");
     require(data.contains_node("function_condition_active"), "function expression can drive conditions");
     require(data.contains_node("function_condition_not_completed"), "not function can drive conditions");
+    require(data.contains_node("function_condition_contains_korea"), "contains function can drive true conditions");
+    require(!data.contains_node("function_condition_contains_busan"), "contains function can drive false conditions");
     require(!data.contains_node("question_long_text"), "false condition suppresses long text node");
 
     const scene::scene_node_data* seeded_start = data.find_node("seeded_start_button");
@@ -864,6 +898,14 @@ void test_expression_function_errors_are_reported()
         snapshot,
         "choose expects 3 argument",
         "choose function arg count errors are reported");
+
+    presentation::app_scene_script_document contains_missing_arg = make_active_question_script();
+    append_invalid_function_node(contains_missing_arg, "{{ contains(question.prompt) }}");
+    require_compile_error_contains(
+        contains_missing_arg,
+        snapshot,
+        "contains expects 2 argument",
+        "contains function arg count errors are reported");
 
     presentation::app_scene_script_document safe_id_missing_arg = make_active_question_script();
     append_invalid_function_node(safe_id_missing_arg, "{{ safe_id() }}");

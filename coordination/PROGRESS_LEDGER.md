@@ -107,3 +107,13 @@ status: pending | active | blocked | waiting | done
 - blocker(있으면): 없음
 - 원격 백업: `git push -u origin codex/track-a-ui-engine-20260608T1912Z` passed
 - PR: https://github.com/pjuny0301/cpp-env/pull/24
+
+### [CP-track-a-current-004]
+- 시각 UTC: 2026-06-09T05:34:56Z
+- 태스크: A5/A6 screen script migration and gesture event-handler routing
+- status: done; G2 ready
+- 변경 파일: apps/quiz/quiz-vulkan/src/app/app_command_registry.h, apps/quiz/quiz-vulkan/src/app/app_input_router.cpp, apps/quiz/quiz-vulkan/src/app/app_quiz_screens.h, apps/quiz/quiz-vulkan/src/app/app_scene_script.h, apps/quiz/quiz-vulkan/tests/app/app_input_router_tests.cpp, apps/quiz/quiz-vulkan/tests/app/app_quiz_screens_tests.cpp
+- commit SHA: 814d04a
+- 다음 단계: Start A7 Phase 5 generic scene cleanup and unblock Track D validation/tooling work
+- blocker(있으면): 없음
+- 검증: `cmake --build --preset linux-debug --target quiz_vulkan_app_input_router_tests quiz_vulkan_app_quiz_screens_tests quiz_vulkan_app_scene_script_tests quiz_vulkan_app_action_router_tests quiz_vulkan_architecture_boundary_tests quiz_vulkan_interface_contract_compile_tests` passed; `ctest --test-dir build/out/quiz/quiz-vulkan/linux-ninja -R "quiz_vulkan_(app_input_router_tests|app_quiz_screens_tests|app_scene_script_tests|app_action_router_tests|architecture_boundary_tests|interface_contract_compile_tests)$" --output-on-failure` passed 5/5; `git diff --check` passed

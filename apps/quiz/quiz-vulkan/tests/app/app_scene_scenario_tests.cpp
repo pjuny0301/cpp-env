@@ -443,6 +443,45 @@ void test_quiz_scene_results_known_mode_replay_starts_known_session()
     require(result.final_frame.snapshot.learning.known_count == 1, "known mode final snapshot preserves known count");
 }
 
+void test_quiz_scene_results_due_restart_replay_starts_due_known_session()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+    state.dispatch(domain::make_start_quiz_action(domain::quiz_mode::normal), 20);
+    state.dispatch(domain::make_mark_question_known_action(), 30);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "restart_due_from_results",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_results_start_normal",
+                .now_ms = 86'400'030,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "due restart results scenario replay succeeds");
+    require(result.trace.size() == 1, "due restart results scenario emits one trace entry");
+    require_trace_entry(result.trace[0], "quiz_results", "start_quiz", "quiz_active", "due restart trace is stable");
+    require(result.trace[0].target_node_id == "quiz_results_start_normal", "due restart records target node");
+    require(result.trace[0].after_focus_id == "quiz_active_option_0", "due restart captures active option focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::quiz, "due restart final snapshot is quiz");
+    require(result.final_frame.snapshot.active_session.has_value(), "due restart final snapshot has session");
+    const domain::session_snapshot& session = *result.final_frame.snapshot.active_session;
+    require(session.mode == domain::quiz_mode::normal, "due restart final session stays normal mode");
+    require(session.current_question.has_value(), "due restart final session has current question");
+    require(session.current_question->question_id == "q1", "due restart final session starts due known question");
+    require(session.current_question->learning == domain::learning_state::known, "due restart keeps question learning state known");
+    require(result.final_frame.snapshot.learning.known_count == 1, "due restart final snapshot preserves known count");
+}
+
 void test_quiz_scene_results_wrong_note_mode_replay_starts_wrong_note_session()
 {
     using namespace quiz_vulkan;
@@ -697,6 +736,7 @@ int main()
     test_quiz_scene_incorrect_text_submit_replay_records_feedback();
     test_quiz_scene_multiselect_replay_records_feedback();
     test_quiz_scene_results_known_mode_replay_starts_known_session();
+    test_quiz_scene_results_due_restart_replay_starts_due_known_session();
     test_quiz_scene_results_wrong_note_mode_replay_starts_wrong_note_session();
     test_quiz_scene_swipe_skip_replay_reaches_results();
     test_quiz_scene_long_press_mark_unknown_updates_learning();

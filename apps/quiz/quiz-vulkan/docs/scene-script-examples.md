@@ -227,6 +227,8 @@ condition: starts_with(selected_deck.source_uri, "fixture://")
 condition: ends_with(selected_deck.source_uri, ".quizdeck")
 binding:
   text: {{ replace(selected_deck.source_uri, "fixture://", "") }}
+binding:
+  text: {{ safe_id("!!!", "fallback_id") }}
 condition: greater_or_equal(length(question.prompt), 10)
 condition: less_than(settings.count, 3)
 condition: between(length(question.prompt), 10, 20)

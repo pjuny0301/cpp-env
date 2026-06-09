@@ -397,6 +397,15 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     safe_deck_id.bindings.push_back({"text", "{{ safe_id(concat(selected_deck.title, \" deck\")) }}"});
     script.nodes.push_back(std::move(safe_deck_id));
 
+    presentation::app_scene_script_node safe_id_fallback;
+    safe_id_fallback.id = "safe_id_fallback";
+    safe_id_fallback.parent_id = "script_root";
+    safe_id_fallback.kind = scene::scene_node_kind::text;
+    safe_id_fallback.debug_name = "safe id fallback";
+    safe_id_fallback.style.token = "muted";
+    safe_id_fallback.bindings.push_back({"text", "{{ safe_id(\"!!!\", \"fallback_id\") }}"});
+    script.nodes.push_back(std::move(safe_id_fallback));
+
     presentation::app_scene_script_node session_active_flag;
     session_active_flag.id = "session_active_flag";
     session_active_flag.parent_id = "script_root";
@@ -848,6 +857,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     const scene::scene_node_data* function_title_upper = data.find_node("deck_day_function_title_upper");
     const scene::scene_node_data* function_title_pipe_literal = data.find_node("deck_day_function_pipe_literal");
     const scene::scene_node_data* safe_deck_id = data.find_node("safe_deck_id");
+    const scene::scene_node_data* safe_id_fallback = data.find_node("safe_id_fallback");
     const scene::scene_node_data* session_active_flag = data.find_node("session_active_flag");
     const scene::scene_node_data* empty_error_flag = data.find_node("empty_error_flag");
     const scene::scene_node_data* string_predicates = data.find_node("string_predicate_flags");
@@ -864,6 +874,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(function_title_upper != nullptr, "function title upper node exists");
     require(function_title_pipe_literal != nullptr, "function title pipe literal node exists");
     require(safe_deck_id != nullptr, "safe id function node exists");
+    require(safe_id_fallback != nullptr, "safe id fallback function node exists");
     require(session_active_flag != nullptr, "function active flag node exists");
     require(empty_error_flag != nullptr, "empty function node exists");
     require(string_predicates != nullptr, "string predicate function node exists");
@@ -880,6 +891,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(function_title_upper->text_runs.front().text == "GEOGRAPHY / DAY 1", "function result supports formatter chain");
     require(function_title_pipe_literal->text_runs.front().text == "Geography | Day 1", "quoted pipe literal is not treated as formatter");
     require(safe_deck_id->text_runs.front().text == "geography_deck", "safe_id function renders stable id text");
+    require(safe_id_fallback->text_runs.front().text == "fallback_id", "safe_id function renders fallback for punctuation-only text");
     require(session_active_flag->text_runs.front().text == "true", "equals function renders boolean");
     require(empty_error_flag->text_runs.front().text == "true", "empty function renders boolean");
     require(string_predicates->text_runs.front().text == "true / true / true", "string predicate functions render booleans");

@@ -1671,6 +1671,46 @@ inline void append_script_learning_mode_buttons(
     }
 }
 
+inline app_scene_script_document make_deck_list_screen_script_document(const domain::app_snapshot& snapshot)
+{
+    app_scene_script_document document;
+    document.schema_version = app_scene_script_node_dsl_schema_version;
+    document.template_id = "builtin:quiz.deck_list.v1";
+    document.screen = "deck_list";
+    append_script_screen_shell(document, quiz_screen_kind::deck_list, snapshot);
+
+    append_script_header(
+        document,
+        detail::to_string_copy(detail::quiz_screens_root_id),
+        "deck_list",
+        "Decks",
+        std::to_string(snapshot.decks.size()) + " decks available");
+    append_script_learning_summary(document, detail::to_string_copy(detail::quiz_screens_root_id), "deck_list", snapshot.learning);
+
+    append_script_section(document, detail::to_string_copy(detail::quiz_screens_root_id), "deck_list_decks", 8.0f);
+    append_script_text(document, "deck_list_decks", "deck_list_decks_label", "Decks", "section_label", "#d8e1e7");
+
+    if (snapshot.decks.empty()) {
+        append_script_empty_state(document, "deck_list_decks", "deck_list_decks", "No decks loaded");
+        return document;
+    }
+
+    for (std::size_t index = 0; index < snapshot.decks.size(); ++index) {
+        const domain::deck& deck = snapshot.decks[index];
+        const std::string deck_id = "deck_list_deck_" + detail::safe_id(deck.id, std::to_string(index));
+        append_script_button(
+            document,
+            "deck_list_decks",
+            deck_id,
+            deck.title + " - " + detail::deck_summary(deck),
+            detail::press_action("select_deck", deck.id),
+            "deck_button");
+    }
+
+    document.focus_id = "deck_list_deck_" + detail::safe_id(snapshot.decks.front().id, "0");
+    return document;
+}
+
 inline app_scene_script_document make_quiz_results_screen_script_document(const domain::app_snapshot& snapshot)
 {
     app_scene_script_document document;
@@ -1854,9 +1894,9 @@ inline void build_quiz_screen(const domain::app_snapshot& snapshot, scene::scene
 
 inline scene::scene_layout_patch make_deck_list_screen_patch(const domain::app_snapshot& snapshot)
 {
-    scene::scene_layout_edit_data edit_data("deck_list_screen");
-    build_deck_list_screen(snapshot, edit_data);
-    return edit_data.finish_patch();
+    const app_scene_script_compile_result compiled =
+        compile_quiz_screen_script(make_deck_list_screen_script_document(snapshot), snapshot);
+    return std::move(*compiled.patch);
 }
 
 inline scene::scene_layout_patch make_home_screen_patch(const domain::app_snapshot& snapshot)
@@ -2019,7 +2059,7 @@ public:
 
         switch (screen_) {
             case quiz_screen_kind::deck_list:
-                build_deck_list_screen(snapshot_, edit_data);
+                append_patch_to_edit_data(make_deck_list_screen_patch(snapshot_), edit_data);
                 return;
             case quiz_screen_kind::deck_view:
                 build_deck_view_screen(snapshot_, edit_data);

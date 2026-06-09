@@ -322,6 +322,17 @@ int main()
     require(deck_button->action_binding.action_type == "select_deck", "deck button selects deck");
     require(deck_button->action_binding.payload == "deck1", "deck button payload contains deck id");
 
+    fixed_text_metrics deck_list_metrics;
+    const scene::scene_rect deck_list_viewport{0.0f, 0.0f, 360.0f, 640.0f};
+    const scene::scene_layout_data direct_deck_list_data =
+        build_direct_screen_data("direct_deck_list", deck_list_snapshot, presentation::build_deck_list_screen);
+    const scene::scene_layout_data scripted_deck_list_data =
+        build_patch_screen_data("scripted_deck_list", presentation::make_deck_list_screen_patch(deck_list_snapshot));
+    require_same_placed_render(
+        scene::layout_placer().place(scripted_deck_list_data, deck_list_viewport, deck_list_metrics),
+        scene::layout_placer().place(direct_deck_list_data, deck_list_viewport, deck_list_metrics),
+        "scripted deck list render equals direct builder");
+
     const domain::app_snapshot day_intro_snapshot = make_snapshot(decks);
     scene::scene_layout_data day_intro_data("test_day_intro");
     apply_patch_to_scene(presentation::make_quiz_screen_patch(day_intro_snapshot), day_intro_data);

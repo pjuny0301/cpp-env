@@ -378,6 +378,49 @@ void test_quiz_scene_deck_navigation_replay_reaches_day_intro()
     require(*result.final_frame.snapshot.selected_day_id == "day1", "deck navigation selects day1");
 }
 
+void test_quiz_scene_deck_view_start_all_replay_starts_session()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "select_deck",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "deck_list_deck_deck1",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "start_all_from_deck_view",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "deck_view_start_all",
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "deck view start-all scenario replay succeeds");
+    require(result.trace.size() == 2, "deck view start-all scenario emits one trace entry per step");
+    require_trace_entry(result.trace[0], "deck_list", "select_deck", "deck_view", "deck view start-all select trace is stable");
+    require_trace_entry(result.trace[1], "deck_view", "start_quiz", "quiz_active", "deck view start-all trace is stable");
+    require(result.trace[1].target_node_id == "deck_view_start_all", "deck view start-all records target node");
+    require(result.trace[1].before_focus_id == "deck_view_day_day1", "deck view start-all starts from deck view day focus");
+    require(result.trace[1].after_focus_id == "quiz_active_option_0", "deck view start-all captures active option focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::quiz, "deck view start-all final snapshot is quiz");
+    require(result.final_frame.snapshot.active_session.has_value(), "deck view start-all final snapshot has session");
+    const domain::session_snapshot& session = *result.final_frame.snapshot.active_session;
+    require(session.mode == domain::quiz_mode::normal, "deck view start-all final session is normal");
+    require(session.current_question.has_value(), "deck view start-all final session has current question");
+    require(session.current_question->question_id == "q1", "deck view start-all final session starts available question");
+    require(!result.final_frame.snapshot.selected_day_id.has_value(), "deck view start-all does not require selected day");
+}
+
 void test_quiz_scene_day_intro_random_mode_replay_starts_random_session()
 {
     using namespace quiz_vulkan;
@@ -1198,6 +1241,7 @@ int main()
     test_quiz_scene_feedback_continue_button_replay_advances_question();
     test_quiz_scene_feedback_continue_button_replay_reaches_results();
     test_quiz_scene_deck_navigation_replay_reaches_day_intro();
+    test_quiz_scene_deck_view_start_all_replay_starts_session();
     test_quiz_scene_day_intro_random_mode_replay_starts_random_session();
     test_quiz_scene_day_intro_known_mode_replay_starts_known_session();
     test_quiz_scene_day_intro_wrong_note_mode_replay_starts_wrong_note_session();

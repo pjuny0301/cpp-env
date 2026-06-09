@@ -688,6 +688,43 @@ void test_quiz_scene_swipe_skip_replay_reaches_results()
     require(result.final_frame.layout.contains_node("quiz_results_actions"), "swipe skip final frame emits results actions");
 }
 
+void test_quiz_scene_skip_button_replay_reaches_results()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "skip_with_button",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_active_skip",
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "skip button scenario replay succeeds");
+    require(result.trace.size() == 2, "skip button scenario emits one trace entry per step");
+    require_trace_entry(result.trace[1], "quiz_active", "skip_question", "quiz_results", "skip button trace is stable");
+    require(result.trace[1].event_kind == "tap_node", "skip button records tap event kind");
+    require(result.trace[1].target_node_id == "quiz_active_skip", "skip button records target node");
+    require(result.trace[1].after_focus_id == "quiz_results_start_normal", "skip button captures results focus");
+    require(result.final_frame.snapshot.screen == domain::app_screen::completed, "skip button final snapshot is completed");
+    require(result.final_frame.layout.contains_node("quiz_results_actions"), "skip button final frame emits results actions");
+}
+
 void test_quiz_scene_long_press_mark_unknown_updates_learning()
 {
     using namespace quiz_vulkan;
@@ -722,6 +759,44 @@ void test_quiz_scene_long_press_mark_unknown_updates_learning()
     require(result.final_frame.snapshot.screen == domain::app_screen::completed, "long press final snapshot is completed");
     require(result.final_frame.snapshot.learning.question_count == 1, "long press final snapshot summarizes learning");
     require(result.final_frame.snapshot.learning.unknown_count == 1, "long press marks question unknown");
+}
+
+void test_quiz_scene_mark_unknown_button_replay_updates_learning()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "mark_unknown_with_button",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_active_mark_unknown",
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "mark unknown button scenario replay succeeds");
+    require(result.trace.size() == 2, "mark unknown button scenario emits one trace entry per step");
+    require_trace_entry(result.trace[1], "quiz_active", "mark_question_unknown", "quiz_results", "mark unknown button trace is stable");
+    require(result.trace[1].event_kind == "tap_node", "mark unknown button records tap event kind");
+    require(result.trace[1].target_node_id == "quiz_active_mark_unknown", "mark unknown button records target node");
+    require(result.trace[1].after_focus_id == "quiz_results_start_normal", "mark unknown button captures results focus");
+    require(result.final_frame.snapshot.screen == domain::app_screen::completed, "mark unknown button final snapshot is completed");
+    require(result.final_frame.snapshot.learning.question_count == 1, "mark unknown button final snapshot summarizes learning");
+    require(result.final_frame.snapshot.learning.unknown_count == 1, "mark unknown button marks question unknown");
 }
 
 void test_quiz_scene_swipe_previous_replay_returns_to_prior_question()
@@ -914,7 +989,9 @@ int main()
     test_quiz_scene_results_due_restart_replay_starts_due_known_session();
     test_quiz_scene_results_wrong_note_mode_replay_starts_wrong_note_session();
     test_quiz_scene_swipe_skip_replay_reaches_results();
+    test_quiz_scene_skip_button_replay_reaches_results();
     test_quiz_scene_long_press_mark_unknown_updates_learning();
+    test_quiz_scene_mark_unknown_button_replay_updates_learning();
     test_quiz_scene_swipe_previous_replay_returns_to_prior_question();
     test_quiz_scene_settings_close_replay_returns_to_deck_list();
     test_quiz_scene_missing_target_records_failure_trace();

@@ -171,6 +171,50 @@ void test_quiz_scene_event_replay_reaches_results()
     require(result.final_frame.snapshot.screen == domain::app_screen::completed, "final snapshot is completed");
 }
 
+void test_quiz_scene_deck_navigation_replay_reaches_day_intro()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "select_deck",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "deck_list_deck_deck1",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "select_day",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "deck_view_day_day1",
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "deck navigation scenario replay succeeds");
+    require(result.trace.size() == 2, "deck navigation scenario emits one trace entry per step");
+    require_trace_entry(result.trace[0], "deck_list", "select_deck", "deck_view", "select deck trace is stable");
+    require(result.trace[0].target_node_id == "deck_list_deck_deck1", "select deck records target node");
+    require(result.trace[0].before_focus_id == "deck_list_deck_deck1", "select deck starts from deck focus");
+    require(result.trace[0].after_focus_id == "deck_view_day_day1", "select deck captures first day focus");
+
+    require_trace_entry(result.trace[1], "deck_view", "select_day", "day_intro", "select day trace is stable");
+    require(result.trace[1].target_node_id == "deck_view_day_day1", "select day records target node");
+    require(result.trace[1].after_focus_id == "day_intro_start_normal", "select day captures day intro focus");
+
+    require(result.final_frame.layout.route_state().screen_id == "day_intro", "deck navigation final frame is day intro");
+    require(result.final_frame.snapshot.selected_deck_id.has_value(), "deck navigation final snapshot has selected deck");
+    require(result.final_frame.snapshot.selected_day_id.has_value(), "deck navigation final snapshot has selected day");
+    require(*result.final_frame.snapshot.selected_deck_id == "deck1", "deck navigation selects deck1");
+    require(*result.final_frame.snapshot.selected_day_id == "day1", "deck navigation selects day1");
+}
+
 void test_quiz_scene_text_submit_replay_records_feedback()
 {
     using namespace quiz_vulkan;
@@ -353,6 +397,7 @@ void test_quiz_scene_swipe_previous_replay_returns_to_prior_question()
 int main()
 {
     test_quiz_scene_event_replay_reaches_results();
+    test_quiz_scene_deck_navigation_replay_reaches_day_intro();
     test_quiz_scene_text_submit_replay_records_feedback();
     test_quiz_scene_swipe_skip_replay_reaches_results();
     test_quiz_scene_long_press_mark_unknown_updates_learning();

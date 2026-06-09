@@ -262,6 +262,26 @@ int main()
             },
         },
         boundary_rule{
+            .area = "scene-core-to-quiz-semantics",
+            .roots = {
+                "src/core/scene",
+            },
+            .excluded_files = {},
+            .forbidden_tokens = {
+                "quiz_question_stage",
+                "scene_quiz",
+                "quiz_active",
+                "quiz_feedback",
+                "quiz_results",
+                "question_stage",
+                "question_id",
+                "answer_outcome",
+                "answer_option",
+                "feedback_",
+                "wrong_note",
+            },
+        },
+        boundary_rule{
             .area = "vulkan-renderer-to-scene-ui-app",
             .roots = {
                 "src/render/vulkan",

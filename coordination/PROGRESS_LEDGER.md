@@ -176,3 +176,23 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: push Track B branch update; continue next independent stretch item
 - blocker(있으면): 없음
 - 검증: `git diff --check` passed
+
+### [CP-track-b-current-011]
+- 시각 UTC: 2026-06-09T15:25:31Z
+- 태스크: Stretch backlog - document worker status output schema
+- status: done
+- 변경 파일: codex-workers/worker-status.schema.md, codex-workers/README.md
+- commit SHA: 47fbdba
+- 다음 단계: push Track B branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `bash -n codex-workers/worker-status.sh` passed; `shellcheck codex-workers/worker-status.sh` passed; table/TSV/JSON worker-status smoke passed; `python3 -m json.tool /tmp/track-b-worker-status.json` passed; `git diff --check` passed
+
+### [CP-track-b-current-012]
+- 시각 UTC: 2026-06-09T15:26:32Z
+- 태스크: Stretch backlog - report Track B worker status schema rollup
+- status: done
+- 변경 파일: reports/progress/2026-06-09T152531Z-track-b-worker-status-schema-rollup.md
+- commit SHA: d02d242
+- 다음 단계: push Track B branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `git diff --check` passed

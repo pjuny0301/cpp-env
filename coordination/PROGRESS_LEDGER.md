@@ -148,3 +148,13 @@ status: pending | active | blocked | waiting | done
 - blocker(있으면): 없음
 - 검증: `cmake --build --preset linux-debug --target quiz_vulkan_app_scene_preview_tests quiz_vulkan_app_scene_script_tests quiz_vulkan_app_quiz_screens_tests quiz_vulkan_app_scene_scenario_tests quiz_vulkan_architecture_boundary_tests` passed; `ctest --test-dir build/out/quiz/quiz-vulkan/linux-ninja -R "quiz_vulkan_(app_scene_preview_tests|app_scene_script_tests|app_quiz_screens_tests|app_scene_scenario_tests|architecture_boundary_tests)$" --output-on-failure` passed 5/5; `git diff --check` passed
 - PR: https://github.com/pjuny0301/cpp-env/pull/25
+
+### [CP-track-d-validation-004]
+- 시각 UTC: 2026-06-09T11:09:57Z
+- 태스크: Stretch backlog - add due restart scene scenario replay
+- status: done
+- 변경 파일: apps/quiz/quiz-vulkan/tests/app/app_scene_scenario_tests.cpp
+- commit SHA: 795657f
+- 다음 단계: push Track D branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `cmake --build --preset linux-debug --target quiz_vulkan_app_scene_scenario_tests quiz_vulkan_app_scene_preview_tests quiz_vulkan_app_quiz_screens_tests` passed; `ctest --test-dir build/out/quiz/quiz-vulkan/linux-ninja -R "quiz_vulkan_app_(scene_scenario|scene_preview|quiz_screens)_tests$" --output-on-failure` passed 3/3; `git diff --check` passed

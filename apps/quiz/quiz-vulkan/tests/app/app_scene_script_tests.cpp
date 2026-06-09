@@ -168,6 +168,7 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     question_image.bindings.push_back({"image.uri", "{{ choose(question.has_image, question.image_uri, \"\") }}"});
     question_image.bindings.push_back({"image.alt_text", "{{ concat(\"Question image for \", question.id) }}"});
     question_image.bindings.push_back({"image.aspect_ratio", "1.6"});
+    question_image.bindings.push_back({"style.opacity", "0.75"});
     question_image.bindings.push_back({"style.border_radius", "8"});
     script.nodes.push_back(std::move(question_image));
 
@@ -520,6 +521,7 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     options.condition = "question.has_options";
     options.layout_rule = options_rule;
     options.style.token = "option_group";
+    options.bindings.push_back({"layout.gap", "6"});
     script.nodes.push_back(std::move(options));
 
     scene::scene_layout_rule option_rule;
@@ -538,6 +540,7 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     option.style.foreground_color = "#ffffff";
     option.style.border_radius = 6.0f;
     option.repeater = presentation::app_scene_script_repeater{"option", "question.options"};
+    option.bindings.push_back({"layout.height", "48"});
     option.bindings.push_back({"text", "{{ option.text }}"});
     presentation::app_scene_script_event_handler_template press;
     press.trigger = scene::scene_action_trigger::press;
@@ -625,6 +628,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(question_image->image.uri == "asset://korea-map.png", "question image binding sets image uri");
     require(question_image->image.alt_text == "Question image for q1", "question image binding sets alt text");
     require(question_image->image.aspect_ratio == 1.6f, "question image binding sets aspect ratio");
+    require(question_image->style.opacity == 0.75f, "style opacity binding renders");
     require(question_image->style.border_radius == 8.0f, "style border radius binding renders");
     const scene::scene_node_data* progress = data.find_node("session_progress");
     const scene::scene_node_data* session_mode = data.find_node("session_mode_phase");
@@ -767,8 +771,13 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
 
     const scene::scene_node_data* option_0 = data.find_node("option_0");
     const scene::scene_node_data* option_1 = data.find_node("option_1");
+    const scene::scene_node_data* options = data.find_node("question_options");
+    require(options != nullptr, "options container exists");
     require(option_0 != nullptr, "first repeated option exists");
     require(option_1 != nullptr, "second repeated option exists");
+    require(options->layout_rule.gap == 6.0f, "layout gap binding renders");
+    require(option_0->layout_rule.has_height, "layout height binding marks height explicit");
+    require(option_0->layout_rule.height == 48.0f, "layout height binding renders");
     require(option_0->text_runs.front().text == "Seoul", "first option text binding renders");
     require(option_1->text_runs.front().text == "Busan", "second option text binding renders");
     require(data.contains_node("option_safe_seoul"), "safe_id can render stable repeated option id");

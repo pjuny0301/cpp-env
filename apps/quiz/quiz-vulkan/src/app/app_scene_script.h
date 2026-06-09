@@ -1473,6 +1473,18 @@ inline bool apply_node_bindings(
     std::string& error)
 {
     for (const app_scene_script_data_binding& binding : bindings) {
+        const auto render_float = [&](float& target) {
+            std::string rendered;
+            if (!render_template(binding.expression, context, rendered, error)) {
+                return false;
+            }
+            if (!parse_float32(rendered, target)) {
+                error = "node binding target " + binding.target + " requires a numeric expression";
+                return false;
+            }
+            return true;
+        };
+
         if (binding.target == "id") {
             if (!render_template(binding.expression, context, node_id, error)) {
                 return false;
@@ -1534,17 +1546,36 @@ inline bool apply_node_bindings(
             }
             continue;
         }
+        if (binding.target == "style.opacity") {
+            if (!render_float(node.style.opacity)) {
+                return false;
+            }
+            continue;
+        }
         if (binding.target == "style.border_radius") {
-            std::string rendered;
-            if (!render_template(binding.expression, context, rendered, error)) {
+            if (!render_float(node.style.border_radius)) {
                 return false;
             }
-            float rendered_float = 0.0f;
-            if (!parse_float32(rendered, rendered_float)) {
-                error = "node binding target style.border_radius requires a numeric expression";
+            continue;
+        }
+        if (binding.target == "layout.width") {
+            if (!render_float(node.layout_rule.width)) {
                 return false;
             }
-            node.style.border_radius = rendered_float;
+            node.layout_rule.has_width = true;
+            continue;
+        }
+        if (binding.target == "layout.height") {
+            if (!render_float(node.layout_rule.height)) {
+                return false;
+            }
+            node.layout_rule.has_height = true;
+            continue;
+        }
+        if (binding.target == "layout.gap") {
+            if (!render_float(node.layout_rule.gap)) {
+                return false;
+            }
             continue;
         }
         if (binding.target == "image.uri") {
@@ -1561,16 +1592,9 @@ inline bool apply_node_bindings(
             continue;
         }
         if (binding.target == "image.aspect_ratio") {
-            std::string rendered;
-            if (!render_template(binding.expression, context, rendered, error)) {
+            if (!render_float(node.image.aspect_ratio)) {
                 return false;
             }
-            float rendered_float = 0.0f;
-            if (!parse_float32(rendered, rendered_float)) {
-                error = "node binding target image.aspect_ratio requires a numeric expression";
-                return false;
-            }
-            node.image.aspect_ratio = rendered_float;
             continue;
         }
 

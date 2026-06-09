@@ -60,6 +60,7 @@ nodes:
       image.uri: {{ choose(question.has_image, question.image_uri, "") }}
       image.alt_text: {{ concat("Question image for ", question.id) }}
       image.aspect_ratio: 1.6
+      style.opacity: 0.75
       style.border_radius: 8
   - id: session_progress
     parent_id: script_root
@@ -135,6 +136,8 @@ nodes:
     parent_id: script_root
     kind: container
     condition: question.has_options
+    binding:
+      layout.gap: 6
   - id: option_{{ safe_id(option.text, option.index) }}
     parent_id: question_options
     kind: input
@@ -142,6 +145,7 @@ nodes:
       item_name: option
       collection: question.options
     binding:
+      layout.height: 48
       text: {{ option.text }}
     event:
       trigger: press

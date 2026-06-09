@@ -5,6 +5,7 @@
 
 #include <cassert>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -266,11 +267,32 @@ void test_phase3_dsl_validation_and_determinism()
     require(!command_validation.ok(), "non-allowlisted command fails validation");
 }
 
+void test_compiled_patch_unwrap_reports_failure_context()
+{
+    using namespace quiz_vulkan;
+
+    presentation::app_scene_script_compile_result failed;
+    failed.error = "script contains duplicate literal node id: script_root";
+
+    bool threw = false;
+    try {
+        (void)presentation::require_compiled_app_scene_script_patch(std::move(failed), "test:bad_script");
+    } catch (const std::logic_error& error) {
+        threw = true;
+        const std::string message = error.what();
+        require(message.find("test:bad_script") != std::string::npos, "compile failure context is reported");
+        require(message.find("duplicate literal node id") != std::string::npos, "compile failure reason is reported");
+    }
+
+    require(threw, "failed compile result throws before patch unwrap");
+}
+
 }  // namespace
 
 int main()
 {
     test_phase3_dsl_compiles_bindings_repeaters_conditions_events();
     test_phase3_dsl_validation_and_determinism();
+    test_compiled_patch_unwrap_reports_failure_context();
     return 0;
 }

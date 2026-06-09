@@ -12,6 +12,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -134,6 +135,26 @@ struct app_scene_script_compile_result {
         return patch.has_value() && error.empty();
     }
 };
+
+inline scene::scene_layout_patch require_compiled_app_scene_script_patch(
+    app_scene_script_compile_result result,
+    std::string_view context)
+{
+    if (result.ok()) {
+        return std::move(*result.patch);
+    }
+
+    std::string message = "app scene script compile failed";
+    if (!context.empty()) {
+        message += " for ";
+        message += context;
+    }
+    if (!result.error.empty()) {
+        message += ": ";
+        message += result.error;
+    }
+    throw std::logic_error(message);
+}
 
 namespace script_detail {
 

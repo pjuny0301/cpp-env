@@ -2310,9 +2310,9 @@ inline void build_quiz_screen(const domain::app_snapshot& snapshot, scene::scene
 
 inline scene::scene_layout_patch make_deck_list_screen_patch(const domain::app_snapshot& snapshot)
 {
-    const app_scene_script_compile_result compiled =
-        compile_quiz_screen_script(make_deck_list_screen_script_document(snapshot), snapshot);
-    return std::move(*compiled.patch);
+    return require_compiled_app_scene_script_patch(
+        compile_quiz_screen_script(make_deck_list_screen_script_document(snapshot), snapshot),
+        "builtin:quiz.deck_list.v1");
 }
 
 inline scene::scene_layout_patch make_home_screen_patch(const domain::app_snapshot& snapshot)
@@ -2322,51 +2322,51 @@ inline scene::scene_layout_patch make_home_screen_patch(const domain::app_snapsh
 
 inline scene::scene_layout_patch make_deck_view_screen_patch(const domain::app_snapshot& snapshot)
 {
-    const app_scene_script_compile_result compiled =
-        compile_quiz_screen_script(make_deck_view_screen_script_document(snapshot), snapshot);
-    return std::move(*compiled.patch);
+    return require_compiled_app_scene_script_patch(
+        compile_quiz_screen_script(make_deck_view_screen_script_document(snapshot), snapshot),
+        "builtin:quiz.deck_view.v1");
 }
 
 inline scene::scene_layout_patch make_day_intro_screen_patch(const domain::app_snapshot& snapshot)
 {
-    const app_scene_script_compile_result compiled =
-        compile_quiz_screen_script(make_day_intro_screen_script_document(snapshot), snapshot);
-    return std::move(*compiled.patch);
+    return require_compiled_app_scene_script_patch(
+        compile_quiz_screen_script(make_day_intro_screen_script_document(snapshot), snapshot),
+        "builtin:quiz.day_intro.v1");
 }
 
 inline scene::scene_layout_patch make_quiz_active_screen_patch(const domain::app_snapshot& snapshot)
 {
-    const app_scene_script_compile_result compiled =
-        compile_quiz_screen_script(make_quiz_active_screen_script_document(snapshot), snapshot);
-    return std::move(*compiled.patch);
+    return require_compiled_app_scene_script_patch(
+        compile_quiz_screen_script(make_quiz_active_screen_script_document(snapshot), snapshot),
+        "builtin:quiz.quiz_active.v1");
 }
 
 inline scene::scene_layout_patch make_quiz_feedback_screen_patch(const domain::app_snapshot& snapshot)
 {
-    const app_scene_script_compile_result compiled =
-        compile_quiz_screen_script(make_quiz_feedback_screen_script_document(snapshot), snapshot);
-    return std::move(*compiled.patch);
+    return require_compiled_app_scene_script_patch(
+        compile_quiz_screen_script(make_quiz_feedback_screen_script_document(snapshot), snapshot),
+        "builtin:quiz.quiz_feedback.v1");
 }
 
 inline scene::scene_layout_patch make_quiz_results_screen_patch(const domain::app_snapshot& snapshot)
 {
-    const app_scene_script_compile_result compiled =
-        compile_quiz_screen_script(make_quiz_results_screen_script_document(snapshot), snapshot);
-    return std::move(*compiled.patch);
+    return require_compiled_app_scene_script_patch(
+        compile_quiz_screen_script(make_quiz_results_screen_script_document(snapshot), snapshot),
+        "builtin:quiz.quiz_results.v1");
 }
 
 inline scene::scene_layout_patch make_settings_screen_patch(const domain::app_snapshot& snapshot)
 {
-    const app_scene_script_compile_result compiled =
-        compile_quiz_screen_script(make_settings_screen_script_document(snapshot), snapshot);
-    return std::move(*compiled.patch);
+    return require_compiled_app_scene_script_patch(
+        compile_quiz_screen_script(make_settings_screen_script_document(snapshot), snapshot),
+        "builtin:quiz.settings.v1");
 }
 
 inline scene::scene_layout_patch make_error_screen_patch(const domain::app_snapshot& snapshot)
 {
-    const app_scene_script_compile_result compiled =
-        compile_quiz_screen_script(make_error_screen_script_document(snapshot), snapshot);
-    return std::move(*compiled.patch);
+    return require_compiled_app_scene_script_patch(
+        compile_quiz_screen_script(make_error_screen_script_document(snapshot), snapshot),
+        "builtin:quiz.error.v1");
 }
 
 inline scene::scene_layout_patch make_quiz_screen_patch(const domain::app_snapshot& snapshot)

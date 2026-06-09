@@ -405,6 +405,44 @@ void test_quiz_scene_multiselect_replay_records_feedback()
     require(feedback.selected_option_indexes.front() == 0, "multiselect records selected option index");
 }
 
+void test_quiz_scene_results_known_mode_replay_starts_known_session()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+    state.dispatch(domain::make_start_quiz_action(domain::quiz_mode::normal), 20);
+    state.dispatch(domain::make_mark_question_known_action(), 30);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_known_from_results",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_results_start_known",
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "known mode results scenario replay succeeds");
+    require(result.trace.size() == 1, "known mode results scenario emits one trace entry");
+    require_trace_entry(result.trace[0], "quiz_results", "start_quiz", "quiz_active", "known mode start trace is stable");
+    require(result.trace[0].target_node_id == "quiz_results_start_known", "known mode start records target node");
+    require(result.trace[0].after_focus_id == "quiz_active_option_0", "known mode start captures active option focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::quiz, "known mode final snapshot is quiz");
+    require(result.final_frame.snapshot.active_session.has_value(), "known mode final snapshot has session");
+    const domain::session_snapshot& session = *result.final_frame.snapshot.active_session;
+    require(session.mode == domain::quiz_mode::known, "known mode final session is known");
+    require(session.current_question.has_value(), "known mode final session has current question");
+    require(session.current_question->question_id == "q1", "known mode final session starts known question");
+    require(result.final_frame.snapshot.learning.known_count == 1, "known mode final snapshot preserves known count");
+}
+
 void test_quiz_scene_swipe_skip_replay_reaches_results()
 {
     using namespace quiz_vulkan;
@@ -618,6 +656,7 @@ int main()
     test_quiz_scene_text_submit_replay_records_feedback();
     test_quiz_scene_incorrect_text_submit_replay_records_feedback();
     test_quiz_scene_multiselect_replay_records_feedback();
+    test_quiz_scene_results_known_mode_replay_starts_known_session();
     test_quiz_scene_swipe_skip_replay_reaches_results();
     test_quiz_scene_long_press_mark_unknown_updates_learning();
     test_quiz_scene_swipe_previous_replay_returns_to_prior_question();

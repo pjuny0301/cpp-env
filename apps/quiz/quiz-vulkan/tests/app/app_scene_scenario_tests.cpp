@@ -414,6 +414,46 @@ void test_quiz_scene_day_intro_random_mode_replay_starts_random_session()
     require(session.current_question->question_id == "q1", "random mode final session starts available question");
 }
 
+void test_quiz_scene_day_intro_known_mode_replay_starts_known_session()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+    state.dispatch(domain::make_start_quiz_action(domain::quiz_mode::normal), 20);
+    state.dispatch(domain::make_mark_question_known_action(), 30);
+    state.dispatch(domain::make_select_day_action("day1"), 40);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_known_from_day_intro",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_known",
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "known mode day intro scenario replay succeeds");
+    require(result.trace.size() == 1, "known mode day intro scenario emits one trace entry");
+    require_trace_entry(result.trace[0], "day_intro", "start_quiz", "quiz_active", "known mode day intro trace is stable");
+    require(result.trace[0].target_node_id == "day_intro_start_known", "known mode day intro records target node");
+    require(result.trace[0].before_focus_id == "day_intro_start_normal", "known mode day intro starts from normal focus");
+    require(result.trace[0].after_focus_id == "quiz_active_option_0", "known mode day intro captures active option focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::quiz, "known mode day intro final snapshot is quiz");
+    require(result.final_frame.snapshot.active_session.has_value(), "known mode day intro final snapshot has session");
+    const domain::session_snapshot& session = *result.final_frame.snapshot.active_session;
+    require(session.mode == domain::quiz_mode::known, "known mode day intro final session is known");
+    require(session.current_question.has_value(), "known mode day intro final session has current question");
+    require(session.current_question->question_id == "q1", "known mode day intro final session starts known question");
+    require(result.final_frame.snapshot.learning.known_count == 1, "known mode day intro final snapshot preserves known count");
+}
+
 void test_quiz_scene_error_recovery_replay_selects_deck()
 {
     using namespace quiz_vulkan;
@@ -1118,6 +1158,7 @@ int main()
     test_quiz_scene_feedback_continue_button_replay_reaches_results();
     test_quiz_scene_deck_navigation_replay_reaches_day_intro();
     test_quiz_scene_day_intro_random_mode_replay_starts_random_session();
+    test_quiz_scene_day_intro_known_mode_replay_starts_known_session();
     test_quiz_scene_error_recovery_replay_selects_deck();
     test_quiz_scene_text_submit_replay_records_feedback();
     test_quiz_scene_text_submit_button_replay_uses_committed_text();

@@ -241,6 +241,15 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     settings_count.bindings.push_back({"text", "{{ settings.count }}"});
     script.nodes.push_back(std::move(settings_count));
 
+    presentation::app_scene_script_node settings_count_label;
+    settings_count_label.id = "settings_count_label";
+    settings_count_label.parent_id = "script_root";
+    settings_count_label.kind = scene::scene_node_kind::text;
+    settings_count_label.debug_name = "settings count label";
+    settings_count_label.style.token = "muted";
+    settings_count_label.bindings.push_back({"text", "{{ format_count(settings.count, \"setting\") }}"});
+    script.nodes.push_back(std::move(settings_count_label));
+
     presentation::app_scene_script_node setting_route;
     setting_route.id = "setting_route";
     setting_route.parent_id = "script_root";
@@ -312,6 +321,15 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     day_summary.style.token = "muted";
     day_summary.bindings.push_back({"text", "{{ selected_day.title }} / {{ selected_day.question_count }} questions"});
     script.nodes.push_back(std::move(day_summary));
+
+    presentation::app_scene_script_node day_question_count_label;
+    day_question_count_label.id = "selected_day_question_count_label";
+    day_question_count_label.parent_id = "script_root";
+    day_question_count_label.kind = scene::scene_node_kind::text;
+    day_question_count_label.debug_name = "selected day question count label";
+    day_question_count_label.style.token = "muted";
+    day_question_count_label.bindings.push_back({"text", "{{ format_count(selected_day.question_count, \"question\") }}"});
+    script.nodes.push_back(std::move(day_question_count_label));
 
     presentation::app_scene_script_node deck_count;
     deck_count.id = "deck_count";
@@ -626,14 +644,17 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(feedback_selected_count->text_runs.front().text == "0", "feedback selected count fallback renders");
     require(feedback_answered_at->text_runs.front().text == "0", "feedback answered-at fallback renders");
     const scene::scene_node_data* settings_count = data.find_node("settings_count");
+    const scene::scene_node_data* settings_count_label = data.find_node("settings_count_label");
     const scene::scene_node_data* setting_route = data.find_node("setting_route");
     const scene::scene_node_data* error_exists = data.find_node("error_exists");
     const scene::scene_node_data* error_message = data.find_node("error_message");
     require(settings_count != nullptr, "settings count node exists");
+    require(settings_count_label != nullptr, "settings count label node exists");
     require(setting_route != nullptr, "setting route node exists");
     require(error_exists != nullptr, "error exists node exists");
     require(error_message != nullptr, "error message node exists");
     require(settings_count->text_runs.front().text == "0", "settings count binding renders");
+    require(settings_count_label->text_runs.front().text == "0 settings", "format_count renders plural fallback");
     require(setting_route->text_runs.front().text == "unset", "setting function renders fallback");
     require(error_exists->text_runs.front().text == "false", "error exists binding renders");
     require(error_message->text_runs.front().text.empty(), "empty error message binding renders");
@@ -647,6 +668,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     scene::scene_layout_data status_data("script_status_test");
     apply_patch_to_scene(*status_compiled.patch, status_data);
     require(status_data.find_node("settings_count")->text_runs.front().text == "1", "settings count renders entries");
+    require(status_data.find_node("settings_count_label")->text_runs.front().text == "1 setting", "format_count renders singular");
     require(status_data.find_node("setting_route")->text_runs.front().text == "settings", "setting function renders configured value");
     require(status_data.find_node("error_exists")->text_runs.front().text == "true", "error exists binding renders present error");
     require(status_data.find_node("error_message")->text_runs.front().text == "Load failed", "error message binding renders present error");
@@ -673,14 +695,17 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     const scene::scene_node_data* deck_title = data.find_node("selected_deck_title");
     const scene::scene_node_data* deck_source = data.find_node("selected_deck_source");
     const scene::scene_node_data* day_summary = data.find_node("selected_day_summary");
+    const scene::scene_node_data* day_question_count_label = data.find_node("selected_day_question_count_label");
     const scene::scene_node_data* deck_count = data.find_node("deck_count");
     require(deck_title != nullptr, "selected deck title node exists");
     require(deck_source != nullptr, "selected deck source node exists");
     require(day_summary != nullptr, "selected day summary node exists");
+    require(day_question_count_label != nullptr, "selected day question count label node exists");
     require(deck_count != nullptr, "deck count node exists");
     require(deck_title->text_runs.front().text == "Geography", "selected deck title binding renders");
     require(deck_source->text_runs.front().text == "fixture://geography.quizdeck", "selected deck source binding renders");
     require(day_summary->text_runs.front().text == "Day 1 / 1 questions", "selected day summary binding renders");
+    require(day_question_count_label->text_runs.front().text == "1 question", "format_count renders selected day count");
     require(deck_count->text_runs.front().text == "1", "deck count binding renders");
     const scene::scene_node_data* formatted_prompt = data.find_node("question_prompt_upper");
     const scene::scene_node_data* formatted_type = data.find_node("question_type_lower");
@@ -906,6 +931,22 @@ void test_expression_function_errors_are_reported()
         snapshot,
         "contains expects 2 argument",
         "contains function arg count errors are reported");
+
+    presentation::app_scene_script_document format_count_missing_arg = make_active_question_script();
+    append_invalid_function_node(format_count_missing_arg, "{{ format_count(settings.count) }}");
+    require_compile_error_contains(
+        format_count_missing_arg,
+        snapshot,
+        "format_count expects 2 or 3 argument",
+        "format_count arg count errors are reported");
+
+    presentation::app_scene_script_document format_count_bad_count = make_active_question_script();
+    append_invalid_function_node(format_count_bad_count, "{{ format_count(\"many\", \"question\") }}");
+    require_compile_error_contains(
+        format_count_bad_count,
+        snapshot,
+        "format_count argument 1 must be an integer",
+        "format_count integer errors are reported");
 
     presentation::app_scene_script_document safe_id_missing_arg = make_active_question_script();
     append_invalid_function_node(safe_id_missing_arg, "{{ safe_id() }}");

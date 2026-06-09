@@ -689,6 +689,41 @@ inline bool evaluate_script_function(
         return true;
     }
 
+    if (name == "format_count") {
+        if (args.size() < 2 || args.size() > 3) {
+            error = "script function format_count expects 2 or 3 argument(s), got " + std::to_string(args.size());
+            return false;
+        }
+
+        script_value count_value;
+        script_value singular_value;
+        if (!evaluate_expression(args[0], context, count_value, error)
+            || !evaluate_expression(args[1], context, singular_value, error)) {
+            return false;
+        }
+
+        std::int64_t count = 0;
+        if (count_value.kind == script_value_kind::integer) {
+            count = count_value.int_value;
+        } else if (!parse_int64(trim(count_value.to_string()), count)) {
+            error = "script function format_count argument 1 must be an integer";
+            return false;
+        }
+
+        std::string singular = singular_value.to_string();
+        std::string plural = singular + "s";
+        if (args.size() == 3) {
+            script_value plural_value;
+            if (!evaluate_expression(args[2], context, plural_value, error)) {
+                return false;
+            }
+            plural = plural_value.to_string();
+        }
+
+        value = script_value::string(std::to_string(count) + " " + (count == 1 ? singular : plural));
+        return true;
+    }
+
     if (name == "choose") {
         if (!require_script_function_arg_count(name, args, 3, error)) {
             return false;

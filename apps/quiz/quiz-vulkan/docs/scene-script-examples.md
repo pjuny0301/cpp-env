@@ -74,6 +74,11 @@ nodes:
     kind: text
     binding:
       text: {{ settings.count }}
+  - id: settings_count_label
+    parent_id: script_root
+    kind: text
+    binding:
+      text: {{ format_count(settings.count, "setting") }}
   - id: setting_route
     parent_id: script_root
     kind: text
@@ -99,6 +104,11 @@ nodes:
     kind: text
     binding:
       text: {{ selected_day.title }} / {{ selected_day.question_count }} questions
+  - id: selected_day_question_count_label
+    parent_id: script_root
+    kind: text
+    binding:
+      text: {{ format_count(selected_day.question_count, "question") }}
   - id: deck_day_function_title
     parent_id: script_root
     kind: text
@@ -191,6 +201,8 @@ condition: not(session.completed)
 condition: contains(question.prompt, "Korea")
 condition: starts_with(selected_deck.source_uri, "fixture://")
 condition: ends_with(selected_deck.source_uri, ".quizdeck")
+binding:
+  text: {{ format_count(selected_day.question_count, "question") }}
 ```
 
 Function calls are app/presentation concerns and stay outside renderer code.

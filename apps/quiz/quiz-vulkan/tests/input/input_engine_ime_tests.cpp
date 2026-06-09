@@ -717,6 +717,50 @@ void test_ime_suppressed_text_and_shortcuts_emit_route_diagnostics()
     require(engine.text_model().preedit_text().empty(), "post-suppression commit clears preedit");
 }
 
+void test_same_focus_target_preserves_active_preedit_without_cleanup_diagnostics()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("answer");
+    const std::string preedit_text = "draft";
+    require(engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 100, preedit_text)).size() == 1,
+        "same target setup starts preedit");
+    require(engine.text_model().ime_composition().active, "same target setup has active composition");
+
+    engine.focus_text_target("answer");
+
+    require(engine.has_text_focus(), "same target refocus keeps focus active");
+    require(engine.text_focus_id() == "answer", "same target refocus preserves target id");
+    require(engine.text_model().preedit_text() == preedit_text, "same target refocus preserves preedit text");
+    require(engine.text_model().display_text() == preedit_text, "same target refocus preserves display preedit");
+    require(engine.text_model().ime_composition().active, "same target refocus preserves composition");
+    require(!engine.text_model().selection_range().has_value(), "same target refocus does not create selection");
+
+    const input_routing_diagnostics& diagnostics = engine.routing_diagnostics();
+    require(diagnostics.normalized_events.empty(), "same target refocus emits no normalized input events");
+    require(diagnostics.action_routes.empty(), "same target refocus emits no cleanup diagnostics");
+    require(diagnostics.text_route_state.has_focus, "same target refocus diagnostics preserve focus state");
+    require(diagnostics.text_route_state.target_id == "answer", "same target refocus diagnostics preserve target");
+    require(diagnostics.text_route_state.composition.active, "same target refocus diagnostics preserve active composition");
+    require(diagnostics.text_route_state.composition.preedit_text == preedit_text,
+        "same target refocus diagnostics preserve preedit text");
+    require(diagnostics.summary.routes.total == 0, "same target refocus summary has no cleanup routes");
+    require(diagnostics.summary.focus_ended_cleanly, "same target refocus summary keeps focus clean");
+    require(!diagnostics.summary.preedit_ended_cleanly, "same target refocus summary reports active preedit remains");
+    require(!engine.text_model().has_submit_text(), "same target refocus does not submit text");
+
+    std::vector<input_event> events = engine.process_raw_event(ime(raw_platform_ime_phase::commit, 110, "final"));
+    require(events.size() == 1, "same target refocus allows later ime commit");
+    const ime_event& commit = require_event<ime_event>(events, 0);
+    require(commit.kind == ime_event_kind::commit, "same target refocus later event commits ime text");
+    require(commit.composition.preedit_text == preedit_text,
+        "same target refocus later commit carries preserved preedit snapshot");
+    require(engine.text_model().text() == "final", "same target refocus later commit updates text");
+    require(!engine.text_model().ime_composition().active, "same target refocus later commit clears composition");
+}
+
 void test_focus_target_change_clears_stale_preedit_with_diagnostics()
 {
     using namespace quiz_vulkan;
@@ -1364,6 +1408,7 @@ int main()
     test_text_edit_boundary_diagnostics_replace_utf8_selection();
     test_ime_composition_suppresses_text_and_key_events();
     test_ime_suppressed_text_and_shortcuts_emit_route_diagnostics();
+    test_same_focus_target_preserves_active_preedit_without_cleanup_diagnostics();
     test_focus_target_change_clears_stale_preedit_with_diagnostics();
     test_clear_text_focus_diagnoses_preedit_and_selection_cleanup();
     test_raw_focus_loss_records_utf8_selection_cleanup_without_text_or_ime_route();

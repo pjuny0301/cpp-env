@@ -194,6 +194,12 @@ void input_engine::focus_text_target(std::string target_id)
     const bool had_focus = text_.has_focus();
     const std::string previous_target_id = text_.focus_id();
     const bool target_changed = had_focus && previous_target_id != target_id;
+    if (had_focus && !target_changed) {
+        begin_route_diagnostics();
+        finish_route_diagnostics();
+        return;
+    }
+
     const ime_composition_state canceled_composition = text_.ime_composition();
     const bool had_composition = ime_composing_ || canceled_composition.active;
     const pointer_capture_snapshot pointer_capture = gestures_.capture_snapshot();

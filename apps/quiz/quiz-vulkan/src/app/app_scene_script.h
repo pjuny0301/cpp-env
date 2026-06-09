@@ -670,6 +670,30 @@ inline bool evaluate_script_function(
         return true;
     }
 
+    if (name == "all" || name == "any") {
+        if (args.empty()) {
+            error = "script function " + std::string(name) + " expects at least 1 argument(s), got 0";
+            return false;
+        }
+
+        bool matched = name == "all";
+        for (const std::string& arg : args) {
+            script_value arg_value;
+            if (!evaluate_expression(arg, context, arg_value, error)) {
+                return false;
+            }
+
+            if (name == "all") {
+                matched = matched && arg_value.truthy();
+            } else {
+                matched = matched || arg_value.truthy();
+            }
+        }
+
+        value = script_value::boolean(matched);
+        return true;
+    }
+
     if (name == "empty") {
         if (!require_script_function_arg_count(name, args, 1, error)) {
             return false;

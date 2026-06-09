@@ -424,6 +424,15 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     string_predicates.bindings.push_back({"text", "{{ contains(question.prompt, \"Korea\") }} / {{ starts_with(selected_deck.source_uri, \"fixture://\") }} / {{ ends_with(selected_deck.source_uri, \".quizdeck\") }}"});
     script.nodes.push_back(std::move(string_predicates));
 
+    presentation::app_scene_script_node boolean_composition;
+    boolean_composition.id = "boolean_composition_flags";
+    boolean_composition.parent_id = "script_root";
+    boolean_composition.kind = scene::scene_node_kind::text;
+    boolean_composition.debug_name = "boolean composition flags";
+    boolean_composition.style.token = "muted";
+    boolean_composition.bindings.push_back({"text", "{{ all(question.exists, contains(question.prompt, \"Korea\")) }} / {{ any(error.exists, contains(question.prompt, \"Busan\")) }}"});
+    script.nodes.push_back(std::move(boolean_composition));
+
     presentation::app_scene_script_node prompt_length;
     prompt_length.id = "question_prompt_length";
     prompt_length.parent_id = "script_root";
@@ -508,6 +517,26 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     hidden_contains_condition.style.token = "muted";
     hidden_contains_condition.text_runs.push_back({"Function condition contains Busan", "muted"});
     script.nodes.push_back(std::move(hidden_contains_condition));
+
+    presentation::app_scene_script_node all_condition;
+    all_condition.id = "function_condition_all_prompt";
+    all_condition.parent_id = "script_root";
+    all_condition.kind = scene::scene_node_kind::text;
+    all_condition.debug_name = "function condition all prompt";
+    all_condition.condition = "all(question.exists, contains(question.prompt, \"Korea\"))";
+    all_condition.style.token = "muted";
+    all_condition.text_runs.push_back({"Function condition all prompt", "muted"});
+    script.nodes.push_back(std::move(all_condition));
+
+    presentation::app_scene_script_node hidden_any_condition;
+    hidden_any_condition.id = "function_condition_any_missing_prompt";
+    hidden_any_condition.parent_id = "script_root";
+    hidden_any_condition.kind = scene::scene_node_kind::text;
+    hidden_any_condition.debug_name = "function condition any missing prompt";
+    hidden_any_condition.condition = "any(error.exists, contains(question.prompt, \"Busan\"))";
+    hidden_any_condition.style.token = "muted";
+    hidden_any_condition.text_runs.push_back({"Function condition any missing prompt", "muted"});
+    script.nodes.push_back(std::move(hidden_any_condition));
 
     presentation::app_scene_script_node length_condition;
     length_condition.id = "function_condition_prompt_length";
@@ -795,6 +824,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     const scene::scene_node_data* session_active_flag = data.find_node("session_active_flag");
     const scene::scene_node_data* empty_error_flag = data.find_node("empty_error_flag");
     const scene::scene_node_data* string_predicates = data.find_node("string_predicate_flags");
+    const scene::scene_node_data* boolean_composition = data.find_node("boolean_composition_flags");
     const scene::scene_node_data* prompt_length = data.find_node("question_prompt_length");
     const scene::scene_node_data* length_comparisons = data.find_node("length_comparison_flags");
     const scene::scene_node_data* length_range = data.find_node("length_range_flags");
@@ -807,6 +837,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(session_active_flag != nullptr, "function active flag node exists");
     require(empty_error_flag != nullptr, "empty function node exists");
     require(string_predicates != nullptr, "string predicate function node exists");
+    require(boolean_composition != nullptr, "boolean composition function node exists");
     require(prompt_length != nullptr, "length function node exists");
     require(length_comparisons != nullptr, "length comparison function node exists");
     require(length_range != nullptr, "between function node exists");
@@ -819,6 +850,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(session_active_flag->text_runs.front().text == "true", "equals function renders boolean");
     require(empty_error_flag->text_runs.front().text == "true", "empty function renders boolean");
     require(string_predicates->text_runs.front().text == "true / true / true", "string predicate functions render booleans");
+    require(boolean_composition->text_runs.front().text == "true / false", "boolean composition functions render booleans");
     require(prompt_length->text_runs.front().text == "17", "length function renders string length");
     require(length_comparisons->text_runs.front().text == "true / false / true / true", "numeric comparison functions render booleans");
     require(length_range->text_runs.front().text == "true / true / false", "between function renders booleans");
@@ -828,6 +860,8 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(data.contains_node("function_condition_not_completed"), "not function can drive conditions");
     require(data.contains_node("function_condition_contains_korea"), "contains function can drive true conditions");
     require(!data.contains_node("function_condition_contains_busan"), "contains function can drive false conditions");
+    require(data.contains_node("function_condition_all_prompt"), "all function can drive true conditions");
+    require(!data.contains_node("function_condition_any_missing_prompt"), "any function can drive false conditions");
     require(data.contains_node("function_condition_prompt_length"), "numeric comparison function can drive true conditions");
     require(!data.contains_node("function_condition_short_prompt"), "numeric comparison function can drive false conditions");
     require(data.contains_node("function_condition_prompt_range"), "between function can drive true conditions");
@@ -1008,6 +1042,22 @@ void test_expression_function_errors_are_reported()
         snapshot,
         "empty expects 1 argument",
         "empty function arg count errors are reported");
+
+    presentation::app_scene_script_document all_missing_arg = make_active_question_script();
+    append_invalid_function_node(all_missing_arg, "{{ all() }}");
+    require_compile_error_contains(
+        all_missing_arg,
+        snapshot,
+        "all expects at least 1 argument",
+        "all function arg count errors are reported");
+
+    presentation::app_scene_script_document any_missing_arg = make_active_question_script();
+    append_invalid_function_node(any_missing_arg, "{{ any() }}");
+    require_compile_error_contains(
+        any_missing_arg,
+        snapshot,
+        "any expects at least 1 argument",
+        "any function arg count errors are reported");
 
     presentation::app_scene_script_document choose_missing_arg = make_active_question_script();
     append_invalid_function_node(choose_missing_arg, "{{ choose(error.exists, error.message) }}");

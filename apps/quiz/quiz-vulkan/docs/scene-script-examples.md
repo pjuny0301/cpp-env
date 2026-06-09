@@ -215,6 +215,8 @@ binding:
   text: {{ concat(selected_deck.title, " / ", selected_day.title) }}
 condition: equals(session.phase, "active")
 condition: not(session.completed)
+condition: all(question.exists, contains(question.prompt, "Korea"))
+condition: any(error.exists, feedback.exists)
 condition: contains(question.prompt, "Korea")
 condition: starts_with(selected_deck.source_uri, "fixture://")
 condition: ends_with(selected_deck.source_uri, ".quizdeck")

@@ -96,6 +96,8 @@ The expression engine also supports pure function calls:
 - `concat(a, b, ...)`
 - `equals(a, b)`
 - `not(value)`
+- `all(value, ...)`
+- `any(value, ...)`
 - `empty(value)`
 - `contains(value, needle)`
 - `starts_with(value, prefix)`
@@ -115,6 +117,8 @@ Function arguments may be other expressions or quoted string literals, and
 function results can still flow through formatter chains. `choose(...)` only
 evaluates the selected branch, which allows fallback bindings such as
 `{{ choose(question.has_long_text, question.long_text, "No long text") }}`.
+Use `all(...)` and `any(...)` when a condition needs to combine multiple
+boolean-style expressions without moving that logic into renderer code.
 Use `safe_id(...)` when dynamic node IDs need stable slug text, for example
 `option_{{ safe_id(option.text, option.index) }}`. Use `setting(...)` to read
 app settings by key without exposing the map shape to the renderer. Use

@@ -348,3 +348,23 @@ status: pending | active | blocked | waiting | done
 - 다음 단계: push Track D branch update; continue next independent stretch item
 - blocker(있으면): 없음
 - 검증: `git diff --check` passed
+
+### [CP-track-d-validation-024]
+- 시각 UTC: 2026-06-09T15:18:33Z
+- 태스크: Stretch backlog - cover scene preview compile validation failure
+- status: done
+- 변경 파일: apps/quiz/quiz-vulkan/tests/app/app_scene_preview_tests.cpp
+- commit SHA: 429f1a1
+- 다음 단계: push Track D branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `cmake --build --preset linux-debug --target quiz_vulkan_app_scene_scenario_tests quiz_vulkan_app_scene_preview_tests quiz_vulkan_app_quiz_screens_tests` passed; `ctest --test-dir build/out/quiz/quiz-vulkan/linux-ninja -R "quiz_vulkan_app_(scene_scenario|scene_preview|quiz_screens)_tests$" --output-on-failure` passed 3/3; `git diff --check` passed
+
+### [CP-track-d-validation-025]
+- 시각 UTC: 2026-06-09T15:19:37Z
+- 태스크: Stretch backlog - report Track D preview compile error coverage
+- status: done
+- 변경 파일: reports/progress/2026-06-09T151833Z-track-d-preview-compile-error-rollup.md
+- commit SHA: a3027f6
+- 다음 단계: push Track D branch update; continue next independent stretch item
+- blocker(있으면): 없음
+- 검증: `git diff --check` passed

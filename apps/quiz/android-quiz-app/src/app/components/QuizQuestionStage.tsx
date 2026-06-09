@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import type { RuntimeQuestion } from "../quizRuntime";
-import { ImageWithFallback } from "./figma/ImageWithFallback";
+import { ImageWithFallback } from "@quiz/shared-ui/components/figma/ImageWithFallback";
 
 type QuizQuestionStageProps = {
   question: RuntimeQuestion;

@@ -33,6 +33,7 @@ export default defineConfig({
     alias: {
       // Alias @ to the src directory
       '@': path.resolve(__dirname, './src'),
+      '@quiz/shared-ui': path.resolve(__dirname, '../shared-ui/src'),
     },
   },
 

@@ -12,6 +12,7 @@ build/external/quiz/legacy/
 build/external/quiz/figma-make/
 build/external/lib/cpp/desktop/*/
 apps/quiz/*/src-tauri/gen/
+apps/quiz/*/node_modules/
 codex/quiz/일자별요구사항/*/generated/*/placeholder_notice.txt
 codex/quiz/일자별요구사항/*/generated/*/*.pdf
 codex/quiz/일자별요구사항/*/generated/*/source_snapshot.*

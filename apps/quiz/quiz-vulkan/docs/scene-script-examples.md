@@ -53,6 +53,11 @@ nodes:
     kind: text
     binding:
       text: {{ settings.count }}
+  - id: feedback_label
+    parent_id: script_root
+    kind: text
+    binding:
+      text: {{ choose(feedback.exists, feedback.outcome, "none") }}
   - id: learning_summary
     parent_id: script_root
     kind: text

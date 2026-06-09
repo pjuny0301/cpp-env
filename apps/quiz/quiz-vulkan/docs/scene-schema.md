@@ -58,6 +58,8 @@ Schema version 2 documents contain:
 - data bindings such as `{{ question.prompt }}`
 - session bindings such as `{{ session.progress }}` and
   `{{ session.mode }} / {{ session.phase }}`
+- feedback bindings such as `{{ feedback.exists }}` and
+  `{{ feedback.outcome }}`
 - app-status bindings such as `{{ settings.count }}` and
   `{{ error.exists }}`
 - learning summary bindings such as `{{ learning.summary }}` and

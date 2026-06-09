@@ -809,6 +809,42 @@ inline bool evaluate_path(std::string_view raw_expression, const eval_context& c
         return true;
     }
 
+    const domain::answer_record* feedback = session != nullptr && session->feedback.has_value()
+        ? &(*session->feedback)
+        : nullptr;
+    if (expression == "feedback.exists") {
+        value = script_value::boolean(feedback != nullptr);
+        return true;
+    }
+    if (expression == "feedback.question_id") {
+        if (feedback == nullptr) {
+            error = "expression feedback.question_id requires pending feedback";
+            return false;
+        }
+        value = script_value::string(feedback->question_id);
+        return true;
+    }
+    if (expression == "feedback.outcome") {
+        if (feedback == nullptr) {
+            error = "expression feedback.outcome requires pending feedback";
+            return false;
+        }
+        value = script_value::string(std::string(domain::to_string(feedback->outcome)));
+        return true;
+    }
+    if (expression == "feedback.selected_option_count") {
+        value = script_value::integer(feedback == nullptr ? 0 : static_cast<std::int64_t>(feedback->selected_option_indexes.size()));
+        return true;
+    }
+    if (expression == "feedback.submitted_text_count") {
+        value = script_value::integer(feedback == nullptr ? 0 : static_cast<std::int64_t>(feedback->submitted_text_answers.size()));
+        return true;
+    }
+    if (expression == "feedback.answered_at_ms") {
+        value = script_value::integer(feedback == nullptr ? 0 : feedback->answered_at_ms);
+        return true;
+    }
+
     if (expression == "settings.count") {
         value = script_value::integer(static_cast<std::int64_t>(context.snapshot.settings.size()));
         return true;

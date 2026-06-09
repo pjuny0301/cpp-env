@@ -67,6 +67,26 @@ quiz_vulkan::domain::app_snapshot make_active_snapshot()
         learning);
 }
 
+quiz_vulkan::domain::app_snapshot make_feedback_snapshot()
+{
+    using namespace quiz_vulkan::domain;
+
+    std::vector<deck> decks;
+    decks.push_back(make_test_deck());
+
+    const learning_state_map learning;
+    const previous_answer_map previous_answers;
+    quiz_session session = start_quiz_session(decks.front(), learning, previous_answers);
+    (void)submit_option_answer(session, decks.front(), 0, 100);
+
+    return make_app_snapshot(
+        decks,
+        std::optional<std::string>{"deck1"},
+        std::optional<std::string>{"day1"},
+        &session,
+        learning);
+}
+
 quiz_vulkan::presentation::app_scene_script_document make_active_question_script()
 {
     using namespace quiz_vulkan;
@@ -127,6 +147,42 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     session_count.style.token = "muted";
     session_count.bindings.push_back({"text", "{{ session.question_count }}"});
     script.nodes.push_back(std::move(session_count));
+
+    presentation::app_scene_script_node feedback_exists;
+    feedback_exists.id = "feedback_exists";
+    feedback_exists.parent_id = "script_root";
+    feedback_exists.kind = scene::scene_node_kind::text;
+    feedback_exists.debug_name = "feedback exists";
+    feedback_exists.style.token = "muted";
+    feedback_exists.bindings.push_back({"text", "{{ feedback.exists }}"});
+    script.nodes.push_back(std::move(feedback_exists));
+
+    presentation::app_scene_script_node feedback_label;
+    feedback_label.id = "feedback_label";
+    feedback_label.parent_id = "script_root";
+    feedback_label.kind = scene::scene_node_kind::text;
+    feedback_label.debug_name = "feedback label";
+    feedback_label.style.token = "muted";
+    feedback_label.bindings.push_back({"text", "{{ choose(feedback.exists, feedback.outcome, \"none\") }}"});
+    script.nodes.push_back(std::move(feedback_label));
+
+    presentation::app_scene_script_node feedback_selected_count;
+    feedback_selected_count.id = "feedback_selected_option_count";
+    feedback_selected_count.parent_id = "script_root";
+    feedback_selected_count.kind = scene::scene_node_kind::text;
+    feedback_selected_count.debug_name = "feedback selected option count";
+    feedback_selected_count.style.token = "muted";
+    feedback_selected_count.bindings.push_back({"text", "{{ choose(feedback.exists, feedback.selected_option_count, 0) }}"});
+    script.nodes.push_back(std::move(feedback_selected_count));
+
+    presentation::app_scene_script_node feedback_answered_at;
+    feedback_answered_at.id = "feedback_answered_at";
+    feedback_answered_at.parent_id = "script_root";
+    feedback_answered_at.kind = scene::scene_node_kind::text;
+    feedback_answered_at.debug_name = "feedback answered at";
+    feedback_answered_at.style.token = "muted";
+    feedback_answered_at.bindings.push_back({"text", "{{ choose(feedback.exists, feedback.answered_at_ms, 0) }}"});
+    script.nodes.push_back(std::move(feedback_answered_at));
 
     presentation::app_scene_script_node settings_count;
     settings_count.id = "settings_count";
@@ -424,12 +480,24 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     const scene::scene_node_data* progress = data.find_node("session_progress");
     const scene::scene_node_data* session_mode = data.find_node("session_mode_phase");
     const scene::scene_node_data* session_count = data.find_node("session_question_count");
+    const scene::scene_node_data* feedback_exists = data.find_node("feedback_exists");
+    const scene::scene_node_data* feedback_label = data.find_node("feedback_label");
+    const scene::scene_node_data* feedback_selected_count = data.find_node("feedback_selected_option_count");
+    const scene::scene_node_data* feedback_answered_at = data.find_node("feedback_answered_at");
     require(progress != nullptr, "session progress node exists");
     require(session_mode != nullptr, "session mode node exists");
     require(session_count != nullptr, "session count node exists");
+    require(feedback_exists != nullptr, "feedback exists node exists");
+    require(feedback_label != nullptr, "feedback label node exists");
+    require(feedback_selected_count != nullptr, "feedback selected count node exists");
+    require(feedback_answered_at != nullptr, "feedback answered at node exists");
     require(progress->text_runs.front().text == "Question 1 of 1", "session progress binding renders");
     require(session_mode->text_runs.front().text == "normal / active", "session mode and phase render");
     require(session_count->text_runs.front().text == "1", "session question count renders");
+    require(feedback_exists->text_runs.front().text == "false", "feedback exists binding renders false");
+    require(feedback_label->text_runs.front().text == "none", "feedback fallback renders without pending feedback");
+    require(feedback_selected_count->text_runs.front().text == "0", "feedback selected count fallback renders");
+    require(feedback_answered_at->text_runs.front().text == "0", "feedback answered-at fallback renders");
     const scene::scene_node_data* settings_count = data.find_node("settings_count");
     const scene::scene_node_data* error_exists = data.find_node("error_exists");
     const scene::scene_node_data* error_message = data.find_node("error_message");
@@ -453,6 +521,17 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(status_data.find_node("error_message")->text_runs.front().text == "Load failed", "error message binding renders present error");
     require(status_data.find_node("empty_error_flag")->text_runs.front().text == "false", "empty function renders present error");
     require(status_data.find_node("choice_error_label")->text_runs.front().text == "Load failed", "choose function renders selected branch");
+
+    const domain::app_snapshot feedback_snapshot = make_feedback_snapshot();
+    const presentation::app_scene_script_compile_result feedback_compiled =
+        presentation::compile_app_scene_script(script, feedback_snapshot);
+    require(feedback_compiled.ok(), "script compiles with pending feedback");
+    scene::scene_layout_data feedback_data("script_feedback_test");
+    apply_patch_to_scene(*feedback_compiled.patch, feedback_data);
+    require(feedback_data.find_node("feedback_exists")->text_runs.front().text == "true", "feedback exists binding renders true");
+    require(feedback_data.find_node("feedback_label")->text_runs.front().text == "correct", "feedback outcome binding renders");
+    require(feedback_data.find_node("feedback_selected_option_count")->text_runs.front().text == "1", "feedback selected count renders");
+    require(feedback_data.find_node("feedback_answered_at")->text_runs.front().text == "100", "feedback answered-at renders");
 
     const scene::scene_node_data* learning_summary = data.find_node("learning_summary");
     const scene::scene_node_data* known_count = data.find_node("learning_known_count");

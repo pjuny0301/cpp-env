@@ -1190,6 +1190,57 @@ void test_quiz_scene_missing_target_records_failure_trace()
     require(trace.error == result.error, "missing target trace records failure error");
 }
 
+void test_quiz_scene_partial_failure_preserves_prior_trace()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_before_missing_target",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "tap_missing_active_target",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_active_missing_option",
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(!result.ok(), "partial failure scenario reports failure");
+    require(result.error.find("scenario target input region not found: quiz_active_missing_option") != std::string::npos,
+        "partial failure scenario reports missing active target id");
+    require(result.trace.size() == 2, "partial failure scenario preserves prior successful trace");
+
+    require_trace_entry(result.trace[0], "day_intro", "start_quiz", "quiz_active", "partial failure prior trace is stable");
+    require(result.trace[0].target_node_id == "day_intro_start_normal", "partial failure prior trace records target");
+    require(result.trace[0].after_focus_id == "quiz_active_option_0", "partial failure prior trace captures active focus");
+
+    const app_scene_scenario_trace_entry& failed = result.trace[1];
+    require(failed.step_name == "tap_missing_active_target", "partial failure failed trace records step name");
+    require(failed.event_kind == "tap_node", "partial failure failed trace records event kind");
+    require(failed.target_node_id == "quiz_active_missing_option", "partial failure failed trace records target");
+    require(failed.before_screen_id == "quiz_active", "partial failure failed trace records active before screen");
+    require(failed.before_focus_id == "quiz_active_option_0", "partial failure failed trace records active before focus");
+    require(failed.before_node_count > 1, "partial failure failed trace records before node count");
+    require(failed.before_input_region_count > 0, "partial failure failed trace records before input regions");
+    require(failed.after_screen_id.empty(), "partial failure failed trace records no after screen");
+    require(!failed.handled, "partial failure failed trace is not handled");
+    require(!failed.needs_render, "partial failure failed trace does not request render");
+    require(failed.action_type.empty(), "partial failure failed trace records no action");
+    require(failed.error == result.error, "partial failure failed trace records failure error");
+}
+
 void test_quiz_scene_unhandled_text_submit_records_noop_trace()
 {
     using namespace quiz_vulkan;
@@ -1299,6 +1350,7 @@ int main()
     test_quiz_scene_swipe_previous_replay_returns_to_prior_question();
     test_quiz_scene_settings_close_replay_returns_to_deck_list();
     test_quiz_scene_missing_target_records_failure_trace();
+    test_quiz_scene_partial_failure_preserves_prior_trace();
     test_quiz_scene_unhandled_text_submit_records_noop_trace();
     test_quiz_scene_settings_swipe_previous_records_error_transition();
     return 0;

@@ -445,4 +445,89 @@ inline app_command_validation_result validate_scene_command(
     return result;
 }
 
+inline std::optional<scene::scene_action_binding> legacy_action_binding_for_scene_command(
+    const scene::scene_command& command,
+    scene::scene_action_trigger trigger = scene::scene_action_trigger::press)
+{
+    if (command.name.empty() || !is_scene_command_allowed(command.name)) {
+        return std::nullopt;
+    }
+
+    scene::scene_action_binding binding;
+    binding.trigger = trigger;
+    binding.action_type = command.name;
+
+    if (command.name == "load_source") {
+        const std::optional<std::string_view> value = detail::command_non_empty_string_arg(command, "source_uri", "payload");
+        if (!value.has_value()) {
+            return std::nullopt;
+        }
+        binding.payload = std::string(*value);
+        return binding;
+    }
+    if (command.name == "select_deck") {
+        const std::optional<std::string_view> value = detail::command_non_empty_string_arg(command, "deck_id", "payload");
+        if (!value.has_value()) {
+            return std::nullopt;
+        }
+        binding.payload = std::string(*value);
+        return binding;
+    }
+    if (command.name == "select_day") {
+        const std::optional<std::string_view> value = detail::command_non_empty_string_arg(command, "day_id", "payload");
+        if (!value.has_value()) {
+            return std::nullopt;
+        }
+        binding.payload = std::string(*value);
+        return binding;
+    }
+    if (command.name == "start_quiz") {
+        const std::optional<std::string_view> value = detail::command_non_empty_string_arg(command, "mode", "payload");
+        if (!value.has_value()) {
+            return std::nullopt;
+        }
+        binding.payload = std::string(*value);
+        return binding;
+    }
+    if (command.name == "submit_option") {
+        const std::optional<std::size_t> value = detail::command_size_arg(command, "option_index", "payload");
+        if (!value.has_value()) {
+            return std::nullopt;
+        }
+        binding.payload = std::to_string(*value);
+        return binding;
+    }
+    if (command.name == "submit_multiselect") {
+        const std::optional<std::string_view> value = detail::command_non_empty_string_arg(command, "option_indexes", "payload");
+        if (!value.has_value()) {
+            return std::nullopt;
+        }
+        binding.payload = std::string(*value);
+        return binding;
+    }
+    if (command.name == "submit_text_answer") {
+        if (const std::optional<std::string_view> value = detail::command_non_empty_string_arg(command, "payload")) {
+            binding.payload = std::string(*value);
+        }
+        return binding;
+    }
+    if (command.name == "update_setting") {
+        const std::optional<std::string_view> payload = detail::command_non_empty_string_arg(command, "payload");
+        if (payload.has_value()) {
+            binding.payload = std::string(*payload);
+            return binding;
+        }
+
+        const std::optional<std::string_view> name = detail::command_non_empty_string_arg(command, "name");
+        const std::optional<std::string_view> value = detail::command_non_empty_string_arg(command, "value");
+        if (!name.has_value() || !value.has_value()) {
+            return std::nullopt;
+        }
+        binding.payload = std::string(*name) + "=" + std::string(*value);
+        return binding;
+    }
+
+    return binding;
+}
+
 }  // namespace quiz_vulkan

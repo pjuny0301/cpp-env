@@ -1,7 +1,8 @@
 #pragma once
 
 #include "app/app_command_registry.h"
-#include "app/app_quiz_screens.h"
+#include "core/domain/app_snapshot.hpp"
+#include "core/scene/scene_layout_edit_data.h"
 
 #include <algorithm>
 #include <charconv>
@@ -45,6 +46,7 @@ struct app_scene_script_command_template {
 struct app_scene_script_event_handler_template {
     scene::scene_action_trigger trigger = scene::scene_action_trigger::press;
     std::vector<app_scene_script_command_template> commands;
+    std::optional<scene::scene_action_binding> legacy_binding;
     std::string condition;
     std::string transition;
 };
@@ -82,6 +84,8 @@ struct app_scene_script_document {
     int schema_version = 0;
     std::string template_id;
     std::string screen;
+    std::optional<scene::scene_route_state> route_state;
+    std::string focus_id;
     std::vector<app_scene_script_style_definition> styles;
     std::vector<app_scene_script_node> nodes;
     std::vector<app_scene_script_transition> transitions;
@@ -593,43 +597,10 @@ inline bool evaluate_option_repeater(
     return true;
 }
 
-inline std::optional<quiz_screen_kind> screen_kind_from_script_name(std::string_view screen)
-{
-    if (screen == "deck_list") {
-        return quiz_screen_kind::deck_list;
-    }
-    if (screen == "deck_view") {
-        return quiz_screen_kind::deck_view;
-    }
-    if (screen == "day_intro") {
-        return quiz_screen_kind::day_intro;
-    }
-    if (screen == "quiz_active") {
-        return quiz_screen_kind::quiz_active;
-    }
-    if (screen == "quiz_feedback") {
-        return quiz_screen_kind::quiz_feedback;
-    }
-    if (screen == "quiz_results") {
-        return quiz_screen_kind::quiz_results;
-    }
-    if (screen == "settings") {
-        return quiz_screen_kind::settings;
-    }
-    if (screen == "error") {
-        return quiz_screen_kind::error;
-    }
-    return std::nullopt;
-}
-
 inline scene::scene_route_state route_for_script_document(
     const app_scene_script_document& document,
-    const domain::app_snapshot& snapshot)
+    const domain::app_snapshot&)
 {
-    if (const std::optional<quiz_screen_kind> screen = screen_kind_from_script_name(document.screen)) {
-        return describe_quiz_screen(*screen, snapshot).route;
-    }
-
     scene::scene_route_state route;
     route.route_id = document.template_id.empty() ? document.screen : document.template_id;
     route.screen_id = document.screen.empty() ? route.route_id : document.screen;
@@ -695,6 +666,9 @@ inline bool compile_event_template(
     scene::scene_event_handler event_handler;
     event_handler.trigger = event_template.trigger;
     event_handler.commands = std::move(commands);
+    if (event_template.legacy_binding.has_value()) {
+        event_handler.legacy_binding = *event_template.legacy_binding;
+    }
     if (!event_template.condition.empty()) {
         event_handler.condition = event_template.condition;
     }
@@ -837,20 +811,28 @@ inline bool compile_node_instance(
     }
 
     std::vector<scene::scene_event_handler> event_handlers;
+    std::optional<scene::scene_action_binding> legacy_action;
     for (const app_scene_script_event_handler_template& event_template : script_node.events) {
         std::optional<scene::scene_event_handler> handler;
         if (!compile_event_template(event_template, context, handler, error)) {
             return false;
         }
         if (handler.has_value() && !handler->empty()) {
+            if (!legacy_action.has_value() && !handler->legacy_binding.empty()) {
+                legacy_action = handler->legacy_binding;
+            }
             event_handlers.push_back(std::move(*handler));
         }
     }
 
-    edit_data.append_node(std::move(parent_id), std::move(node));
-    for (scene::scene_event_handler& handler : event_handlers) {
-        edit_data.bind_event_handler(node_id, std::move(handler));
+    if (legacy_action.has_value()) {
+        node.action_binding = std::move(*legacy_action);
+        node.has_action_binding = true;
     }
+    node.event_handlers = std::move(event_handlers);
+    node.has_event_handlers = !node.event_handlers.empty();
+
+    edit_data.append_node(std::move(parent_id), std::move(node));
 
     for (const app_scene_script_transition& transition : script_node.transitions) {
         bool transition_condition = true;
@@ -901,7 +883,7 @@ inline app_scene_script_compile_result compile_node_dsl_script(
 {
     app_scene_script_compile_result result;
     scene::scene_layout_edit_data edit_data("app_scene_script");
-    edit_data.set_route(route_for_script_document(document, snapshot));
+    edit_data.set_route(document.route_state.value_or(route_for_script_document(document, snapshot)));
 
     eval_context context{snapshot, std::nullopt};
     std::set<std::string> emitted_ids;
@@ -924,6 +906,10 @@ inline app_scene_script_compile_result compile_node_dsl_script(
             edit_data.start_transition(std::move(animation));
             break;
         }
+    }
+
+    if (!document.focus_id.empty()) {
+        edit_data.set_focus(document.focus_id);
     }
 
     result.patch = edit_data.finish_patch();
@@ -1017,13 +1003,6 @@ inline app_scene_script_compile_result compile_app_scene_script(
 
     if (document.schema_version == app_scene_script_node_dsl_schema_version || !document.nodes.empty()) {
         return script_detail::compile_node_dsl_script(document, snapshot);
-    }
-
-    if (document.schema_version == app_scene_script_template_schema_version
-        && document.template_id == "builtin:quiz.day_intro.v1"
-        && document.screen == "day_intro") {
-        result.patch = make_day_intro_screen_patch(snapshot);
-        return result;
     }
 
     result.error = "unsupported app scene script template: " + document.template_id;

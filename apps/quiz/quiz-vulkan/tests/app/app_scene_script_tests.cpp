@@ -7,6 +7,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <variant>
@@ -17,6 +18,11 @@ namespace {
 void require(bool condition, const char* message)
 {
     assert((condition) && message);
+}
+
+bool contains(std::string_view value, std::string_view needle)
+{
+    return value.find(needle) != std::string_view::npos;
 }
 
 quiz_vulkan::domain::deck make_test_deck()
@@ -441,6 +447,63 @@ void test_compiled_patch_unwrap_reports_failure_context()
     require(threw, "failed compile result throws before patch unwrap");
 }
 
+void append_invalid_function_node(
+    quiz_vulkan::presentation::app_scene_script_document& script,
+    std::string expression)
+{
+    quiz_vulkan::presentation::app_scene_script_node invalid;
+    invalid.id = "invalid_function_node";
+    invalid.parent_id = "script_root";
+    invalid.kind = quiz_vulkan::scene::scene_node_kind::text;
+    invalid.debug_name = "invalid function node";
+    invalid.style.token = "muted";
+    invalid.bindings.push_back({"text", std::move(expression)});
+    script.nodes.push_back(std::move(invalid));
+}
+
+void require_compile_error_contains(
+    const quiz_vulkan::presentation::app_scene_script_document& script,
+    const quiz_vulkan::domain::app_snapshot& snapshot,
+    std::string_view expected_error,
+    const char* message)
+{
+    const quiz_vulkan::presentation::app_scene_script_compile_result compiled =
+        quiz_vulkan::presentation::compile_app_scene_script(script, snapshot);
+    require(!compiled.ok(), message);
+    require(contains(compiled.error, expected_error), message);
+}
+
+void test_expression_function_errors_are_reported()
+{
+    using namespace quiz_vulkan;
+
+    const domain::app_snapshot snapshot = make_active_snapshot();
+
+    presentation::app_scene_script_document missing_arg = make_active_question_script();
+    append_invalid_function_node(missing_arg, "{{ equals(session.phase) }}");
+    require_compile_error_contains(
+        missing_arg,
+        snapshot,
+        "expects 2 argument",
+        "function arg count errors are reported");
+
+    presentation::app_scene_script_document unsupported = make_active_question_script();
+    append_invalid_function_node(unsupported, "{{ mystery(session.phase) }}");
+    require_compile_error_contains(
+        unsupported,
+        snapshot,
+        "unsupported script function: mystery",
+        "unsupported function errors are reported");
+
+    presentation::app_scene_script_document unterminated = make_active_question_script();
+    append_invalid_function_node(unterminated, "{{ concat(\"unterminated) }}");
+    require_compile_error_contains(
+        unterminated,
+        snapshot,
+        "unterminated string literal",
+        "unterminated function string errors are reported");
+}
+
 }  // namespace
 
 int main()
@@ -448,5 +511,6 @@ int main()
     test_phase3_dsl_compiles_bindings_repeaters_conditions_events();
     test_phase3_dsl_validation_and_determinism();
     test_compiled_patch_unwrap_reports_failure_context();
+    test_expression_function_errors_are_reported();
     return 0;
 }

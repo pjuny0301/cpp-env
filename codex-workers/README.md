@@ -37,8 +37,8 @@ The workers are meant to implement behind existing quiz-vulkan interfaces, not r
 - `verify-worker.sh`: runs preflight, configure, contract compile, focused
   CTest, ledger/source/external manifest checks, and `git diff --check`.
 - `worker-status.sh`: summarizes live Codex tmux sessions, current paths, branch
-  names, dirty-file counts, and ahead/behind counts versus the integration
-  baseline.
+  names, tracked dirty-file counts, and ahead/behind counts versus the
+  integration baseline.
 
 ## One-Time Setup
 
@@ -181,7 +181,10 @@ For a compact coordinator view:
 
 The default repo root is resolved from the script location. Pass an explicit
 repo path when inspecting a different checkout, and set `QUIZ_CODEX_BASE_REF`
-when comparing against a different integration baseline. Read `dirty`, `ahead`,
+when comparing against a different integration baseline. By default the status
+view skips untracked files so generated scratch trees such as `node_modules/` do
+not make the coordinator view slow; set `QUIZ_CODEX_STATUS_UNTRACKED=normal` or
+`all` when you explicitly need untracked files counted. Read `dirty`, `ahead`,
 and `behind` before assigning more work. A long-lived session is useful when it
 keeps engine-specific context, but new tasks should start from the latest pushed
 baseline when the old worker branch is far behind.

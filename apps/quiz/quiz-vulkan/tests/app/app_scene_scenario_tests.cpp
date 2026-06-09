@@ -194,6 +194,50 @@ void test_quiz_scene_event_replay_reaches_results()
     require(result.final_frame.snapshot.screen == domain::app_screen::completed, "final snapshot is completed");
 }
 
+void test_quiz_scene_event_replay_supports_compact_viewport()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal_compact",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "answer_first_option_compact",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_active_option_0",
+                .now_ms = 200,
+            },
+            app_scene_scenario_step{
+                .name = "continue_feedback_compact",
+                .input = app_scene_scenario_input_kind::swipe_right,
+                .now_ms = 300,
+            },
+        },
+        {0.0f, 0.0f, 320.0f, 480.0f},
+        metrics);
+
+    require(result.ok(), "compact viewport scenario replay succeeds");
+    require(result.trace.size() == 3, "compact viewport scenario emits one trace entry per step");
+    require_trace_entry(result.trace[0], "day_intro", "start_quiz", "quiz_active", "compact start trace is stable");
+    require_trace_entry(result.trace[1], "quiz_active", "submit_option", "quiz_feedback", "compact answer trace is stable");
+    require_trace_entry(result.trace[2], "quiz_feedback", "continue_after_feedback", "quiz_results", "compact continue trace is stable");
+    require(result.final_frame.placed.usable_bounds.width == 320.0f, "compact final frame keeps viewport width");
+    require(result.final_frame.placed.usable_bounds.height == 480.0f, "compact final frame keeps viewport height");
+    require(result.final_frame.layout.route_state().screen_id == "quiz_results", "compact final frame is results");
+    require(result.final_frame.layout.contains_node("quiz_results_actions"), "compact final frame emits results actions");
+    require(!result.final_frame.placed.input_regions.empty(), "compact final frame keeps input regions");
+}
+
 void test_quiz_scene_deck_navigation_replay_reaches_day_intro()
 {
     using namespace quiz_vulkan;
@@ -808,6 +852,7 @@ void test_quiz_scene_unhandled_text_submit_records_noop_trace()
 int main()
 {
     test_quiz_scene_event_replay_reaches_results();
+    test_quiz_scene_event_replay_supports_compact_viewport();
     test_quiz_scene_deck_navigation_replay_reaches_day_intro();
     test_quiz_scene_day_intro_random_mode_replay_starts_random_session();
     test_quiz_scene_error_recovery_replay_selects_deck();

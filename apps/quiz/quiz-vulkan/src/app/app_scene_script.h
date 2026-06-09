@@ -5,10 +5,13 @@
 #include "core/scene/scene_layout_edit_data.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <charconv>
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <map>
 #include <optional>
 #include <set>
@@ -269,6 +272,25 @@ inline bool parse_int64(std::string_view value, std::int64_t& parsed)
     const char* end = begin + value.size();
     const std::from_chars_result result = std::from_chars(begin, end, parsed);
     return result.ec == std::errc{} && result.ptr == end;
+}
+
+inline bool parse_float32(std::string_view value, float& parsed)
+{
+    value = trim(value);
+    if (value.empty()) {
+        return false;
+    }
+
+    const std::string text(value);
+    char* end = nullptr;
+    errno = 0;
+    const float parsed_value = std::strtof(text.c_str(), &end);
+    if (errno == ERANGE || end != text.c_str() + text.size() || !std::isfinite(parsed_value)) {
+        return false;
+    }
+
+    parsed = parsed_value;
+    return true;
 }
 
 inline std::string strip_optional_quotes(std::string_view value)
@@ -1512,6 +1534,19 @@ inline bool apply_node_bindings(
             }
             continue;
         }
+        if (binding.target == "style.border_radius") {
+            std::string rendered;
+            if (!render_template(binding.expression, context, rendered, error)) {
+                return false;
+            }
+            float rendered_float = 0.0f;
+            if (!parse_float32(rendered, rendered_float)) {
+                error = "node binding target style.border_radius requires a numeric expression";
+                return false;
+            }
+            node.style.border_radius = rendered_float;
+            continue;
+        }
         if (binding.target == "image.uri") {
             if (!render_template(binding.expression, context, node.image.uri, error)) {
                 return false;
@@ -1523,6 +1558,19 @@ inline bool apply_node_bindings(
             if (!render_template(binding.expression, context, node.image.alt_text, error)) {
                 return false;
             }
+            continue;
+        }
+        if (binding.target == "image.aspect_ratio") {
+            std::string rendered;
+            if (!render_template(binding.expression, context, rendered, error)) {
+                return false;
+            }
+            float rendered_float = 0.0f;
+            if (!parse_float32(rendered, rendered_float)) {
+                error = "node binding target image.aspect_ratio requires a numeric expression";
+                return false;
+            }
+            node.image.aspect_ratio = rendered_float;
             continue;
         }
 

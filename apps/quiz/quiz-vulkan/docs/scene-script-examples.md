@@ -59,6 +59,8 @@ nodes:
     binding:
       image.uri: {{ choose(question.has_image, question.image_uri, "") }}
       image.alt_text: {{ concat("Question image for ", question.id) }}
+      image.aspect_ratio: 1.6
+      style.border_radius: 8
   - id: session_progress
     parent_id: script_root
     kind: text

@@ -164,9 +164,11 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     question_image.parent_id = "script_root";
     question_image.kind = scene::scene_node_kind::image;
     question_image.debug_name = "question image";
-    question_image.image.aspect_ratio = 1.6f;
+    question_image.image.aspect_ratio = 1.0f;
     question_image.bindings.push_back({"image.uri", "{{ choose(question.has_image, question.image_uri, \"\") }}"});
     question_image.bindings.push_back({"image.alt_text", "{{ concat(\"Question image for \", question.id) }}"});
+    question_image.bindings.push_back({"image.aspect_ratio", "1.6"});
+    question_image.bindings.push_back({"style.border_radius", "8"});
     script.nodes.push_back(std::move(question_image));
 
     presentation::app_scene_script_node progress;
@@ -622,6 +624,8 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(question_image->has_image, "question image binding enables image");
     require(question_image->image.uri == "asset://korea-map.png", "question image binding sets image uri");
     require(question_image->image.alt_text == "Question image for q1", "question image binding sets alt text");
+    require(question_image->image.aspect_ratio == 1.6f, "question image binding sets aspect ratio");
+    require(question_image->style.border_radius == 8.0f, "style border radius binding renders");
     const scene::scene_node_data* progress = data.find_node("session_progress");
     const scene::scene_node_data* session_mode = data.find_node("session_mode_phase");
     const scene::scene_node_data* session_count = data.find_node("session_question_count");
@@ -947,6 +951,21 @@ void test_expression_function_errors_are_reported()
         snapshot,
         "format_count argument 1 must be an integer",
         "format_count integer errors are reported");
+
+    presentation::app_scene_script_document invalid_numeric_binding = make_active_question_script();
+    const auto image_node = std::find_if(
+        invalid_numeric_binding.nodes.begin(),
+        invalid_numeric_binding.nodes.end(),
+        [](const presentation::app_scene_script_node& node) {
+            return node.id == "question_image";
+        });
+    require(image_node != invalid_numeric_binding.nodes.end(), "invalid numeric binding fixture finds image node");
+    image_node->bindings.push_back({"image.aspect_ratio", "wide"});
+    require_compile_error_contains(
+        invalid_numeric_binding,
+        snapshot,
+        "image.aspect_ratio requires a numeric expression",
+        "numeric binding errors are reported");
 
     presentation::app_scene_script_document safe_id_missing_arg = make_active_question_script();
     append_invalid_function_node(safe_id_missing_arg, "{{ safe_id() }}");

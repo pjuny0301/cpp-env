@@ -128,6 +128,33 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     session_count.bindings.push_back({"text", "{{ session.question_count }}"});
     script.nodes.push_back(std::move(session_count));
 
+    presentation::app_scene_script_node settings_count;
+    settings_count.id = "settings_count";
+    settings_count.parent_id = "script_root";
+    settings_count.kind = scene::scene_node_kind::text;
+    settings_count.debug_name = "settings count";
+    settings_count.style.token = "muted";
+    settings_count.bindings.push_back({"text", "{{ settings.count }}"});
+    script.nodes.push_back(std::move(settings_count));
+
+    presentation::app_scene_script_node error_exists;
+    error_exists.id = "error_exists";
+    error_exists.parent_id = "script_root";
+    error_exists.kind = scene::scene_node_kind::text;
+    error_exists.debug_name = "error exists";
+    error_exists.style.token = "muted";
+    error_exists.bindings.push_back({"text", "{{ error.exists }}"});
+    script.nodes.push_back(std::move(error_exists));
+
+    presentation::app_scene_script_node error_message;
+    error_message.id = "error_message";
+    error_message.parent_id = "script_root";
+    error_message.kind = scene::scene_node_kind::text;
+    error_message.debug_name = "error message";
+    error_message.style.token = "muted";
+    error_message.bindings.push_back({"text", "{{ error.message }}"});
+    script.nodes.push_back(std::move(error_message));
+
     presentation::app_scene_script_node learning_summary;
     learning_summary.id = "learning_summary";
     learning_summary.parent_id = "script_root";
@@ -340,6 +367,28 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(progress->text_runs.front().text == "Question 1 of 1", "session progress binding renders");
     require(session_mode->text_runs.front().text == "normal / active", "session mode and phase render");
     require(session_count->text_runs.front().text == "1", "session question count renders");
+    const scene::scene_node_data* settings_count = data.find_node("settings_count");
+    const scene::scene_node_data* error_exists = data.find_node("error_exists");
+    const scene::scene_node_data* error_message = data.find_node("error_message");
+    require(settings_count != nullptr, "settings count node exists");
+    require(error_exists != nullptr, "error exists node exists");
+    require(error_message != nullptr, "error message node exists");
+    require(settings_count->text_runs.front().text == "0", "settings count binding renders");
+    require(error_exists->text_runs.front().text == "false", "error exists binding renders");
+    require(error_message->text_runs.front().text.empty(), "empty error message binding renders");
+
+    domain::app_snapshot status_snapshot = snapshot;
+    status_snapshot.settings["ui_screen"] = "settings";
+    status_snapshot.error_message = "Load failed";
+    const presentation::app_scene_script_compile_result status_compiled =
+        presentation::compile_app_scene_script(script, status_snapshot);
+    require(status_compiled.ok(), "script compiles with app status");
+    scene::scene_layout_data status_data("script_status_test");
+    apply_patch_to_scene(*status_compiled.patch, status_data);
+    require(status_data.find_node("settings_count")->text_runs.front().text == "1", "settings count renders entries");
+    require(status_data.find_node("error_exists")->text_runs.front().text == "true", "error exists binding renders present error");
+    require(status_data.find_node("error_message")->text_runs.front().text == "Load failed", "error message binding renders present error");
+
     const scene::scene_node_data* learning_summary = data.find_node("learning_summary");
     const scene::scene_node_data* known_count = data.find_node("learning_known_count");
     require(learning_summary != nullptr, "learning summary node exists");

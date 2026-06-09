@@ -741,6 +741,19 @@ inline bool evaluate_path(std::string_view raw_expression, const eval_context& c
         return true;
     }
 
+    if (expression == "settings.count") {
+        value = script_value::integer(static_cast<std::int64_t>(context.snapshot.settings.size()));
+        return true;
+    }
+    if (expression == "error.exists") {
+        value = script_value::boolean(context.snapshot.error_message.has_value());
+        return true;
+    }
+    if (expression == "error.message") {
+        value = script_value::string(context.snapshot.error_message.value_or(std::string{}));
+        return true;
+    }
+
     if (expression == "learning.question_count") {
         value = script_value::integer(static_cast<std::int64_t>(context.snapshot.learning.question_count));
         return true;

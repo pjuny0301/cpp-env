@@ -48,6 +48,11 @@ nodes:
     kind: text
     binding:
       text: {{ session.mode }} / {{ session.phase }}
+  - id: settings_count
+    parent_id: script_root
+    kind: text
+    binding:
+      text: {{ settings.count }}
   - id: learning_summary
     parent_id: script_root
     kind: text

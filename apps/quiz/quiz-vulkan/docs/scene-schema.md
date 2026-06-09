@@ -163,6 +163,20 @@ Retained UI tree for the current frame:
 - animation state
 - route/screen metadata
 
+### Semantics Ownership
+
+Scene core semantics are deliberately generic:
+
+- `role`
+- `label`
+- typed string/bool/integer properties
+
+Quiz-specific role names, property keys, and enum-to-string helpers live in
+`src/app/app_quiz_scene_semantics.h`. App presenters may write values such as
+`quiz.stage` or `quiz.accepts_keyboard_input` into the generic property map, but
+`src/core/scene`, `src/core/ui`, and `src/render` must not add quiz-specific
+enums or inspect quiz domain concepts.
+
 ## `scene_layout_edit_data`
 
 Restricted write surface for modifiers. It may append, update, remove, bind actions, request navigation, or start transitions. It must not expose raw renderer state.

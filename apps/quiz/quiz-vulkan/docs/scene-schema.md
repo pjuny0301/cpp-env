@@ -102,6 +102,7 @@ The expression engine also supports pure function calls:
 - `contains(value, needle)`
 - `starts_with(value, prefix)`
 - `ends_with(value, suffix)`
+- `replace(value, needle, replacement)`
 - `length(value)`
 - `greater_than(left, right)`
 - `less_than(left, right)`
@@ -120,6 +121,8 @@ evaluates the selected branch, which allows fallback bindings such as
 Use `all(...)` and `any(...)` when a condition needs to combine multiple
 boolean-style expressions without moving that logic into renderer code. They
 evaluate arguments from left to right and stop once the result is known.
+Use `replace(...)` for small deterministic string cleanup in app-owned labels,
+for example removing a known source URI prefix before rendering it.
 Use `safe_id(...)` when dynamic node IDs need stable slug text, for example
 `option_{{ safe_id(option.text, option.index) }}`. Use `setting(...)` to read
 app settings by key without exposing the map shape to the renderer. Use

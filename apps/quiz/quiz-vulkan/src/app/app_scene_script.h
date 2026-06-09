@@ -738,6 +738,38 @@ inline bool evaluate_script_function(
         return true;
     }
 
+    if (name == "replace") {
+        if (!require_script_function_arg_count(name, args, 3, error)) {
+            return false;
+        }
+
+        script_value rendered_value;
+        script_value needle_value;
+        script_value replacement_value;
+        if (!evaluate_expression(args[0], context, rendered_value, error)
+            || !evaluate_expression(args[1], context, needle_value, error)
+            || !evaluate_expression(args[2], context, replacement_value, error)) {
+            return false;
+        }
+
+        std::string rendered = rendered_value.to_string();
+        const std::string needle = needle_value.to_string();
+        if (needle.empty()) {
+            error = "script function replace needle must not be empty";
+            return false;
+        }
+
+        const std::string replacement = replacement_value.to_string();
+        std::size_t cursor = 0;
+        while ((cursor = rendered.find(needle, cursor)) != std::string::npos) {
+            rendered.replace(cursor, needle.size(), replacement);
+            cursor += replacement.size();
+        }
+
+        value = script_value::string(std::move(rendered));
+        return true;
+    }
+
     if (name == "length") {
         if (!require_script_function_arg_count(name, args, 1, error)) {
             return false;

@@ -424,6 +424,15 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     string_predicates.bindings.push_back({"text", "{{ contains(question.prompt, \"Korea\") }} / {{ starts_with(selected_deck.source_uri, \"fixture://\") }} / {{ ends_with(selected_deck.source_uri, \".quizdeck\") }}"});
     script.nodes.push_back(std::move(string_predicates));
 
+    presentation::app_scene_script_node replaced_source;
+    replaced_source.id = "replaced_deck_source";
+    replaced_source.parent_id = "script_root";
+    replaced_source.kind = scene::scene_node_kind::text;
+    replaced_source.debug_name = "replaced deck source";
+    replaced_source.style.token = "muted";
+    replaced_source.bindings.push_back({"text", "{{ replace(selected_deck.source_uri, \"fixture://\", \"\") }}"});
+    script.nodes.push_back(std::move(replaced_source));
+
     presentation::app_scene_script_node boolean_composition;
     boolean_composition.id = "boolean_composition_flags";
     boolean_composition.parent_id = "script_root";
@@ -833,6 +842,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     const scene::scene_node_data* session_active_flag = data.find_node("session_active_flag");
     const scene::scene_node_data* empty_error_flag = data.find_node("empty_error_flag");
     const scene::scene_node_data* string_predicates = data.find_node("string_predicate_flags");
+    const scene::scene_node_data* replaced_source = data.find_node("replaced_deck_source");
     const scene::scene_node_data* boolean_composition = data.find_node("boolean_composition_flags");
     const scene::scene_node_data* lazy_boolean_composition = data.find_node("lazy_boolean_composition_flags");
     const scene::scene_node_data* prompt_length = data.find_node("question_prompt_length");
@@ -847,6 +857,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(session_active_flag != nullptr, "function active flag node exists");
     require(empty_error_flag != nullptr, "empty function node exists");
     require(string_predicates != nullptr, "string predicate function node exists");
+    require(replaced_source != nullptr, "replace function node exists");
     require(boolean_composition != nullptr, "boolean composition function node exists");
     require(lazy_boolean_composition != nullptr, "lazy boolean composition function node exists");
     require(prompt_length != nullptr, "length function node exists");
@@ -861,6 +872,7 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(session_active_flag->text_runs.front().text == "true", "equals function renders boolean");
     require(empty_error_flag->text_runs.front().text == "true", "empty function renders boolean");
     require(string_predicates->text_runs.front().text == "true / true / true", "string predicate functions render booleans");
+    require(replaced_source->text_runs.front().text == "geography.quizdeck", "replace function renders string");
     require(boolean_composition->text_runs.front().text == "true / false", "boolean composition functions render booleans");
     require(lazy_boolean_composition->text_runs.front().text == "false / true", "boolean composition functions short-circuit");
     require(prompt_length->text_runs.front().text == "17", "length function renders string length");
@@ -1086,6 +1098,22 @@ void test_expression_function_errors_are_reported()
         snapshot,
         "contains expects 2 argument",
         "contains function arg count errors are reported");
+
+    presentation::app_scene_script_document replace_missing_arg = make_active_question_script();
+    append_invalid_function_node(replace_missing_arg, "{{ replace(selected_deck.source_uri, \"fixture://\") }}");
+    require_compile_error_contains(
+        replace_missing_arg,
+        snapshot,
+        "replace expects 3 argument",
+        "replace function arg count errors are reported");
+
+    presentation::app_scene_script_document replace_empty_needle = make_active_question_script();
+    append_invalid_function_node(replace_empty_needle, "{{ replace(selected_deck.source_uri, \"\", \"x\") }}");
+    require_compile_error_contains(
+        replace_empty_needle,
+        snapshot,
+        "replace needle must not be empty",
+        "replace function empty needle errors are reported");
 
     presentation::app_scene_script_document length_extra_arg = make_active_question_script();
     append_invalid_function_node(length_extra_arg, "{{ length(question.prompt, \"extra\") }}");

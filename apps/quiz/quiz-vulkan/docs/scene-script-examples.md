@@ -102,6 +102,11 @@ nodes:
     kind: text
     binding:
       text: {{ choose(selected_deck.has_source, selected_deck.source_uri, "no-source") }}
+  - id: selected_deck_source_label
+    parent_id: script_root
+    kind: text
+    binding:
+      text: {{ replace(selected_deck.source_uri, "fixture://", "") }}
   - id: selected_day_summary
     parent_id: script_root
     kind: text
@@ -220,6 +225,8 @@ condition: any(error.exists, feedback.exists)
 condition: contains(question.prompt, "Korea")
 condition: starts_with(selected_deck.source_uri, "fixture://")
 condition: ends_with(selected_deck.source_uri, ".quizdeck")
+binding:
+  text: {{ replace(selected_deck.source_uri, "fixture://", "") }}
 condition: greater_or_equal(length(question.prompt), 10)
 condition: less_than(settings.count, 3)
 condition: between(length(question.prompt), 10, 20)

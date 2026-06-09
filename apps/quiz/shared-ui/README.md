@@ -4,6 +4,7 @@ Shared React UI primitives used by the quiz reference apps.
 
 ## Contents
 
+- Package identity: `@quiz/shared-ui`.
 - `src/components/ui/` contains the generated UI primitive set that was previously duplicated in both `android-quiz-app` and `quiz-editor`.
 - `src/components/figma/` contains generated Figma helper components shared by the same apps.
 - `package.json` declares the private package name and React peer dependency contract. The apps provide the actual runtime dependencies.

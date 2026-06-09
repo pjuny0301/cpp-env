@@ -74,6 +74,11 @@ nodes:
     kind: text
     binding:
       text: {{ learning.summary }}
+  - id: selected_deck_source
+    parent_id: script_root
+    kind: text
+    binding:
+      text: {{ choose(selected_deck.has_source, selected_deck.source_uri, "no-source") }}
   - id: selected_day_summary
     parent_id: script_root
     kind: text

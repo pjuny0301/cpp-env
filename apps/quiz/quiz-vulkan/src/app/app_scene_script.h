@@ -913,6 +913,18 @@ inline bool evaluate_path(std::string_view raw_expression, const eval_context& c
         value = script_value::string(deck->title);
         return true;
     }
+    if (expression == "selected_deck.source_uri") {
+        if (deck == nullptr) {
+            error = "expression selected_deck.source_uri requires a selected deck";
+            return false;
+        }
+        value = script_value::string(deck->source_uri);
+        return true;
+    }
+    if (expression == "selected_deck.has_source") {
+        value = script_value::boolean(deck != nullptr && !deck->source_uri.empty());
+        return true;
+    }
     if (expression == "selected_deck.day_count") {
         value = script_value::integer(deck == nullptr ? 0 : static_cast<std::int64_t>(deck->days.size()));
         return true;

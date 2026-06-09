@@ -45,6 +45,7 @@ quiz_vulkan::domain::deck make_test_deck()
     deck quiz_deck;
     quiz_deck.id = "deck1";
     quiz_deck.title = "Geography";
+    quiz_deck.source_uri = "fixture://geography.quizdeck";
     quiz_deck.days.push_back(std::move(quiz_day));
     return quiz_deck;
 }
@@ -266,6 +267,15 @@ quiz_vulkan::presentation::app_scene_script_document make_active_question_script
     deck_title.style.token = "muted";
     deck_title.bindings.push_back({"text", "{{ selected_deck.title }}"});
     script.nodes.push_back(std::move(deck_title));
+
+    presentation::app_scene_script_node deck_source;
+    deck_source.id = "selected_deck_source";
+    deck_source.parent_id = "script_root";
+    deck_source.kind = scene::scene_node_kind::text;
+    deck_source.debug_name = "selected deck source";
+    deck_source.style.token = "muted";
+    deck_source.bindings.push_back({"text", "{{ choose(selected_deck.has_source, selected_deck.source_uri, \"no-source\") }}"});
+    script.nodes.push_back(std::move(deck_source));
 
     presentation::app_scene_script_node day_summary;
     day_summary.id = "selected_day_summary";
@@ -580,12 +590,15 @@ void test_phase3_dsl_compiles_bindings_repeaters_conditions_events()
     require(learning_summary->text_runs.front().text == "Learning 1 / Known 0 / Unknown 0 / Wrong note 0", "learning summary binding renders");
     require(known_count->text_runs.front().text == "0", "known count binding renders");
     const scene::scene_node_data* deck_title = data.find_node("selected_deck_title");
+    const scene::scene_node_data* deck_source = data.find_node("selected_deck_source");
     const scene::scene_node_data* day_summary = data.find_node("selected_day_summary");
     const scene::scene_node_data* deck_count = data.find_node("deck_count");
     require(deck_title != nullptr, "selected deck title node exists");
+    require(deck_source != nullptr, "selected deck source node exists");
     require(day_summary != nullptr, "selected day summary node exists");
     require(deck_count != nullptr, "deck count node exists");
     require(deck_title->text_runs.front().text == "Geography", "selected deck title binding renders");
+    require(deck_source->text_runs.front().text == "fixture://geography.quizdeck", "selected deck source binding renders");
     require(day_summary->text_runs.front().text == "Day 1 / 1 questions", "selected day summary binding renders");
     require(deck_count->text_runs.front().text == "1", "deck count binding renders");
     const scene::scene_node_data* formatted_prompt = data.find_node("question_prompt_upper");

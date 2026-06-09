@@ -238,6 +238,56 @@ void test_quiz_scene_event_replay_supports_compact_viewport()
     require(!result.final_frame.placed.input_regions.empty(), "compact final frame keeps input regions");
 }
 
+void test_quiz_scene_feedback_continue_button_replay_advances_question()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_two_question_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "answer_first_option",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_active_option_0",
+                .now_ms = 200,
+            },
+            app_scene_scenario_step{
+                .name = "continue_feedback_button",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_feedback_continue",
+                .now_ms = 300,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "feedback continue button scenario replay succeeds");
+    require(result.trace.size() == 3, "feedback continue button scenario emits one trace entry per step");
+    require_trace_entry(result.trace[2], "quiz_feedback", "continue_after_feedback", "quiz_active", "feedback continue button trace is stable");
+    require(result.trace[2].event_kind == "tap_node", "feedback continue button records tap event kind");
+    require(result.trace[2].target_node_id == "quiz_feedback_continue", "feedback continue button records target node");
+    require(result.trace[2].before_focus_id == "quiz_feedback_continue", "feedback continue button starts from continue focus");
+    require(result.trace[2].after_focus_id == "quiz_active_option_0", "feedback continue button advances to next active focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::quiz, "feedback continue final snapshot remains in quiz");
+    require(result.final_frame.snapshot.active_session.has_value(), "feedback continue final snapshot has session");
+    const domain::session_snapshot& session = *result.final_frame.snapshot.active_session;
+    require(session.current_index == 1, "feedback continue final snapshot advances to second question index");
+    require(session.current_question.has_value(), "feedback continue final snapshot has current question");
+    require(session.current_question->question_id == "q2", "feedback continue final snapshot advances to q2");
+    require(!session.feedback.has_value(), "feedback continue final snapshot clears feedback");
+}
+
 void test_quiz_scene_deck_navigation_replay_reaches_day_intro()
 {
     using namespace quiz_vulkan;
@@ -853,6 +903,7 @@ int main()
 {
     test_quiz_scene_event_replay_reaches_results();
     test_quiz_scene_event_replay_supports_compact_viewport();
+    test_quiz_scene_feedback_continue_button_replay_advances_question();
     test_quiz_scene_deck_navigation_replay_reaches_day_intro();
     test_quiz_scene_day_intro_random_mode_replay_starts_random_session();
     test_quiz_scene_error_recovery_replay_selects_deck();

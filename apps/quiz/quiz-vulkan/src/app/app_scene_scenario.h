@@ -209,30 +209,35 @@ inline app_scene_scenario_result run_app_scene_scenario(
             return result;
         }
 
-        std::string event_error;
-        const input::input_event event = make_scenario_input_event(step, before.placed, event_error);
-        if (!event_error.empty()) {
-            result.error = event_error;
-            return result;
-        }
-
-        app_input_route_result routed = route_normalized_input_event(event, before.placed, step.committed_text);
-        if (!routed.ok()) {
-            result.error = routed.error;
-            return result;
-        }
-
         app_scene_scenario_trace_entry trace;
         trace.step_name = step.name;
         trace.event_kind = to_string(step.input);
         trace.target_node_id = step.target_node_id;
         trace.before_screen_id = before.layout.route_state().screen_id;
         trace.before_focus_id = before.layout.has_focus() ? before.layout.focus_id() : std::string{};
+        trace.before_node_count = before.layout.nodes().size();
+        trace.before_input_region_count = before.placed.input_regions.size();
+
+        std::string event_error;
+        const input::input_event event = make_scenario_input_event(step, before.placed, event_error);
+        if (!event_error.empty()) {
+            result.error = event_error;
+            trace.error = event_error;
+            result.trace.push_back(std::move(trace));
+            return result;
+        }
+
+        app_input_route_result routed = route_normalized_input_event(event, before.placed, step.committed_text);
+        if (!routed.ok()) {
+            result.error = routed.error;
+            trace.error = routed.error;
+            result.trace.push_back(std::move(trace));
+            return result;
+        }
+
         trace.handled = routed.handled;
         trace.needs_render = routed.needs_render;
         trace.clear_text_after_action = routed.clear_text_after_action;
-        trace.before_node_count = before.layout.nodes().size();
-        trace.before_input_region_count = before.placed.input_regions.size();
         if (routed.action.has_value()) {
             trace.action_type = std::string(domain::to_string(domain::type_of(*routed.action)));
             state.dispatch(*routed.action, step.now_ms);
@@ -245,6 +250,8 @@ inline app_scene_scenario_result run_app_scene_scenario(
             "scenario_after_" + step.name);
         if (!after.ok()) {
             result.error = after.error;
+            trace.error = after.error;
+            result.trace.push_back(std::move(trace));
             return result;
         }
 

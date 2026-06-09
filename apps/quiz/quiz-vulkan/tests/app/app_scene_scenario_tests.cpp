@@ -426,6 +426,45 @@ void test_quiz_scene_swipe_previous_replay_returns_to_prior_question()
     require(!session.feedback.has_value(), "previous final snapshot has no pending feedback");
 }
 
+void test_quiz_scene_missing_target_records_failure_trace()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "tap_missing_target",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "deck_list_missing_deck",
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(!result.ok(), "missing target scenario reports failure");
+    require(result.error.find("scenario target input region not found: deck_list_missing_deck") != std::string::npos,
+        "missing target scenario reports target id");
+    require(result.trace.size() == 1, "missing target scenario records failed step trace");
+
+    const app_scene_scenario_trace_entry& trace = result.trace.front();
+    require(trace.step_name == "tap_missing_target", "missing target trace records step name");
+    require(trace.event_kind == "tap_node", "missing target trace records event kind");
+    require(trace.target_node_id == "deck_list_missing_deck", "missing target trace records target node");
+    require(trace.before_screen_id == "deck_list", "missing target trace records before screen");
+    require(trace.before_focus_id == "deck_list_deck_deck1", "missing target trace records before focus");
+    require(trace.before_node_count > 1, "missing target trace records before node count");
+    require(trace.before_input_region_count > 0, "missing target trace records before input regions");
+    require(!trace.handled, "missing target trace is not handled");
+    require(!trace.needs_render, "missing target trace does not request render");
+    require(trace.action_type.empty(), "missing target trace records no action");
+    require(trace.error == result.error, "missing target trace records failure error");
+}
+
 } // namespace
 
 int main()
@@ -437,5 +476,6 @@ int main()
     test_quiz_scene_swipe_skip_replay_reaches_results();
     test_quiz_scene_long_press_mark_unknown_updates_learning();
     test_quiz_scene_swipe_previous_replay_returns_to_prior_question();
+    test_quiz_scene_missing_target_records_failure_trace();
     return 0;
 }

@@ -235,6 +235,56 @@ quiz_vulkan::assets::asset_materialized_byte_payload make_shader_payload_bundle_
     return payload;
 }
 
+quiz_vulkan::assets::asset_render_resource_materialized_cache_entry make_render_cache_entry(
+    std::string id,
+    quiz_vulkan::assets::asset_type type,
+    std::string source_uri,
+    std::string cache_revision,
+    std::string content_hash,
+    std::filesystem::path materialized_path,
+    std::size_t byte_count,
+    quiz_vulkan::assets::asset_render_resource_materialized_cache_status status =
+        quiz_vulkan::assets::asset_render_resource_materialized_cache_status::ready)
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_cache_key cache_key = make_asset_cache_key(type, source_uri);
+    if (!cache_revision.empty()) {
+        cache_key.append("|rev=");
+        cache_key.append(cache_revision);
+    }
+
+    std::string runtime_cache_key;
+    if (status == asset_render_resource_materialized_cache_status::ready) {
+        runtime_cache_key = "render-resource|";
+        runtime_cache_key.append(asset_type_token(type));
+        runtime_cache_key.push_back('|');
+        runtime_cache_key.append(source_uri);
+        runtime_cache_key.push_back('|');
+        runtime_cache_key.append(cache_key);
+        runtime_cache_key.append("|hash=");
+        runtime_cache_key.append(content_hash);
+    }
+
+    return asset_render_resource_materialized_cache_entry{
+        .status = status,
+        .id = std::move(id),
+        .type = type,
+        .canonical_identity = source_uri,
+        .cache_key = std::move(cache_key),
+        .source_uri = std::move(source_uri),
+        .materialized_path = std::move(materialized_path).lexically_normal(),
+        .byte_count = status == asset_render_resource_materialized_cache_status::ready ? byte_count : 0U,
+        .payload_byte_count = status == asset_render_resource_materialized_cache_status::ready ? byte_count : 0U,
+        .content_hash = status == asset_render_resource_materialized_cache_status::ready ? std::move(content_hash)
+                                                                                        : std::string{},
+        .runtime_cache_key = std::move(runtime_cache_key),
+        .diagnostic = status == asset_render_resource_materialized_cache_status::ready
+            ? "test render cache entry ready"
+            : "test render cache entry blocked",
+    };
+}
+
 bool shader_pipeline_issue_at(
     const quiz_vulkan::assets::asset_shader_materialized_byte_pipeline_entry& entry,
     std::size_t index,
@@ -3472,6 +3522,267 @@ void test_render_resource_materialized_cache_diff_tracks_reuse_and_invalidation(
         "render cache diff delta names are stable");
 }
 
+void test_render_resource_runtime_packet_cache_handoff_preserves_diff_state_and_manifest_evidence()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_render_resource_materialized_cache_summary before{
+        .requested_count = 5U,
+    };
+    add_asset_render_resource_materialized_cache_entry(
+        before,
+        make_render_cache_entry(
+            "body_font",
+            asset_type::font,
+            "asset://fonts/body.ttf",
+            "",
+            "hash:font",
+            fixture_root / "before" / "fonts" / "body.ttf",
+            10U));
+    add_asset_render_resource_materialized_cache_entry(
+        before,
+        make_render_cache_entry(
+            "card_front",
+            asset_type::image,
+            "asset://cards/front.png",
+            "image-rev1",
+            "hash:image-old",
+            fixture_root / "before" / "cards" / "front.png",
+            11U));
+    add_asset_render_resource_materialized_cache_entry(
+        before,
+        make_render_cache_entry(
+            "ui_shader",
+            asset_type::shader,
+            "asset://shaders/ui.vert.spv",
+            "shader-rev1",
+            "hash:shader",
+            fixture_root / "before" / "shaders" / "ui.vert.spv",
+            12U));
+    add_asset_render_resource_materialized_cache_entry(
+        before,
+        make_render_cache_entry(
+            "answer_sound",
+            asset_type::sound,
+            "asset://sounds/correct.ogg",
+            "",
+            "hash:sound",
+            fixture_root / "before" / "sounds" / "correct.ogg",
+            13U));
+    add_asset_render_resource_materialized_cache_entry(
+        before,
+        make_render_cache_entry(
+            "main_deck",
+            asset_type::deck,
+            "asset://decks/main.quiz",
+            "deck-rev1",
+            "hash:deck",
+            fixture_root / "before" / "decks" / "main.quiz",
+            9U));
+
+    asset_render_resource_materialized_cache_summary after{
+        .requested_count = 4U,
+    };
+    add_asset_render_resource_materialized_cache_entry(
+        after,
+        make_render_cache_entry(
+            "body_font",
+            asset_type::font,
+            "asset://fonts/body.ttf",
+            "",
+            "hash:font",
+            fixture_root / "after" / "fonts" / "body.ttf",
+            10U));
+    add_asset_render_resource_materialized_cache_entry(
+        after,
+        make_render_cache_entry(
+            "card_front",
+            asset_type::image,
+            "asset://cards/front.png",
+            "image-rev1",
+            "hash:image-new",
+            fixture_root / "after" / "cards" / "front.png",
+            11U));
+    add_asset_render_resource_materialized_cache_entry(
+        after,
+        make_render_cache_entry(
+            "ui_shader",
+            asset_type::shader,
+            "asset://shaders/ui.vert.spv",
+            "shader-rev2",
+            "hash:shader",
+            fixture_root / "after" / "shaders" / "ui.vert.spv",
+            12U));
+    add_asset_render_resource_materialized_cache_entry(
+        after,
+        make_render_cache_entry(
+            "answer_sound",
+            asset_type::sound,
+            "asset://sounds/correct.ogg",
+            "",
+            "hash:sound",
+            fixture_root / "after" / "sounds" / "correct.ogg",
+            0U,
+            asset_render_resource_materialized_cache_status::missing_materialized_bytes));
+
+    asset_manifest manifest;
+    manifest.schema_version = "manifest.v2";
+    manifest.required_features = {"renderer.packet_cache"};
+    manifest.optional_features = {"renderer.strict_optional"};
+    const std::vector<std::string_view> supported_features = {"renderer.packet_cache"};
+    const asset_manifest_version_policy_summary manifest_policy =
+        summarize_asset_manifest_version_policy(manifest, "manifest.v2", supported_features);
+    const asset_render_resource_materialized_cache_diff_summary diff =
+        diff_asset_render_resource_materialized_cache_summaries(before, after);
+    const asset_render_resource_runtime_packet_cache_handoff_summary handoff =
+        make_asset_render_resource_runtime_packet_cache_handoff_summary(after, diff, manifest_policy);
+
+    require(manifest_policy.ok(), "manifest policy accepts supported required packet-cache features");
+    require(!manifest_policy.strict_accepted, "manifest policy records unsupported optional feature evidence");
+    require(diff.reused.size() == 1U, "render cache diff keeps one cache hit before handoff");
+    require(diff.replaced.size() == 2U, "render cache diff keeps content and revision replacements before handoff");
+    require(diff.invalidated.size() == 1U, "render cache diff keeps blocked replacement invalidation");
+    require(diff.removed.size() == 1U, "render cache diff keeps removed runtime entry invalidation");
+
+    require(!handoff.ok(), "runtime packet cache handoff reports invalidated packet inputs");
+    require(handoff.manifest.checked, "runtime packet handoff records checked manifest policy");
+    require(handoff.manifest.schema_version == "manifest.v2", "runtime packet handoff keeps manifest schema version");
+    require(handoff.manifest.expected_schema_version == "manifest.v2", "runtime packet handoff keeps expected version");
+    require(handoff.manifest.compatible_accepted, "runtime packet handoff keeps compatible manifest evidence");
+    require(handoff.manifest.unsupported_features.size() == 1U, "runtime packet handoff keeps optional feature evidence");
+    require(handoff.requested_count == 4U, "runtime packet handoff keeps current request count");
+    require(handoff.entry_count() == 5U, "runtime packet handoff includes current entries and removed invalidations");
+    require(handoff.ready_count == 3U, "runtime packet handoff exposes three packet-ready resource inputs");
+    require(handoff.blocked_count == 2U, "runtime packet handoff counts invalidations as blocked packet inputs");
+    require(handoff.cache_hit_count == 1U, "runtime packet handoff classifies stable cache hits");
+    require(handoff.replaced_count == 2U, "runtime packet handoff classifies replaced cache entries");
+    require(handoff.invalidated_count == 1U, "runtime packet handoff classifies blocked replacements as invalidated");
+    require(handoff.removed_count == 1U, "runtime packet handoff classifies removed cache entries");
+    require(handoff.invalidation_count == 4U, "runtime packet handoff counts all cache invalidating states");
+    require(handoff.materialized_available_count == 4U, "runtime packet handoff preserves materialized byte availability");
+
+    const asset_render_resource_runtime_packet_cache_entry* font = handoff.find_ready("body_font");
+    require(font != nullptr, "runtime packet handoff finds cache-hit font entry");
+    require(font->cache_state == asset_render_resource_runtime_packet_cache_state::cache_hit,
+        "font handoff marks stable runtime identity as cache hit");
+    require(font->ready_for_packet(), "font handoff is ready for renderer resource packet input");
+    require(font->runtime_identity.find(fixture_root.string()) == std::string::npos,
+        "font runtime packet identity does not leak host paths");
+    require(handoff.find_runtime_identity(font->runtime_identity) == font,
+        "runtime packet handoff indexes ready entries by host-path-free identity");
+
+    const asset_render_resource_runtime_packet_cache_entry* image = handoff.find_ready("card_front");
+    require(image != nullptr, "runtime packet handoff finds replaced image entry");
+    require(image->type == asset_type::image, "runtime packet handoff preserves asset kind");
+    require(image->logical_id == "card_front", "runtime packet handoff preserves logical id");
+    require(image->cache_revision == "image-rev1", "runtime packet handoff extracts manifest cache revision");
+    require(image->cache_revision_present, "runtime packet handoff reports revision presence");
+    require(image->content_hash == "hash:image-new", "runtime packet handoff keeps current content hash");
+    require(image->materialized_bytes_available, "runtime packet handoff marks materialized bytes available");
+    require(image->materialized_byte_count == 11U, "runtime packet handoff keeps materialized byte count");
+    require(image->payload_byte_count == 11U, "runtime packet handoff keeps payload byte count");
+    require(image->cache_state == asset_render_resource_runtime_packet_cache_state::replaced,
+        "runtime packet handoff marks image content changes as replaced");
+    require(!image->invalidated_runtime_identity.empty(), "replaced image keeps invalidated runtime identity");
+    require(image->replacement_runtime_identity == image->runtime_identity,
+        "replaced image keeps replacement runtime identity");
+    require(image->runtime_identity.find(fixture_root.string()) == std::string::npos,
+        "image runtime packet identity does not leak host paths");
+    require(image->manifest.checked && image->manifest.compatible_accepted,
+        "runtime packet entry keeps manifest compatibility evidence");
+
+    const asset_render_resource_runtime_packet_cache_entry* shader = handoff.find_ready("ui_shader");
+    require(shader != nullptr, "runtime packet handoff finds replaced shader entry");
+    require(shader->cache_revision == "shader-rev2", "runtime packet handoff keeps new shader revision");
+    require(shader->cache_state == asset_render_resource_runtime_packet_cache_state::replaced,
+        "runtime packet handoff marks shader revision change as replaced");
+    require(shader->content_hash == "hash:shader", "shader replacement can preserve content hash evidence");
+
+    const asset_render_resource_runtime_packet_cache_entry* sound = handoff.find_invalidated("answer_sound");
+    require(sound != nullptr, "runtime packet handoff exposes blocked replacement invalidation");
+    require(sound->cache_state == asset_render_resource_runtime_packet_cache_state::invalidated,
+        "runtime packet handoff marks blocked replacement as invalidated");
+    require(sound->blocker == asset_render_resource_runtime_packet_blocker_kind::missing_materialized_bytes,
+        "runtime packet handoff preserves blocked replacement reason");
+    require(!sound->ready_for_packet(), "blocked replacement is not ready for packet consumption");
+    require(!sound->materialized_bytes_available, "blocked replacement records missing materialized bytes");
+    require(!sound->invalidated_runtime_identity.empty(), "blocked replacement records invalidated runtime identity");
+
+    const asset_render_resource_runtime_packet_cache_entry* deck = handoff.find_invalidated("main_deck");
+    require(deck != nullptr, "runtime packet handoff exposes removed resource invalidation");
+    require(deck->cache_state == asset_render_resource_runtime_packet_cache_state::removed,
+        "runtime packet handoff marks removed resources");
+    require(deck->materialized_bytes_available, "removed invalidation keeps previous materialized byte evidence");
+    require(deck->invalidated_runtime_identity == deck->runtime_identity,
+        "removed invalidation keeps previous runtime identity");
+    require(!deck->ready_for_packet(), "removed resources are never packet-ready");
+
+    require(asset_render_resource_runtime_packet_cache_state_name(image->cache_state) == "replaced",
+        "runtime packet cache state names are stable");
+    require(asset_render_resource_runtime_packet_blocker_kind_name(sound->blocker) == "missing_materialized_bytes",
+        "runtime packet blocker names are stable");
+}
+
+void test_render_resource_runtime_packet_cache_handoff_blocks_incompatible_manifests()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_render_resource_materialized_cache_summary cache{
+        .requested_count = 1U,
+    };
+    add_asset_render_resource_materialized_cache_entry(
+        cache,
+        make_render_cache_entry(
+            "card_front",
+            asset_type::image,
+            "asset://cards/front.png",
+            "image-rev1",
+            "hash:image",
+            fixture_root / "packaged" / "cards" / "front.png",
+            11U));
+
+    asset_manifest manifest;
+    manifest.schema_version = "manifest.v1";
+    manifest.required_features = {"renderer.packet_cache"};
+    const std::vector<std::string_view> supported_features = {"renderer.packet_cache"};
+    const asset_manifest_version_policy_summary manifest_policy =
+        summarize_asset_manifest_version_policy(manifest, "manifest.v2", supported_features);
+    const asset_render_resource_runtime_packet_cache_handoff_summary handoff =
+        make_asset_render_resource_runtime_packet_cache_handoff_summary(cache, manifest_policy);
+
+    require(!manifest_policy.ok(), "mismatched manifest policy is incompatible");
+    require(!handoff.ok(), "runtime packet handoff blocks incompatible manifests");
+    require(handoff.ready_count == 0U, "incompatible manifests produce no ready packet entries");
+    require(handoff.blocked_count == 1U, "incompatible manifests block otherwise materialized entries");
+    require(handoff.manifest_incompatible_count == 1U, "handoff counts manifest incompatibility blockers");
+    require(handoff.cache_hit_count == 1U, "handoff preserves cache state even when manifest blocks packet input");
+    require(handoff.materialized_available_count == 1U,
+        "handoff preserves materialized byte availability under manifest blockers");
+
+    const asset_render_resource_runtime_packet_cache_entry* image = handoff.find_blocked("card_front");
+    require(image != nullptr, "incompatible manifest handoff keeps blocked image entry");
+    require(image->cache_state == asset_render_resource_runtime_packet_cache_state::cache_hit,
+        "blocked manifest entry preserves cache-hit state");
+    require(image->blocker == asset_render_resource_runtime_packet_blocker_kind::manifest_incompatible,
+        "blocked manifest entry records manifest blocker");
+    require(image->manifest.checked && !image->manifest.compatible_accepted,
+        "blocked manifest entry keeps incompatible version evidence");
+    require(image->manifest.schema_version == "manifest.v1",
+        "blocked manifest entry keeps actual schema version");
+    require(image->manifest.expected_schema_version == "manifest.v2",
+        "blocked manifest entry keeps expected schema version");
+    require(
+        image->diagnostic == "asset manifest schema_version does not match the expected version",
+        "blocked manifest entry keeps compatibility diagnostic");
+    require(image->materialized_bytes_available,
+        "blocked manifest entry keeps materialized byte availability evidence");
+    require(!image->ready_for_packet(), "manifest-blocked entries are not packet-ready");
+    require(asset_render_resource_runtime_packet_blocker_kind_name(image->blocker) == "manifest_incompatible",
+        "manifest blocker name is stable");
+}
+
 void test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics()
 {
     using namespace quiz_vulkan::assets;
@@ -4291,6 +4602,8 @@ int main()
     test_render_resource_manifest_to_payload_bridge_e2e_uses_materialized_bytes();
     test_render_resource_materialized_cache_summary_reuses_manifest_payload_identity();
     test_render_resource_materialized_cache_diff_tracks_reuse_and_invalidation();
+    test_render_resource_runtime_packet_cache_handoff_preserves_diff_state_and_manifest_evidence();
+    test_render_resource_runtime_packet_cache_handoff_blocks_incompatible_manifests();
     test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics();
     test_materialized_asset_byte_payload_request_transaction_preserves_order_and_counts();
     test_materialized_asset_byte_payload_request_transaction_review_summary_groups_by_expected_type();

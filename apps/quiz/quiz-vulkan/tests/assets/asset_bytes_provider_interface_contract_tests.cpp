@@ -833,6 +833,8 @@ static_assert(requires(
 static_assert(std::is_enum_v<asset_render_resource_payload_bridge_status>);
 static_assert(std::is_enum_v<asset_render_resource_materialized_cache_status>);
 static_assert(std::is_enum_v<asset_render_resource_materialized_cache_delta_kind>);
+static_assert(std::is_enum_v<asset_render_resource_runtime_packet_cache_state>);
+static_assert(std::is_enum_v<asset_render_resource_runtime_packet_blocker_kind>);
 
 static_assert(requires(asset_render_resource_materialized_cache_request request) {
     { request.id } -> std::same_as<std::string&>;
@@ -964,6 +966,82 @@ static_assert(requires(
         std::same_as<const asset_render_resource_materialized_cache_diff_entry*>;
 });
 
+static_assert(requires(
+    asset_render_resource_runtime_manifest_evidence evidence,
+    const asset_render_resource_runtime_manifest_evidence& const_evidence) {
+    { evidence.checked } -> std::same_as<bool&>;
+    { evidence.compatibility_status } -> std::same_as<asset_manifest_version_compatibility_status&>;
+    { evidence.schema_version } -> std::same_as<std::string&>;
+    { evidence.expected_schema_version } -> std::same_as<std::string&>;
+    { evidence.required_features } -> std::same_as<std::vector<std::string>&>;
+    { evidence.optional_features } -> std::same_as<std::vector<std::string>&>;
+    { evidence.unsupported_features } ->
+        std::same_as<std::vector<asset_manifest_version_unsupported_feature_report>&>;
+    { evidence.diagnostic } -> std::same_as<std::string&>;
+    { evidence.compatible_accepted } -> std::same_as<bool&>;
+    { evidence.strict_accepted } -> std::same_as<bool&>;
+    { const_evidence.ok() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_render_resource_runtime_packet_cache_entry entry,
+    const asset_render_resource_runtime_packet_cache_entry& const_entry) {
+    { entry.cache_state } -> std::same_as<asset_render_resource_runtime_packet_cache_state&>;
+    { entry.blocker } -> std::same_as<asset_render_resource_runtime_packet_blocker_kind&>;
+    { entry.materialized_cache_status } -> std::same_as<asset_render_resource_materialized_cache_status&>;
+    { entry.id } -> std::same_as<std::string&>;
+    { entry.type } -> std::same_as<asset_type&>;
+    { entry.logical_id } -> std::same_as<std::string&>;
+    { entry.canonical_identity } -> std::same_as<std::string&>;
+    { entry.cache_key } -> std::same_as<asset_cache_key&>;
+    { entry.cache_revision } -> std::same_as<std::string&>;
+    { entry.cache_revision_present } -> std::same_as<bool&>;
+    { entry.source_uri } -> std::same_as<std::string&>;
+    { entry.content_hash } -> std::same_as<std::string&>;
+    { entry.runtime_identity } -> std::same_as<std::string&>;
+    { entry.invalidated_runtime_identity } -> std::same_as<std::string&>;
+    { entry.replacement_runtime_identity } -> std::same_as<std::string&>;
+    { entry.materialized_bytes_available } -> std::same_as<bool&>;
+    { entry.materialized_byte_count } -> std::same_as<std::size_t&>;
+    { entry.payload_byte_count } -> std::same_as<std::size_t&>;
+    { entry.ready } -> std::same_as<bool&>;
+    { entry.manifest } -> std::same_as<asset_render_resource_runtime_manifest_evidence&>;
+    { entry.diagnostic } -> std::same_as<std::string&>;
+    { const_entry.ready_for_packet() } -> std::same_as<bool>;
+    { const_entry.invalidates() } -> std::same_as<bool>;
+});
+
+static_assert(requires(
+    asset_render_resource_runtime_packet_cache_handoff_summary summary,
+    const asset_render_resource_runtime_packet_cache_handoff_summary& const_summary,
+    std::string_view id,
+    std::string_view runtime_identity) {
+    { summary.manifest } -> std::same_as<asset_render_resource_runtime_manifest_evidence&>;
+    { summary.ready } -> std::same_as<std::vector<asset_render_resource_runtime_packet_cache_entry>&>;
+    { summary.blocked } -> std::same_as<std::vector<asset_render_resource_runtime_packet_cache_entry>&>;
+    { summary.invalidated } -> std::same_as<std::vector<asset_render_resource_runtime_packet_cache_entry>&>;
+    { summary.requested_count } -> std::same_as<std::size_t&>;
+    { summary.ready_count } -> std::same_as<std::size_t&>;
+    { summary.blocked_count } -> std::same_as<std::size_t&>;
+    { summary.cache_hit_count } -> std::same_as<std::size_t&>;
+    { summary.added_count } -> std::same_as<std::size_t&>;
+    { summary.replaced_count } -> std::same_as<std::size_t&>;
+    { summary.removed_count } -> std::same_as<std::size_t&>;
+    { summary.invalidated_count } -> std::same_as<std::size_t&>;
+    { summary.invalidation_count } -> std::same_as<std::size_t&>;
+    { summary.materialized_available_count } -> std::same_as<std::size_t&>;
+    { summary.manifest_incompatible_count } -> std::same_as<std::size_t&>;
+    { summary.total_materialized_byte_count } -> std::same_as<std::size_t&>;
+    { const_summary.ok() } -> std::same_as<bool>;
+    { const_summary.entry_count() } -> std::same_as<std::size_t>;
+    { const_summary.find_ready(id) } -> std::same_as<const asset_render_resource_runtime_packet_cache_entry*>;
+    { const_summary.find_blocked(id) } -> std::same_as<const asset_render_resource_runtime_packet_cache_entry*>;
+    { const_summary.find_invalidated(id) } -> std::same_as<const asset_render_resource_runtime_packet_cache_entry*>;
+    { const_summary.find_entry(id) } -> std::same_as<const asset_render_resource_runtime_packet_cache_entry*>;
+    { const_summary.find_runtime_identity(runtime_identity) } ->
+        std::same_as<const asset_render_resource_runtime_packet_cache_entry*>;
+});
+
 static_assert(std::has_virtual_destructor_v<asset_bytes_provider_interface>);
 static_assert(std::derived_from<fake_asset_bytes_provider, asset_bytes_provider_interface>);
 static_assert(std::derived_from<local_file_asset_bytes_provider, asset_bytes_provider_interface>);
@@ -1030,6 +1108,11 @@ static_assert(requires(
     asset_render_resource_materialized_cache_delta_kind materialized_cache_delta_kind,
     const asset_render_resource_materialized_cache_request& materialized_cache_request,
     const std::vector<asset_render_resource_materialized_cache_request>& materialized_cache_requests,
+    const asset_render_resource_materialized_cache_summary& materialized_cache_summary,
+    const asset_render_resource_materialized_cache_diff_summary& materialized_cache_diff,
+    const asset_manifest_version_policy_summary& manifest_policy,
+    asset_render_resource_runtime_packet_cache_state runtime_packet_cache_state,
+    asset_render_resource_runtime_packet_blocker_kind runtime_packet_blocker,
     std::string_view id,
     const std::vector<asset_bytes_catalog_request>& requests,
     const asset_bytes_catalog_request& request) {
@@ -1139,9 +1222,41 @@ static_assert(requires(
         make_asset_render_resource_materialized_cache_summary(render_resource_addresses, payload_bundle),
         make_asset_render_resource_materialized_cache_summary(render_resource_addresses, payload_bundle)) } ->
         std::same_as<asset_render_resource_materialized_cache_diff_summary>;
+    { make_asset_render_resource_runtime_manifest_evidence() } ->
+        std::same_as<asset_render_resource_runtime_manifest_evidence>;
+    { make_asset_render_resource_runtime_manifest_evidence(manifest_policy) } ->
+        std::same_as<asset_render_resource_runtime_manifest_evidence>;
+    { asset_render_resource_runtime_packet_blocker_from_cache_status(materialized_cache_status) } ->
+        std::same_as<asset_render_resource_runtime_packet_blocker_kind>;
+    { asset_render_resource_runtime_packet_cache_state_from_delta(materialized_cache_delta_kind) } ->
+        std::same_as<asset_render_resource_runtime_packet_cache_state>;
+    { asset_render_resource_runtime_packet_cache_revision(asset_cache_key{}) } -> std::same_as<std::string>;
+    { make_asset_render_resource_runtime_packet_cache_entry(
+        make_asset_render_resource_materialized_cache_entry(render_resource_bridge_entry),
+        runtime_packet_cache_state,
+        make_asset_render_resource_runtime_manifest_evidence()) } ->
+        std::same_as<asset_render_resource_runtime_packet_cache_entry>;
+    { find_asset_render_resource_materialized_cache_diff_entry(materialized_cache_diff, id) } ->
+        std::same_as<const asset_render_resource_materialized_cache_diff_entry*>;
+    { make_asset_render_resource_runtime_packet_cache_handoff_summary(materialized_cache_summary) } ->
+        std::same_as<asset_render_resource_runtime_packet_cache_handoff_summary>;
+    { make_asset_render_resource_runtime_packet_cache_handoff_summary(
+        materialized_cache_summary,
+        manifest_policy) } -> std::same_as<asset_render_resource_runtime_packet_cache_handoff_summary>;
+    { make_asset_render_resource_runtime_packet_cache_handoff_summary(
+        materialized_cache_summary,
+        materialized_cache_diff) } -> std::same_as<asset_render_resource_runtime_packet_cache_handoff_summary>;
+    { make_asset_render_resource_runtime_packet_cache_handoff_summary(
+        materialized_cache_summary,
+        materialized_cache_diff,
+        manifest_policy) } -> std::same_as<asset_render_resource_runtime_packet_cache_handoff_summary>;
     { asset_render_resource_materialized_cache_status_name(materialized_cache_status) } ->
         std::same_as<std::string>;
     { asset_render_resource_materialized_cache_delta_kind_name(materialized_cache_delta_kind) } ->
+        std::same_as<std::string>;
+    { asset_render_resource_runtime_packet_cache_state_name(runtime_packet_cache_state) } ->
+        std::same_as<std::string>;
+    { asset_render_resource_runtime_packet_blocker_kind_name(runtime_packet_blocker) } ->
         std::same_as<std::string>;
     { asset_shader_materialized_byte_issue_kind_name(shader_issue_kind) } -> std::same_as<std::string>;
     { asset_shader_byte_pipeline_source_kind_name(shader_source_kind) } -> std::same_as<std::string>;

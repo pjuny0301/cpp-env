@@ -65,6 +65,26 @@ void require_modifiers(
     require(modifiers.meta == meta, message);
 }
 
+void require_text_route_state(
+    const quiz_vulkan::input::text_focus_route_state& state,
+    bool has_focus,
+    const std::string& target_id,
+    std::size_t text_byte_count,
+    quiz_vulkan::input::text_range caret,
+    bool has_selection,
+    quiz_vulkan::input::text_range selection,
+    const char* message)
+{
+    require(state.has_focus == has_focus, message);
+    require(state.target_id == target_id, message);
+    require(state.text_byte_count == text_byte_count, message);
+    require(state.caret.start_byte == caret.start_byte, message);
+    require(state.caret.end_byte == caret.end_byte, message);
+    require(state.has_selection == has_selection, message);
+    require(state.selection.start_byte == selection.start_byte, message);
+    require(state.selection.end_byte == selection.end_byte, message);
+}
+
 const quiz_vulkan::input::action_route_policy_diagnostic& require_policy(
     const quiz_vulkan::input::input_routing_diagnostics& diagnostics,
     std::size_t index,
@@ -881,6 +901,630 @@ void test_wheel_modifiers_normalize_without_pointer_text_or_domain_routes()
         false,
         true,
         "raw modified wheel route carries modifier evidence");
+}
+
+void test_text_focus_caret_route_state_tracks_edits_ime_and_tap_focus()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    std::vector<input_event> events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::down,
+        100,
+        12.0f,
+        24.0f));
+    require(events.empty(), "text route tap down emits no gesture yet");
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        120,
+        12.0f,
+        24.0f));
+    require(events.size() == 1, "text route tap up emits tap gesture");
+    const gesture_event& tap = require_event<gesture_event>(events, 0);
+    require(tap.kind == gesture_kind::tap, "text route focus source is tap gesture");
+    require(!engine.routing_diagnostics().text_route_state.has_focus,
+        "text route tap does not focus text by itself");
+    require(engine.routing_diagnostics().summary.routes.text == 0,
+        "text route tap emits no text route");
+    require(engine.routing_diagnostics().summary.routes.focus == 0,
+        "text route tap emits no focus route");
+
+    engine.focus_text_target("tap-target");
+    require_text_route_state(
+        engine.routing_diagnostics().text_route_state,
+        true,
+        "tap-target",
+        0,
+        text_range{},
+        false,
+        text_range{},
+        "tap target focus updates current text route state");
+    require(engine.routing_diagnostics().action_routes.empty(),
+        "initial tap target focus emits no app/domain action route");
+
+    const std::string initial = std::string("A") + utf8(u8"한");
+    events = engine.process_raw_event(text(130, initial));
+    require(events.size() == 1, "text route insert emits text event");
+    const text_event& commit = require_event<text_event>(events, 0);
+    require(commit.kind == text_event_kind::commit, "text route insert emits commit kind");
+    const action_route_policy_diagnostic& commit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_commit_boundary,
+        "text route insert emits commit boundary route");
+    require_text_route_state(
+        commit_policy.text_route_before,
+        true,
+        "tap-target",
+        0,
+        text_range{},
+        false,
+        text_range{},
+        "text route insert records focused empty route state before");
+    require_text_route_state(
+        commit_policy.text_route_after,
+        true,
+        "tap-target",
+        initial.size(),
+        text_range{.start_byte = initial.size(), .end_byte = initial.size()},
+        false,
+        text_range{},
+        "text route insert records caret after utf8 insert");
+    require_text_route_state(
+        engine.routing_diagnostics().text_route_state,
+        true,
+        "tap-target",
+        initial.size(),
+        text_range{.start_byte = initial.size(), .end_byte = initial.size()},
+        false,
+        text_range{},
+        "text route insert updates current route state");
+
+    events = engine.process_raw_event(key(140, "Backspace"));
+    require(events.size() == 1, "text route backspace emits text event");
+    const text_event& backspace = require_event<text_event>(events, 0);
+    require(backspace.kind == text_event_kind::backspace,
+        "text route backspace emits backspace kind");
+    const action_route_policy_diagnostic& backspace_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::text_backspace_boundary,
+        "text route backspace emits backspace route");
+    require_text_route_state(
+        backspace_policy.text_route_before,
+        true,
+        "tap-target",
+        initial.size(),
+        text_range{.start_byte = initial.size(), .end_byte = initial.size()},
+        false,
+        text_range{},
+        "text route backspace records route state before deletion");
+    require_text_route_state(
+        backspace_policy.text_route_after,
+        true,
+        "tap-target",
+        1,
+        text_range{.start_byte = 1, .end_byte = 1},
+        false,
+        text_range{},
+        "text route backspace records utf8-safe caret after deletion");
+    require_text_route_state(
+        engine.routing_diagnostics().text_route_state,
+        true,
+        "tap-target",
+        1,
+        text_range{.start_byte = 1, .end_byte = 1},
+        false,
+        text_range{},
+        "text route backspace updates current route state");
+
+    const std::string preedit = utf8(u8"ㄱ");
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 150, preedit));
+    require(events.size() == 1, "text route ime preedit emits ime event");
+    const ime_event& preedit_event = require_event<ime_event>(events, 0);
+    require(preedit_event.kind == ime_event_kind::preedit,
+        "text route ime preedit emits preedit kind");
+    const action_route_policy_diagnostic& preedit_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::ime_preedit,
+        "text route ime preedit emits preedit route");
+    require_text_route_state(
+        preedit_policy.text_route_before,
+        true,
+        "tap-target",
+        1,
+        text_range{.start_byte = 1, .end_byte = 1},
+        false,
+        text_range{},
+        "text route ime preedit records committed caret before");
+    require_text_route_state(
+        preedit_policy.text_route_after,
+        true,
+        "tap-target",
+        1,
+        text_range{.start_byte = 1 + preedit.size(), .end_byte = 1 + preedit.size()},
+        false,
+        text_range{},
+        "text route ime preedit records display caret after");
+    require(preedit_policy.text_route_after.composition.active,
+        "text route ime preedit route state records active composition");
+    require(preedit_policy.text_route_after.composition.preedit_text == preedit,
+        "text route ime preedit route state records preedit text");
+    require(engine.routing_diagnostics().text_route_state.composition.active,
+        "text route ime preedit updates current active composition");
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::down,
+        160,
+        42.0f,
+        24.0f));
+    require(events.empty(), "text route second tap down emits no gesture yet");
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        180,
+        42.0f,
+        24.0f));
+    require(events.size() == 1, "text route second tap emits tap gesture");
+    require(require_event<gesture_event>(events, 0).kind == gesture_kind::tap,
+        "text route second focus source is tap gesture");
+
+    engine.focus_text_target("second-target");
+    const input_routing_diagnostics& focus_diagnostics = engine.routing_diagnostics();
+    require_text_route_state(
+        focus_diagnostics.text_route_state,
+        true,
+        "second-target",
+        1,
+        text_range{.start_byte = 1, .end_byte = 1},
+        false,
+        text_range{},
+        "text route tap focus target change updates current route state");
+    require(!focus_diagnostics.text_route_state.composition.active,
+        "text route tap focus target change clears active preedit");
+    require(focus_diagnostics.action_routes.size() == 2,
+        "text route tap focus target change emits ime cleanup and focus cleanup routes");
+    const action_route_policy_diagnostic& cancel_policy = require_policy(
+        focus_diagnostics,
+        0,
+        action_route_policy_kind::ime_cancel,
+        "text route target change first route cancels ime");
+    require_text_route_state(
+        cancel_policy.text_route_before,
+        true,
+        "tap-target",
+        1,
+        text_range{.start_byte = 1 + preedit.size(), .end_byte = 1 + preedit.size()},
+        false,
+        text_range{},
+        "text route target change cancel records old focused preedit state before");
+    require(cancel_policy.text_route_before.composition.active,
+        "text route target change cancel records active preedit before");
+    require_text_route_state(
+        cancel_policy.text_route_after,
+        true,
+        "second-target",
+        1,
+        text_range{.start_byte = 1, .end_byte = 1},
+        false,
+        text_range{},
+        "text route target change cancel records new focused state after");
+    const action_route_policy_diagnostic& focus_policy = require_policy(
+        focus_diagnostics,
+        1,
+        action_route_policy_kind::focus_loss,
+        "text route target change second route records old focus loss");
+    require_text_route_state(
+        focus_policy.text_route_before,
+        true,
+        "tap-target",
+        1,
+        text_range{.start_byte = 1 + preedit.size(), .end_byte = 1 + preedit.size()},
+        false,
+        text_range{},
+        "text route target change focus records old route state before");
+    require_text_route_state(
+        focus_policy.text_route_after,
+        true,
+        "second-target",
+        1,
+        text_range{.start_byte = 1, .end_byte = 1},
+        false,
+        text_range{},
+        "text route target change focus records new route state after");
+    require(focus_diagnostics.summary.routes.ime == 1,
+        "text route target change summary counts ime cleanup");
+    require(focus_diagnostics.summary.routes.focus == 1,
+        "text route target change summary counts focus cleanup");
+    require(focus_diagnostics.summary.routes.text == 0,
+        "text route target change emits no text submit route");
+    require(!engine.text_model().has_submit_text(),
+        "text route target change does not dispatch app/domain action");
+}
+
+void test_text_focus_route_state_diff_replays_edit_ime_and_focus_loss()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("route-target");
+    const input_routing_diagnostics focused = engine.routing_diagnostics();
+    require_text_route_state(
+        focused.text_route_state,
+        true,
+        "route-target",
+        0,
+        text_range{},
+        false,
+        text_range{},
+        "route diff replay starts focused with empty route state");
+    require(focused.action_routes.empty(),
+        "route diff replay focus setup emits no app/domain action route");
+
+    const std::string inserted_text = std::string("A") + utf8(u8"한") + "B";
+    std::vector<input_event> events = engine.process_raw_event(text(100, inserted_text));
+    require(events.size() == 1, "route diff replay insert emits one text event");
+    const input_routing_diagnostics inserted = engine.routing_diagnostics();
+    const input_routing_diagnostics_diff insert_diff =
+        diff_input_routing_diagnostics(focused, inserted);
+    require(insert_diff.changed, "route diff replay insert reports changed diagnostics");
+    require(insert_diff.text_route_state_changed,
+        "route diff replay insert reports text route state delta");
+    require(!insert_diff.text_route_state.has_focus.changed,
+        "route diff replay insert keeps focus stable");
+    require(insert_diff.text_route_state.text_byte_count.before_count == 0,
+        "route diff replay insert records empty text before");
+    require(insert_diff.text_route_state.text_byte_count.after_count == inserted_text.size(),
+        "route diff replay insert records utf8 text byte count after");
+    require(insert_diff.text_route_state.caret_changed,
+        "route diff replay insert records caret movement");
+    require_range(
+        insert_diff.text_route_state.after_state.caret,
+        inserted_text.size(),
+        inserted_text.size(),
+        "route diff replay insert caret stays on utf8 boundary");
+    require(insert_diff.action_routes.text_commit_boundary.after_count == 1,
+        "route diff replay insert records text commit route");
+    require(inserted.summary.routes.text == 1,
+        "route diff replay insert only counts text route");
+    require(inserted.summary.routes.ime == 0,
+        "route diff replay insert counts no ime route");
+    require(inserted.summary.routes.focus == 0,
+        "route diff replay insert counts no focus route");
+
+    events = engine.process_raw_event(key(110, "Home"));
+    require(events.size() == 1, "route diff replay home emits caret event");
+    events = engine.process_raw_event(key(120, "ArrowRight"));
+    require(events.size() == 1, "route diff replay right emits caret event");
+    events = engine.process_raw_event(key(
+        130,
+        "ArrowRight",
+        false,
+        raw_platform_key_phase::down,
+        false,
+        true));
+    require(events.size() == 1, "route diff replay shift right emits selection event");
+    const input_routing_diagnostics selected = engine.routing_diagnostics();
+    const std::size_t hangul_byte_count = utf8(u8"한").size();
+    require_text_route_state(
+        selected.text_route_state,
+        true,
+        "route-target",
+        inserted_text.size(),
+        text_range{.start_byte = 1 + hangul_byte_count, .end_byte = 1 + hangul_byte_count},
+        true,
+        text_range{.start_byte = 1, .end_byte = 1 + hangul_byte_count},
+        "route diff replay selection snapshot stays utf8 safe");
+
+    events = engine.process_raw_event(text(140, "Z"));
+    require(events.size() == 1, "route diff replay replacement emits one text event");
+    const input_routing_diagnostics replaced = engine.routing_diagnostics();
+    const input_routing_diagnostics_diff replace_diff =
+        diff_input_routing_diagnostics(selected, replaced);
+    require(replace_diff.text_route_state_changed,
+        "route diff replay selection replacement reports route delta");
+    require(replace_diff.text_route_state.has_selection.changed,
+        "route diff replay selection replacement clears selection");
+    require(replace_diff.text_route_state.before_state.has_selection,
+        "route diff replay selection replacement records selection before");
+    require(!replace_diff.text_route_state.after_state.has_selection,
+        "route diff replay selection replacement records no selection after");
+    require(replace_diff.text_route_state.text_byte_count.before_count == inserted_text.size(),
+        "route diff replay selection replacement records original utf8 byte count");
+    require(replace_diff.text_route_state.text_byte_count.after_count == 3,
+        "route diff replay selection replacement records ascii replacement byte count");
+    require_range(
+        replace_diff.text_route_state.after_state.caret,
+        2,
+        2,
+        "route diff replay selection replacement caret is after replacement text");
+    require(engine.text_model().text() == "AZB",
+        "route diff replay selection replacement updates committed text");
+
+    events = engine.process_raw_event(key(150, "Backspace"));
+    require(events.size() == 1, "route diff replay backspace emits text event");
+    const input_routing_diagnostics backspaced = engine.routing_diagnostics();
+    const input_routing_diagnostics_diff backspace_diff =
+        diff_input_routing_diagnostics(replaced, backspaced);
+    require(backspace_diff.text_route_state_changed,
+        "route diff replay backspace reports route delta");
+    require(backspace_diff.text_route_state.text_byte_count.before_count == 3,
+        "route diff replay backspace records byte count before");
+    require(backspace_diff.text_route_state.text_byte_count.after_count == 2,
+        "route diff replay backspace records byte count after");
+    require_range(
+        backspace_diff.text_route_state.after_state.caret,
+        1,
+        1,
+        "route diff replay backspace caret moves to previous utf8 boundary");
+    require(engine.text_model().text() == "AB",
+        "route diff replay backspace updates committed text");
+
+    const std::string preedit = utf8(u8"ㄱ");
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 160, preedit));
+    require(events.size() == 1, "route diff replay ime preedit emits ime event");
+    const input_routing_diagnostics preediting = engine.routing_diagnostics();
+    const input_routing_diagnostics_diff preedit_diff =
+        diff_input_routing_diagnostics(backspaced, preediting);
+    require(preedit_diff.text_route_state_changed,
+        "route diff replay ime preedit reports route delta");
+    require(preedit_diff.text_route_state.composition_active_changed,
+        "route diff replay ime preedit records active composition delta");
+    require(preedit_diff.text_route_state.composition_text_changed,
+        "route diff replay ime preedit records preedit text delta");
+    require(preedit_diff.text_route_state.composition_range_changed,
+        "route diff replay ime preedit records preedit range delta");
+    require(preedit_diff.text_route_state.text_byte_count.before_count == 2,
+        "route diff replay ime preedit records committed text byte count before");
+    require(preedit_diff.text_route_state.text_byte_count.after_count == 2,
+        "route diff replay ime preedit leaves committed text byte count unchanged");
+    require_range(
+        preedit_diff.text_route_state.after_state.caret,
+        1 + preedit.size(),
+        1 + preedit.size(),
+        "route diff replay ime preedit caret is display caret");
+    require(engine.text_model().text() == "AB",
+        "route diff replay ime preedit does not mutate committed text");
+
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::cancel, 170));
+    require(events.size() == 1, "route diff replay ime cancel emits ime event");
+    const input_routing_diagnostics canceled = engine.routing_diagnostics();
+    const input_routing_diagnostics_diff cancel_diff =
+        diff_input_routing_diagnostics(preediting, canceled);
+    require(cancel_diff.text_route_state_changed,
+        "route diff replay ime cancel reports route delta");
+    require(cancel_diff.text_route_state.composition_active_changed,
+        "route diff replay ime cancel records inactive composition delta");
+    require(cancel_diff.text_route_state.composition_text_changed,
+        "route diff replay ime cancel records cleared preedit text");
+    require(cancel_diff.text_route_state.composition_range_changed,
+        "route diff replay ime cancel records cleared preedit range");
+    require(!cancel_diff.text_route_state.after_state.composition.active,
+        "route diff replay ime cancel leaves no active composition");
+    require_range(
+        cancel_diff.text_route_state.after_state.caret,
+        1,
+        1,
+        "route diff replay ime cancel restores committed caret");
+    require(engine.text_model().text() == "AB",
+        "route diff replay ime cancel does not mutate committed text");
+
+    events = engine.process_raw_event(focus(raw_platform_focus_phase::lost, 180));
+    require(events.size() == 1, "route diff replay focus loss emits focus lost event");
+    const input_routing_diagnostics focus_lost = engine.routing_diagnostics();
+    const input_routing_diagnostics_diff focus_loss_diff =
+        diff_input_routing_diagnostics(canceled, focus_lost);
+    require(focus_loss_diff.text_route_state_changed,
+        "route diff replay focus loss reports route delta");
+    require(focus_loss_diff.text_route_state.has_focus.changed,
+        "route diff replay focus loss records focus transition");
+    require(focus_loss_diff.text_route_state.target_id_changed,
+        "route diff replay focus loss records target id clearing");
+    require(!focus_loss_diff.text_route_state.text_byte_count.changed,
+        "route diff replay focus loss preserves committed text byte count");
+    require(!focus_loss_diff.text_route_state.after_state.has_focus,
+        "route diff replay focus loss records no focused route target");
+    require(focus_loss_diff.action_routes.focus_loss.after_count == 1,
+        "route diff replay focus loss records focus route");
+    require(focus_lost.summary.routes.text == 0,
+        "route diff replay focus loss emits no text route");
+    require(focus_lost.summary.routes.ime == 0,
+        "route diff replay focus loss has no stale ime cleanup after cancel");
+    require(focus_lost.summary.routes.focus == 1,
+        "route diff replay focus loss counts focus route");
+    require(focus_lost.summary.normalized_event_count == 0,
+        "route diff replay focus loss emits no gesture route event");
+    require(!engine.text_model().has_submit_text(),
+        "route diff replay never dispatches app/domain submit action");
+}
+
+void test_text_route_replay_transcript_summarizes_consecutive_diffs()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    engine.focus_text_target("route-target");
+
+    std::vector<input_routing_diagnostics> snapshots;
+    snapshots.push_back(engine.routing_diagnostics());
+
+    const std::string inserted_text = std::string("A") + utf8(u8"한") + "B";
+    std::vector<input_event> events = engine.process_raw_event(text(100, inserted_text));
+    require(events.size() == 1, "route transcript insert emits text event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(key(110, "Home"));
+    require(events.size() == 1, "route transcript home emits caret event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(key(120, "ArrowRight"));
+    require(events.size() == 1, "route transcript right emits caret event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(key(
+        130,
+        "ArrowRight",
+        false,
+        raw_platform_key_phase::down,
+        false,
+        true));
+    require(events.size() == 1, "route transcript shift right emits selection event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(text(140, "Z"));
+    require(events.size() == 1, "route transcript replacement emits text event");
+    snapshots.push_back(engine.routing_diagnostics());
+    require(engine.text_model().text() == "AZB", "route transcript replacement updates committed text");
+
+    const std::string preedit_start = utf8(u8"ㄱ");
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 150, preedit_start));
+    require(events.size() == 1, "route transcript ime preedit start emits ime event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    const std::string preedit_update = utf8(u8"가");
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 160, preedit_update));
+    require(events.size() == 1, "route transcript ime preedit update emits ime event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::commit, 170, preedit_update));
+    require(events.size() == 1, "route transcript ime commit emits ime event");
+    snapshots.push_back(engine.routing_diagnostics());
+    require(engine.text_model().text() == std::string("AZ") + utf8(u8"가") + "B",
+        "route transcript ime commit updates committed text");
+
+    const std::string cancel_preedit = utf8(u8"ㅎ");
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 180, cancel_preedit));
+    require(events.size() == 1, "route transcript second ime preedit emits ime event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::cancel, 190));
+    require(events.size() == 1, "route transcript ime cancel emits ime event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    const std::string focus_loss_preedit = utf8(u8"ㅂ");
+    events = engine.process_raw_event(ime(raw_platform_ime_phase::preedit_update, 200, focus_loss_preedit));
+    require(events.size() == 1, "route transcript focus-loss preedit emits ime event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(focus(raw_platform_focus_phase::lost, 210));
+    require(events.size() == 2, "route transcript focus loss emits ime cancel and focus lost events");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    const input_routing_text_route_replay_summary transcript =
+        summarize_input_routing_text_route_replay(snapshots);
+    require(transcript.compared_diagnostic_count == snapshots.size() - 1,
+        "route transcript compares every consecutive diagnostic pair");
+    require(transcript.transcript.size() == snapshots.size() - 1,
+        "route transcript stores every consecutive diff entry");
+    require(transcript.changed_step_count == transcript.transcript.size(),
+        "route transcript records every replay step as changed");
+    require(transcript.text_route_changed, "route transcript reports text route changes");
+    require(!transcript.pointer_capture_changed,
+        "route transcript text replay does not disturb pointer capture");
+    require(!transcript.emits_external_route_action,
+        "route transcript emits input-owned diagnostics only");
+    require(transcript.normalized_input_event_count == 0,
+        "route transcript text replay emits no gesture or wheel normalized events");
+
+    require(transcript.counts.text_commit == 2,
+        "route transcript counts insert and selection replacement commits");
+    require(transcript.counts.selection_replacement == 1,
+        "route transcript counts one selection replacement");
+    require(transcript.counts.caret_moved == 2,
+        "route transcript counts utf8-safe caret moves");
+    require(transcript.counts.selection_changed == 1,
+        "route transcript counts one selection change");
+    require(transcript.counts.ime_preedit_start == 3,
+        "route transcript counts ime preedit starts");
+    require(transcript.counts.ime_preedit_update == 1,
+        "route transcript counts ime preedit update");
+    require(transcript.counts.ime_commit == 1,
+        "route transcript counts ime commit");
+    require(transcript.counts.ime_cancel == 2,
+        "route transcript counts explicit and focus-loss ime cancel");
+    require(transcript.counts.focus_loss_cleanup == 1,
+        "route transcript counts focus loss cleanup");
+    require(transcript.emitted_route_input_event_count == 13,
+        "route transcript counts normalized route event emissions");
+    require(transcript.diagnostic_only_route_count == 0,
+        "route transcript records no diagnostic-only routes in this text replay");
+
+    const input_routing_text_route_replay_entry& insert_entry = transcript.transcript[0];
+    require(insert_entry.text_commit, "route transcript first entry is text commit");
+    require(!insert_entry.selection_replacement,
+        "route transcript first entry is not a selection replacement");
+    require_range(
+        insert_entry.diff.text_route_state.after_state.caret,
+        inserted_text.size(),
+        inserted_text.size(),
+        "route transcript insert caret lands on utf8 boundary");
+
+    const input_routing_text_route_replay_entry& right_entry = transcript.transcript[2];
+    require(right_entry.caret_moved, "route transcript records caret right movement");
+    require_range(
+        right_entry.diff.text_route_state.after_state.caret,
+        1,
+        1,
+        "route transcript caret right stops after ascii byte before hangul");
+
+    const std::size_t hangul_byte_count = utf8(u8"한").size();
+    const input_routing_text_route_replay_entry& selection_entry = transcript.transcript[3];
+    require(selection_entry.selection_changed, "route transcript records hangul selection");
+    require_range(
+        selection_entry.diff.text_route_state.after_state.selection,
+        1,
+        1 + hangul_byte_count,
+        "route transcript selection bounds wrap complete hangul bytes");
+
+    const input_routing_text_route_replay_entry& replacement_entry = transcript.transcript[4];
+    require(replacement_entry.text_commit, "route transcript replacement emits text commit route");
+    require(replacement_entry.selection_replacement,
+        "route transcript replacement records selection replacement");
+    require(replacement_entry.diff.text_route_state.before_state.has_selection,
+        "route transcript replacement preserves selection-before evidence");
+    require(!replacement_entry.diff.text_route_state.after_state.has_selection,
+        "route transcript replacement clears selection after commit");
+    require(replacement_entry.diff.text_route_state.text_byte_count.after_count == 3,
+        "route transcript replacement records ascii byte count");
+
+    const input_routing_text_route_replay_entry& preedit_start_entry = transcript.transcript[5];
+    require(preedit_start_entry.ime_preedit_start,
+        "route transcript records ime preedit start");
+    require(preedit_start_entry.diff.text_route_state.after_state.composition.preedit_text == preedit_start,
+        "route transcript preedit start preserves preedit text");
+
+    const input_routing_text_route_replay_entry& preedit_update_entry = transcript.transcript[6];
+    require(preedit_update_entry.ime_preedit_update,
+        "route transcript records ime preedit update");
+    require(preedit_update_entry.diff.text_route_state.after_state.composition.preedit_text == preedit_update,
+        "route transcript preedit update preserves new preedit text");
+
+    const input_routing_text_route_replay_entry& ime_commit_entry = transcript.transcript[7];
+    require(ime_commit_entry.ime_commit, "route transcript records ime commit");
+    require(!ime_commit_entry.diff.text_route_state.after_state.composition.active,
+        "route transcript ime commit clears active composition");
+
+    const input_routing_text_route_replay_entry& ime_cancel_entry = transcript.transcript[9];
+    require(ime_cancel_entry.ime_cancel, "route transcript records explicit ime cancel");
+    require(!ime_cancel_entry.diff.text_route_state.after_state.composition.active,
+        "route transcript explicit cancel clears active composition");
+
+    const input_routing_text_route_replay_entry& focus_loss_entry = transcript.transcript[11];
+    require(focus_loss_entry.ime_cancel,
+        "route transcript focus loss carries ime cleanup");
+    require(focus_loss_entry.focus_loss_cleanup,
+        "route transcript focus loss carries focus cleanup");
+    require(focus_loss_entry.emitted_route_input_event_count == 2,
+        "route transcript focus loss emits ime cancel and focus lost route events");
+    require(!focus_loss_entry.diff.text_route_state.after_state.has_focus,
+        "route transcript focus loss clears focused target");
+    require(!focus_loss_entry.diff.text_route_state.after_state.composition.active,
+        "route transcript focus loss clears active preedit");
+    require(!engine.text_model().has_submit_text(),
+        "route transcript replay never dispatches app/domain submit action");
 }
 
 void test_gesture_routing_diagnostics_summarize_gestures_and_wheel()
@@ -1847,6 +2491,9 @@ int main()
     test_scroll_events_normalize_line_and_pixel_deltas();
     test_raw_platform_scroll_routes_through_input_engine();
     test_wheel_modifiers_normalize_without_pointer_text_or_domain_routes();
+    test_text_focus_caret_route_state_tracks_edits_ime_and_tap_focus();
+    test_text_focus_route_state_diff_replays_edit_ime_and_focus_loss();
+    test_text_route_replay_transcript_summarizes_consecutive_diffs();
     test_gesture_routing_diagnostics_summarize_gestures_and_wheel();
     test_gesture_policy_diagnostics_record_rejected_swipes();
     test_gesture_routing_diagnostics_cancel_and_focus_loss();

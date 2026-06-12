@@ -65,6 +65,16 @@ void require_modifiers(
     require(modifiers.meta == meta, message);
 }
 
+void require_range(
+    quiz_vulkan::input::text_range range,
+    std::size_t start_byte,
+    std::size_t end_byte,
+    const char* message)
+{
+    require(range.start_byte == start_byte, message);
+    require(range.end_byte == end_byte, message);
+}
+
 template <typename T>
 const T& require_translated_event(
     const quiz_vulkan::input::platform_input_translation_result& result,
@@ -253,6 +263,113 @@ void test_wheel_translates_to_platform_scroll_and_engine_summary()
         true,
         false,
         "translated wheel route preserves modifiers");
+}
+
+void test_translated_wheel_preserves_active_ime_route_context()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    platform_input_translator translator;
+    input_engine engine;
+    engine.focus_text_target("answer");
+
+    const std::string initial = std::string("A") + utf8(u8"한");
+    const platform_input_translation_result character = translate(
+        translator,
+        platform_character_sample{
+            .timestamp_ms = 330,
+            .utf8_text = initial,
+        });
+    require_accepted(character, platform_input_source_kind::character,
+        "wheel ime fixture initial character is accepted");
+    require(engine.process_raw_event(*character.event).size() == 1,
+        "wheel ime fixture initial character commits");
+
+    const std::string preedit = utf8(u8"ㄱ");
+    const platform_input_translation_result preedit_result = translate(
+        translator,
+        platform_ime_composition_sample{
+            .timestamp_ms = 340,
+            .phase = platform_ime_sample_phase::preedit_update,
+            .utf8_text = preedit,
+        });
+    require_accepted(preedit_result, platform_input_source_kind::ime,
+        "wheel ime fixture preedit is accepted");
+    require(engine.process_raw_event(*preedit_result.event).size() == 1,
+        "wheel ime fixture preedit starts composition");
+    require(engine.text_model().display_text() == initial + preedit,
+        "wheel ime fixture display includes preedit before wheel");
+
+    const platform_input_translation_result wheel = translate(
+        translator,
+        platform_wheel_sample{
+            .timestamp_ms = 350,
+            .x = 18.0f,
+            .y = 28.0f,
+            .delta_x = 0.0f,
+            .delta_y = -48.0f,
+            .unit = platform_scroll_delta_unit::pixels,
+            .alt = false,
+            .ctrl = true,
+            .shift = true,
+            .meta = false,
+        });
+    require_accepted(wheel, platform_input_source_kind::wheel,
+        "wheel ime fixture translated wheel is accepted");
+
+    std::vector<input_event> events = engine.process_raw_event(*wheel.event);
+    require(events.size() == 1, "wheel ime fixture emits one scroll event");
+    const scroll_event& scroll = require_input_event<scroll_event>(events, 0);
+    require(scroll.pixel_delta_y == -48.0f,
+        "wheel ime fixture normalizes pixel delta");
+    require_modifiers(scroll.modifiers, false, true, true, false,
+        "wheel ime fixture preserves wheel modifiers");
+    require(engine.text_model().text() == initial,
+        "wheel ime fixture preserves committed text");
+    require(engine.text_model().preedit_text() == preedit,
+        "wheel ime fixture preserves active preedit");
+
+    const input_routing_diagnostics& diagnostics = engine.routing_diagnostics();
+    require(diagnostics.action_routes.size() == 1,
+        "wheel ime fixture emits one wheel route");
+    const action_route_policy_diagnostic& policy = diagnostics.action_routes[0];
+    require(policy.kind == action_route_policy_kind::wheel_summary,
+        "wheel ime fixture route is wheel summary");
+    require(policy.emits_input_event, "wheel ime fixture route emits normalized wheel event");
+    require(policy.target_id == "answer",
+        "wheel ime fixture route records focused target");
+    require(policy.normalized_event.kind == input_event_summary_kind::wheel,
+        "wheel ime fixture route carries wheel normalized summary");
+    require(policy.normalized_event.pixel_delta_y == -48.0f,
+        "wheel ime fixture route records pixel wheel delta");
+    require_modifiers(policy.normalized_event.modifiers, false, true, true, false,
+        "wheel ime fixture route preserves modifier evidence");
+    require(policy.composition.active,
+        "wheel ime fixture route carries active composition");
+    require(policy.composition.preedit_text == preedit,
+        "wheel ime fixture route carries active preedit text");
+    require(policy.composition_before.active && policy.composition_after.active,
+        "wheel ime fixture route records active composition before and after");
+    require(policy.text_byte_count_before == initial.size(),
+        "wheel ime fixture route records committed bytes before");
+    require(policy.text_byte_count_after == initial.size(),
+        "wheel ime fixture route records committed bytes after");
+    const std::size_t display_caret = initial.size() + preedit.size();
+    require_range(policy.caret_before, display_caret, display_caret,
+        "wheel ime fixture route records utf8-safe caret before");
+    require_range(policy.caret_after, display_caret, display_caret,
+        "wheel ime fixture route records utf8-safe caret after");
+    require(diagnostics.summary.routes.wheel == 1,
+        "wheel ime fixture summary counts wheel route");
+    require(diagnostics.summary.routes.ime == 0,
+        "wheel ime fixture summary emits no ime route");
+    require(diagnostics.summary.routes.text == 0,
+        "wheel ime fixture summary emits no text route");
+    require(!diagnostics.summary.preedit_ended_cleanly,
+        "wheel ime fixture summary reports preedit still active");
+    require(!engine.text_model().has_submit_text(),
+        "wheel ime fixture does not submit app/domain action");
 }
 
 void test_key_translates_phase_modifiers_and_repeat()
@@ -538,6 +655,7 @@ int main()
     test_mouse_click_translates_to_pointer_events_and_tap();
     test_touch_contact_translates_to_touch_like_pointer();
     test_wheel_translates_to_platform_scroll_and_engine_summary();
+    test_translated_wheel_preserves_active_ime_route_context();
     test_key_translates_phase_modifiers_and_repeat();
     test_character_utf8_translates_to_text_input();
     test_ime_preedit_commit_and_cancel_translate_to_ime_events();

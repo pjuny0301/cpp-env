@@ -9,9 +9,11 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <span>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -2158,6 +2160,33 @@ std::string freetype_raster_payload_source_fallback_reason(
     return {};
 }
 
+bool freetype_resident_atlas_payload_can_reuse_without_font_byte_load(
+    const font_face_descriptor& face,
+    const render_text_font_backend_capability_snapshot& font_backend_capability,
+    const render_text_font_backend_selection_result& rasterization_selection)
+{
+    if (!freetype_raster_payload_preflight_fallback_reason(
+            font_backend_capability,
+            rasterization_selection)
+             .empty()) {
+        return false;
+    }
+
+    const font_source_resolution source = resolve_font_source(face);
+    if (source.kind != render_text_font_source_kind::file_path
+        && source.kind != render_text_font_source_kind::file_uri) {
+        return false;
+    }
+
+    std::error_code error;
+    const std::filesystem::path source_path = font_source_loader_path_for(source, {});
+    return !source_path.empty()
+        && std::filesystem::exists(source_path, error)
+        && !error
+        && std::filesystem::is_regular_file(source_path, error)
+        && !error;
+}
+
 rasterized_glyph_atlas_payload_handoff_result make_deterministic_raster_payload_handoff(
     const font_face_descriptor& face,
     const glyph_atlas_key& key,
@@ -2293,6 +2322,9 @@ void count_rasterized_glyph_atlas_payload_status(
     case render_text_font_rasterizer_status::rasterized:
         ++policy.rasterized_count;
         return;
+    case render_text_font_rasterizer_status::atlas_cache_hit:
+        ++policy.atlas_cache_hit_count;
+        return;
     case render_text_font_rasterizer_status::missing_font_source:
         ++policy.missing_font_source_count;
         return;
@@ -2336,6 +2368,12 @@ void append_rasterized_glyph_atlas_payload_snapshot(
     if (!snapshot.deterministic_fallback_reason.empty()) {
         ++diagnostics.rasterized_glyph_atlas_payload_policy.deterministic_fallback_reason_count;
     }
+    if (snapshot.reused_atlas_payload) {
+        ++diagnostics.rasterized_glyph_atlas_payload_policy.reused_atlas_payload_count;
+    }
+    if (snapshot.rasterization_skipped_for_atlas_cache_hit) {
+        ++diagnostics.rasterized_glyph_atlas_payload_policy.rasterization_skipped_for_atlas_cache_hit_count;
+    }
     diagnostics.rasterized_glyph_atlas_payloads.push_back(std::move(snapshot));
 }
 
@@ -2355,6 +2393,16 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
         const glyph_atlas_key key = atlas_key_for_cluster(cluster);
         const bool has_shape = cluster.snapshot.advance > 0.0f && cluster.glyph_height > 0.0f;
         const bool cacheable = cluster.cacheable && has_shape;
+        const auto placement = std::find_if(
+            diagnostics.glyph_atlas_placements.begin(),
+            diagnostics.glyph_atlas_placements.end(),
+            [&](const render_text_glyph_atlas_placement_snapshot& candidate) {
+                return candidate.cluster_index == cluster_index;
+            });
+        const bool atlas_cache_hit =
+            placement != diagnostics.glyph_atlas_placements.end()
+            && placement->cache_hit
+            && !placement->newly_allocated;
 
         if (!cluster.glyph_supported) {
             append_rasterized_glyph_atlas_payload_snapshot(
@@ -2444,6 +2492,56 @@ void record_rasterized_glyph_atlas_payload_diagnostics(
                     .cacheable = true,
                     .upload_ready = false,
                     .skipped = true,
+                });
+            continue;
+        }
+
+        if (atlas_cache_hit
+            && freetype_resident_atlas_payload_can_reuse_without_font_byte_load(
+                *face,
+                font_backend_capability,
+                rasterization_selection)) {
+            append_rasterized_glyph_atlas_payload_snapshot(
+                diagnostics,
+                render_text_rasterized_glyph_atlas_payload_snapshot{
+                    .cluster_index = cluster_index,
+                    .run_index = cluster.snapshot.run_index,
+                    .byte_offset = cluster.snapshot.byte_offset,
+                    .byte_count = cluster.snapshot.byte_count,
+                    .codepoint = cluster.code_point,
+                    .glyph_id = cluster.glyph_id,
+                    .resolved_face_id = cluster.snapshot.resolved_face_id,
+                    .cache_key = key,
+                    .status = render_text_font_rasterizer_status::atlas_cache_hit,
+                    .source_label = face->source_uri,
+                    .diagnostic = "glyph atlas payload reused a resident atlas slot; rasterization was not rerun",
+                    .glyph_id_from_selection = cluster.glyph_id_from_selection,
+                    .glyph_id_matches_codepoint = cluster.glyph_id_matches_codepoint,
+                    .used_fallback_glyph_id = cluster.used_fallback_glyph_id,
+                    .glyph_id_offset = cluster.glyph_id_offset,
+                    .font_backend_capability_status = font_backend_capability.status,
+                    .font_backend_library = rasterization_selection.has_selection
+                        ? rasterization_selection.selected.library
+                        : render_text_font_backend_library::deterministic_fake,
+                    .font_backend_label = rasterization_selection.has_selection
+                        ? rasterization_selection.selected.label
+                        : std::string{},
+                    .font_backend_used_deterministic_fallback =
+                        rasterization_selection.used_deterministic_fallback,
+                    .font_backend_fallback_only = font_backend_capability.fallback_only,
+                    .font_backend_supports_rasterization =
+                        font_backend_capability.supports_feature(
+                            render_text_font_backend_feature::glyph_rasterization),
+                    .source_bytes_status = render_text_font_source_bytes_load_status::loaded,
+                    .materialized_font_bytes = false,
+                    .used_freetype_rasterizer = false,
+                    .uses_deterministic_rasterizer = false,
+                    .atlas_cache_hit = true,
+                    .reused_atlas_payload = true,
+                    .rasterization_skipped_for_atlas_cache_hit = true,
+                    .cacheable = true,
+                    .upload_ready = true,
+                    .skipped = false,
                 });
             continue;
         }
@@ -2617,7 +2715,6 @@ std::uint32_t combined_shaped_glyph_id_for_cluster(const std::vector<std::uint32
 bool readiness_has_cache_key(const render_text_glyph_cache_readiness_snapshot& readiness)
 {
     return readiness.cacheable
-        && readiness.has_atlas_slot
         && readiness.cache_key.face_id != 0U
         && readiness.cache_key.glyph_id != 0U
         && readiness.cache_key.pixel_size != 0U;
@@ -2806,6 +2903,10 @@ void record_shaping_atlas_handoff_diagnostics(fake_text_engine_diagnostics& diag
         if (snapshot.atlas_update_trace_status
             == render_text_shaped_atlas_update_trace_status::rasterized_payload_skipped) {
             ++diagnostics.shaping_atlas_handoff_policy.raster_payload_blocked_cluster_count;
+        }
+        if (snapshot.atlas_update_trace_status
+            == render_text_shaped_atlas_update_trace_status::shaped_glyph_missing_atlas_slot) {
+            ++diagnostics.shaping_atlas_handoff_policy.missing_atlas_slot_cluster_count;
         }
         if (snapshot.atlas_update_trace_status
             == render_text_shaped_atlas_update_trace_status::shaped_glyph_without_cache_key) {
@@ -3047,8 +3148,12 @@ void record_glyph_atlas_materialization_diagnostics(
             find_rasterized_payload_for_cluster(diagnostics.rasterized_glyph_atlas_payloads, readiness.cluster_index);
         const render_text_glyph_atlas_placement_snapshot* placement =
             find_atlas_placement_for_cluster(diagnostics.glyph_atlas_placements, readiness.cluster_index);
+        const bool placement_reuses_resident_slot =
+            placement != nullptr && placement->cache_hit && !placement->newly_allocated;
         const render_text_atlas_update* update =
-            placement == nullptr ? nullptr : find_dirty_update_for_page(dirty_updates, placement->page.id);
+            placement == nullptr || placement_reuses_resident_slot
+            ? nullptr
+            : find_dirty_update_for_page(dirty_updates, placement->page.id);
         const laid_out_glyph_cluster* cluster =
             readiness.cluster_index < clusters.size() ? &clusters[readiness.cluster_index] : nullptr;
 
@@ -3127,8 +3232,12 @@ void record_shaped_atlas_update_trace_diagnostics(
             find_rasterized_payload_for_cluster(diagnostics.rasterized_glyph_atlas_payloads, readiness.cluster_index);
         const render_text_glyph_atlas_placement_snapshot* placement =
             find_atlas_placement_for_cluster(diagnostics.glyph_atlas_placements, readiness.cluster_index);
+        const bool placement_reuses_resident_slot =
+            placement != nullptr && placement->cache_hit && !placement->newly_allocated;
         const render_text_atlas_update* update =
-            placement == nullptr ? nullptr : find_dirty_update_for_page(dirty_updates, placement->page.id);
+            placement == nullptr || placement_reuses_resident_slot
+            ? nullptr
+            : find_dirty_update_for_page(dirty_updates, placement->page.id);
         std::vector<std::uint32_t> shaped_glyph_ids = shaped_glyph_ids_for_cluster(diagnostics.shaped_glyphs, readiness);
         const std::uint32_t combined_shaped_glyph_id = combined_shaped_glyph_id_for_cluster(shaped_glyph_ids);
 

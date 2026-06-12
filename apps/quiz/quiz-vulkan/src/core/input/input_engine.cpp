@@ -1020,12 +1020,14 @@ void input_engine::begin_route_diagnostics()
     diagnostics_.normalized_events.clear();
     diagnostics_.action_routes.clear();
     diagnostics_.pointer_capture = gestures_.capture_snapshot();
+    diagnostics_.text_route_state = detail::make_text_focus_route_state(text_);
     diagnostics_.summary = input_diagnostic_summary{};
 }
 
 void input_engine::finish_route_diagnostics()
 {
     diagnostics_.pointer_capture = gestures_.capture_snapshot();
+    diagnostics_.text_route_state = detail::make_text_focus_route_state(text_);
     diagnostics_.summary = summarize_input_routing_diagnostics(diagnostics_, text_);
 }
 

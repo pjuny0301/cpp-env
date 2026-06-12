@@ -609,6 +609,37 @@ void test_trace_reports_skipped_payload_and_missing_cache_key()
     require(!no_key_trace.has_cache_key, "missing cache key trace preserves flag");
 }
 
+void test_trace_reports_shaped_glyph_missing_atlas_slot()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_shaped_atlas_update_trace_request request = upload_ready_request();
+    request.has_atlas_placement = false;
+    request.page = {};
+    request.atlas_bounds = {};
+    request.has_atlas_update = false;
+    request.atlas_update_bounds = {};
+    request.atlas_update_rgba_bytes = 0U;
+
+    const render_text_shaped_atlas_update_trace_snapshot trace =
+        make_render_text_shaped_atlas_update_trace(std::move(request));
+    require(
+        trace.status == render_text_shaped_atlas_update_trace_status::shaped_glyph_missing_atlas_slot,
+        "cacheable shaped glyph without atlas slot reports missing slot status");
+    require(trace.has_cache_key, "missing atlas slot trace preserves cache key");
+    require(!trace.has_atlas_placement, "missing atlas slot trace preserves slot absence");
+    require(!trace.queued, "missing atlas slot trace is not queued");
+    require(!trace.clean_page_reused, "missing atlas slot trace does not report clean reuse");
+    require(
+        trace.diagnostic.find("atlas slot") != std::string::npos,
+        "missing atlas slot trace diagnostic names atlas slot blocker");
+
+    std::vector<render_text_shaped_atlas_update_trace_snapshot> traces;
+    render_text_shaped_atlas_update_trace_policy_snapshot policy;
+    append_render_text_shaped_atlas_update_trace(traces, policy, trace);
+    require(policy.shaped_glyph_missing_atlas_slot_count == 1U, "trace policy counts missing atlas slots");
+}
+
 void test_trace_reports_payload_byte_count_mismatch()
 {
     using namespace quiz_vulkan::render;
@@ -2522,6 +2553,7 @@ int main()
     test_trace_reports_upload_ready_payload_queued();
     test_trace_reports_clean_reuse_when_update_is_absent();
     test_trace_reports_skipped_payload_and_missing_cache_key();
+    test_trace_reports_shaped_glyph_missing_atlas_slot();
     test_trace_reports_payload_byte_count_mismatch();
     test_batch_plan_normalizes_style_keys_and_layout_requests();
     test_batch_plan_deduplicates_glyph_atlas_materialization_work();

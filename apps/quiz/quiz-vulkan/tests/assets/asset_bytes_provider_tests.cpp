@@ -235,6 +235,56 @@ quiz_vulkan::assets::asset_materialized_byte_payload make_shader_payload_bundle_
     return payload;
 }
 
+quiz_vulkan::assets::asset_render_resource_materialized_cache_entry make_render_cache_entry(
+    std::string id,
+    quiz_vulkan::assets::asset_type type,
+    std::string source_uri,
+    std::string cache_revision,
+    std::string content_hash,
+    std::filesystem::path materialized_path,
+    std::size_t byte_count,
+    quiz_vulkan::assets::asset_render_resource_materialized_cache_status status =
+        quiz_vulkan::assets::asset_render_resource_materialized_cache_status::ready)
+{
+    using namespace quiz_vulkan::assets;
+
+    asset_cache_key cache_key = make_asset_cache_key(type, source_uri);
+    if (!cache_revision.empty()) {
+        cache_key.append("|rev=");
+        cache_key.append(cache_revision);
+    }
+
+    std::string runtime_cache_key;
+    if (status == asset_render_resource_materialized_cache_status::ready) {
+        runtime_cache_key = "render-resource|";
+        runtime_cache_key.append(asset_type_token(type));
+        runtime_cache_key.push_back('|');
+        runtime_cache_key.append(source_uri);
+        runtime_cache_key.push_back('|');
+        runtime_cache_key.append(cache_key);
+        runtime_cache_key.append("|hash=");
+        runtime_cache_key.append(content_hash);
+    }
+
+    return asset_render_resource_materialized_cache_entry{
+        .status = status,
+        .id = std::move(id),
+        .type = type,
+        .canonical_identity = source_uri,
+        .cache_key = std::move(cache_key),
+        .source_uri = std::move(source_uri),
+        .materialized_path = std::move(materialized_path).lexically_normal(),
+        .byte_count = status == asset_render_resource_materialized_cache_status::ready ? byte_count : 0U,
+        .payload_byte_count = status == asset_render_resource_materialized_cache_status::ready ? byte_count : 0U,
+        .content_hash = status == asset_render_resource_materialized_cache_status::ready ? std::move(content_hash)
+                                                                                        : std::string{},
+        .runtime_cache_key = std::move(runtime_cache_key),
+        .diagnostic = status == asset_render_resource_materialized_cache_status::ready
+            ? "test render cache entry ready"
+            : "test render cache entry blocked",
+    };
+}
+
 bool shader_pipeline_issue_at(
     const quiz_vulkan::assets::asset_shader_materialized_byte_pipeline_entry& entry,
     std::size_t index,
@@ -1728,6 +1778,192 @@ void test_materialized_asset_byte_payload_bundle_diff_tracks_snapshot_changes()
         "payload bundle diff keeps before and after status");
 }
 
+void test_runtime_payload_manifest_summary_lists_engine_payload_identities()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+
+    asset_materialized_byte_payload_bundle before;
+    before.skipped_generic_count = 2U;
+    before.fonts.ready.push_back(make_payload_bundle_entry(
+        "body_font",
+        asset_type::font,
+        "asset://fonts/body.ttf",
+        fixture_root / "before" / "fonts" / "body.ttf",
+        "font bytes",
+        "hash:font"));
+    asset_materialized_byte_payload before_image = make_payload_bundle_entry(
+        "card_front",
+        asset_type::image,
+        "asset://cards/front.png",
+        fixture_root / "before" / "cards" / "front.png",
+        "image bytes",
+        "hash:image-old");
+    before_image.cache_key = "image|asset://cards/front.png|rev=1";
+    before.images.ready.push_back(std::move(before_image));
+    before.shaders.blocked.push_back(make_payload_bundle_entry(
+        "ui_shader",
+        asset_type::shader,
+        "asset://shaders/ui.vert.spv",
+        fixture_root / "before" / "shaders" / "ui.vert.spv",
+        "",
+        "hash:shader-missing",
+        asset_materialized_bytes_handoff_status::materialization_blocked));
+    before.decks.ready.push_back(make_payload_bundle_entry(
+        "main_deck",
+        asset_type::deck,
+        "asset://decks/main.quiz",
+        fixture_root / "before" / "decks" / "main.quiz",
+        "deck bytes",
+        "hash:deck"));
+
+    asset_materialized_byte_payload_bundle after;
+    after.skipped_generic_count = 2U;
+    after.fonts.ready.push_back(make_payload_bundle_entry(
+        "body_font",
+        asset_type::font,
+        "asset://fonts/body.ttf",
+        fixture_root / "after" / "fonts" / "body.ttf",
+        "font bytes",
+        "hash:font"));
+    asset_materialized_byte_payload after_image = make_payload_bundle_entry(
+        "card_front",
+        asset_type::image,
+        "asset://cards/front.png",
+        fixture_root / "after" / "cards" / "front.png",
+        "image bytes!",
+        "hash:image-new");
+    after_image.cache_key = "image|asset://cards/front.png|rev=2";
+    after.images.ready.push_back(std::move(after_image));
+    after.shaders.ready.push_back(make_payload_bundle_entry(
+        "ui_shader",
+        asset_type::shader,
+        "asset://shaders/ui.vert.spv",
+        fixture_root / "after" / "shaders" / "ui.vert.spv",
+        "shader bytes",
+        "hash:shader-ready"));
+    after.sounds.ready.push_back(make_payload_bundle_entry(
+        "answer_sound",
+        asset_type::sound,
+        "asset://sounds/correct.ogg",
+        fixture_root / "after" / "sounds" / "correct.ogg",
+        "sound bytes",
+        "hash:sound"));
+
+    const asset_runtime_payload_manifest_summary before_manifest =
+        summarize_asset_runtime_payload_manifest(before);
+    const asset_runtime_payload_manifest_summary after_manifest =
+        summarize_asset_runtime_payload_manifest(after);
+    const asset_runtime_payload_manifest_diff_summary diff =
+        diff_asset_runtime_payload_manifests(before_manifest, after_manifest);
+    const asset_runtime_payload_manifest_diff_summary bundle_diff =
+        diff_asset_runtime_payload_manifests(before, after);
+
+    require(!before_manifest.ok(), "runtime payload manifest reports blocked payloads");
+    require(after_manifest.ok(), "runtime payload manifest accepts ready payloads");
+    require(before_manifest.entry_count() == 4U, "runtime payload manifest lists before payloads");
+    require(after_manifest.entry_count() == 4U, "runtime payload manifest lists after payloads");
+    require(before_manifest.ready_count == 3U, "runtime payload manifest counts ready payloads");
+    require(before_manifest.blocked_count == 1U, "runtime payload manifest counts blocked payloads");
+    require(before_manifest.font_count == 1U, "runtime payload manifest counts font payloads");
+    require(before_manifest.image_count == 1U, "runtime payload manifest counts image payloads");
+    require(before_manifest.shader_count == 1U, "runtime payload manifest counts shader payloads");
+    require(before_manifest.deck_count == 1U, "runtime payload manifest counts deck payloads");
+    require(before_manifest.sound_count == 0U, "runtime payload manifest handles absent sound payloads");
+    require(before_manifest.revisioned_count == 1U, "runtime payload manifest counts revisioned cache keys");
+    require(before_manifest.missing_revision_count == 3U, "runtime payload manifest counts missing revisions");
+    require(before_manifest.skipped_generic_count == 2U, "runtime payload manifest preserves skipped generics");
+
+    const asset_runtime_payload_manifest_entry* font = before_manifest.find_entry("body_font");
+    require(font != nullptr, "runtime payload manifest can find font entries");
+    require(font->ok(), "runtime payload manifest marks ready font entries ok");
+    require(font->type == asset_type::font, "runtime payload manifest preserves asset type");
+    require(font->source_uri == "asset://fonts/body.ttf", "runtime payload manifest preserves source uri");
+    require(font->cache_key == "font|asset://fonts/body.ttf", "runtime payload manifest preserves cache key");
+    require(font->cache_revision.empty(), "runtime payload manifest exposes missing revision");
+    require(font->content_hash == "hash:font", "runtime payload manifest preserves content hash");
+    require(font->byte_count == 10U, "runtime payload manifest preserves reported byte count");
+    require(font->payload_byte_count == 10U, "runtime payload manifest preserves owned byte count");
+    require(font->blocker_summary == "ready", "runtime payload manifest records ready blocker summary");
+    require(
+        before_manifest.find_stable_manifest_identity(font->stable_manifest_identity) == font,
+        "runtime payload manifest can find entries by stable identity");
+    require(
+        font->stable_manifest_identity.find(fixture_root.string()) == std::string::npos,
+        "runtime payload manifest identity omits absolute host paths");
+
+    const asset_runtime_payload_manifest_entry* image = before_manifest.find_entry("card_front");
+    require(image != nullptr, "runtime payload manifest can find image entries");
+    require(image->cache_revision == "1", "runtime payload manifest parses image cache revision");
+    require(
+        image->stable_manifest_identity.find(fixture_root.string()) == std::string::npos,
+        "revised runtime payload manifest identity omits absolute host paths");
+
+    const asset_runtime_payload_manifest_entry* shader = before_manifest.find_entry("ui_shader");
+    require(shader != nullptr, "runtime payload manifest can find shader entries");
+    require(!shader->ready, "runtime payload manifest records blocked shader readiness");
+    require(shader->blocker_summary == "materialization_blocked", "runtime payload manifest summarizes blockers");
+    require(
+        shader->status == asset_materialized_bytes_handoff_status::materialization_blocked,
+        "runtime payload manifest preserves blocked status");
+
+    require(!diff.empty(), "runtime payload manifest diff reports changed payload identities");
+    require(diff.change_count() == 4U, "runtime payload manifest diff counts added removed and changed entries");
+    require(bundle_diff.change_count() == diff.change_count(), "bundle manifest diff matches summary diff");
+    require(diff.added.size() == 1U, "runtime payload manifest diff records added payloads");
+    require(diff.removed.size() == 1U, "runtime payload manifest diff records removed payloads");
+    require(diff.changed.size() == 2U, "runtime payload manifest diff records changed payloads");
+    require(diff.ready_delta == 1, "runtime payload manifest diff records ready count changes");
+    require(diff.blocked_delta == -1, "runtime payload manifest diff records blocked count changes");
+    require(diff.revisioned_delta == 0, "runtime payload manifest diff keeps revision count stable");
+    require(diff.missing_revision_delta == 0, "runtime payload manifest diff keeps missing revision count stable");
+
+    const asset_runtime_payload_manifest_diff_entry* added = diff.find_added("answer_sound");
+    require(added != nullptr, "runtime payload manifest diff finds added sounds");
+    require(
+        added->kind == asset_runtime_payload_manifest_delta_kind::added,
+        "runtime payload manifest diff marks additions");
+    require(added->type == asset_type::sound, "runtime payload manifest diff records added type");
+    require(!added->before.has_value() && added->after.has_value(), "added manifest diff only keeps after entry");
+    require(added->after->stable_manifest_identity.find(fixture_root.string()) == std::string::npos,
+        "added runtime payload manifest identity omits absolute host paths");
+
+    const asset_runtime_payload_manifest_diff_entry* removed = diff.find_removed("main_deck");
+    require(removed != nullptr, "runtime payload manifest diff finds removed decks");
+    require(
+        asset_runtime_payload_manifest_delta_kind_name(removed->kind) == "removed",
+        "runtime payload manifest delta names are stable");
+    require(removed->type == asset_type::deck, "runtime payload manifest diff records removed type");
+    require(removed->before.has_value() && !removed->after.has_value(), "removed manifest diff only keeps before entry");
+
+    const asset_runtime_payload_manifest_diff_entry* changed_image = diff.find_changed("card_front");
+    require(changed_image != nullptr, "runtime payload manifest diff finds changed image payloads");
+    require(changed_image->cache_key_changed, "runtime payload manifest diff records cache-key changes");
+    require(changed_image->cache_revision_changed, "runtime payload manifest diff records revision changes");
+    require(changed_image->content_hash_changed, "runtime payload manifest diff records hash changes");
+    require(changed_image->byte_count_changed, "runtime payload manifest diff records byte-count changes");
+    require(changed_image->payload_byte_count_changed, "runtime payload manifest diff records payload byte-count changes");
+    require(
+        changed_image->stable_manifest_identity_changed,
+        "runtime payload manifest diff records stable identity changes");
+    require(!changed_image->readiness_changed, "runtime payload manifest diff leaves stable readiness unchanged");
+
+    const asset_runtime_payload_manifest_diff_entry* changed_shader = diff.find_changed("ui_shader");
+    require(changed_shader != nullptr, "runtime payload manifest diff finds blocked-to-ready shader payloads");
+    require(changed_shader->status_changed, "runtime payload manifest diff records status changes");
+    require(changed_shader->readiness_changed, "runtime payload manifest diff records readiness changes");
+    require(changed_shader->blocker_summary_changed, "runtime payload manifest diff records blocker summary changes");
+    require(changed_shader->content_hash_changed, "runtime payload manifest diff records shader content hash changes");
+    require(changed_shader->stable_manifest_identity_changed, "runtime payload manifest diff records shader identity changes");
+    require(changed_shader->before->blocker_summary == "materialization_blocked", "runtime payload manifest keeps old blocker");
+    require(changed_shader->after->blocker_summary == "ready", "runtime payload manifest keeps new blocker");
+    require(changed_shader->has_field_delta(), "runtime payload manifest diff reports field changes");
+
+    const asset_runtime_payload_manifest_diff_entry* unchanged_font = diff.find_changed("body_font");
+    require(unchanged_font == nullptr, "host path movement alone does not change runtime manifest identity");
+}
+
 void test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads()
 {
     using namespace quiz_vulkan::assets;
@@ -2166,6 +2402,391 @@ void test_shader_byte_pipeline_source_summary_combines_manifest_fallback_and_pay
         "stale shader diagnostic is stable");
 }
 
+void test_shader_payload_runtime_summary_tracks_stage_revision_and_cache_identity()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    const std::filesystem::path before_root = fixture_root / "runtime-before";
+    const std::filesystem::path after_root = fixture_root / "runtime-after";
+    const std::string spirv_a = bytes_to_string(make_spirv_fixture_bytes());
+    std::string spirv_b = spirv_a;
+    spirv_b.push_back(static_cast<char>(0x01));
+
+    write_fixture_file(before_root / "external" / "shaders" / "stable.vert.spv", spirv_a);
+    write_fixture_file(before_root / "external" / "shaders" / "revision.vert.spv", spirv_a);
+    write_fixture_file(before_root / "external" / "shaders" / "effect.frag.spv", spirv_a);
+    write_fixture_file(before_root / "external" / "shaders" / "task.comp.spv", spirv_a);
+    write_fixture_file(after_root / "external" / "shaders" / "stable.vert.spv", spirv_a);
+    write_fixture_file(after_root / "external" / "shaders" / "revision.vert.spv", spirv_a);
+    write_fixture_file(after_root / "external" / "shaders" / "effect.frag.spv", spirv_b);
+    write_fixture_file(after_root / "external" / "shaders" / "task.comp.spv", spirv_a);
+
+    const auto make_runtime_summary =
+        [](const std::filesystem::path& root, std::string shader_revision) {
+            asset_manifest manifest;
+            manifest.roots.push_back(asset_manifest_root{
+                .id = "external_shader_pack",
+                .root_path = root / "external",
+            });
+            manifest.entries.push_back(asset_manifest_entry{
+                .id = "stable_vertex",
+                .type = asset_type::shader,
+                .uri = "asset://shaders/stable.vert.spv",
+                .root_id = "external_shader_pack",
+            });
+            manifest.entries.push_back(asset_manifest_entry{
+                .id = "revision_vertex",
+                .type = asset_type::shader,
+                .uri = "asset://shaders/revision.vert.spv",
+                .root_id = "external_shader_pack",
+                .cache_revision = std::move(shader_revision),
+            });
+            manifest.entries.push_back(asset_manifest_entry{
+                .id = "changed_fragment",
+                .type = asset_type::shader,
+                .uri = "asset://shaders/effect.frag.spv",
+                .root_id = "external_shader_pack",
+                .cache_revision = "fragment-rev1",
+            });
+            manifest.entries.push_back(asset_manifest_entry{
+                .id = "compute_shader",
+                .type = asset_type::shader,
+                .uri = "asset://shaders/task.comp.spv",
+                .root_id = "external_shader_pack",
+            });
+
+            const normalizing_asset_resolver resolver;
+            const local_file_asset_bytes_provider provider;
+            const runtime_asset_catalog catalog = build_runtime_asset_catalog(manifest, resolver);
+            const asset_materialized_byte_payload_bundle bundle =
+                make_materialized_asset_byte_payload_bundle(provider, catalog);
+            const asset_shader_materialized_byte_pipeline_summary shader_pipeline =
+                summarize_shader_materialized_byte_pipeline(bundle);
+            const asset_runtime_resolver_policy_summary resolver_policy =
+                summarize_asset_runtime_resolver_policy(manifest, resolver);
+            const asset_pack_index_root_selection_summary root_selection =
+                summarize_asset_pack_index_root_selection(manifest);
+            const asset_shader_byte_pipeline_source_summary source_summary =
+                summarize_shader_byte_pipeline_sources(shader_pipeline, resolver_policy, root_selection);
+            return summarize_shader_payload_runtime(source_summary);
+        };
+
+    const asset_shader_payload_runtime_summary before =
+        make_runtime_summary(before_root, "shader-rev1");
+    const asset_shader_payload_runtime_summary after =
+        make_runtime_summary(after_root, "shader-rev2");
+    const asset_shader_payload_runtime_diff_summary diff =
+        diff_shader_payload_runtime_summaries(before, after);
+
+    require(before.ok(), "shader runtime summary starts with ready shader byte entries");
+    require(after.ok(), "updated shader runtime summary starts with ready shader byte entries");
+    require(before.entry_count() == 4U, "shader runtime summary emits every shader payload");
+    require(before.ready_count() == 4U, "shader runtime summary keeps valid shader payloads ready");
+    require(before.blocked_count() == 0U, "shader runtime summary has no blocked valid shader payloads");
+    require(before.vertex_stage_count == 2U, "shader runtime summary counts vertex-like shader payloads");
+    require(before.fragment_stage_count == 1U, "shader runtime summary counts fragment-like shader payloads");
+    require(before.compute_stage_count == 1U, "shader runtime summary counts compute-like shader payloads");
+    require(before.unknown_stage_count == 0U, "shader runtime summary classifies known shader stages");
+    require(before.revisioned_count == 2U, "shader runtime summary counts revised shader cache keys");
+    require(before.missing_revision_count == 2U, "shader runtime summary counts shader keys without revisions");
+
+    const asset_shader_payload_runtime_entry* stable_before = before.find_ready("stable_vertex");
+    const asset_shader_payload_runtime_entry* stable_after = after.find_ready("stable_vertex");
+    require(stable_before != nullptr && stable_after != nullptr, "shader runtime summary finds stable shader payloads");
+    require(stable_before->ok() && stable_after->ok(), "stable shader runtime entries are consumer-ready");
+    require(
+        stable_before->stage == asset_shader_payload_runtime_stage::vertex,
+        "stable shader runtime entry infers vertex stage from source uri");
+    require(stable_before->cache_revision.empty(), "stable shader runtime entry has no revision token");
+    require(
+        stable_before->runtime_identity == stable_after->runtime_identity,
+        "unchanged shader bytes reuse stable runtime identity across materialized roots");
+    require(
+        stable_before->materialized_path != stable_after->materialized_path,
+        "stable shader runtime evidence can move between materialized roots");
+    require(
+        stable_before->cache_key == stable_after->cache_key,
+        "stable shader runtime evidence keeps the same cache key");
+    require(
+        stable_before->content_hash == stable_after->content_hash,
+        "stable shader runtime evidence keeps the same content hash");
+    require(
+        stable_before->runtime_identity.find(fixture_root.string()) == std::string::npos
+            && stable_after->runtime_identity.find(fixture_root.string()) == std::string::npos,
+        "shader runtime identity does not leak absolute fixture paths");
+    require(
+        before.find_runtime_identity(stable_before->runtime_identity) == stable_before,
+        "shader runtime summary can find ready entries by runtime identity");
+
+    const asset_shader_payload_runtime_entry* revision_before = before.find_ready("revision_vertex");
+    const asset_shader_payload_runtime_entry* revision_after = after.find_ready("revision_vertex");
+    require(
+        revision_before != nullptr && revision_after != nullptr,
+        "shader runtime summary finds revisioned shader payloads");
+    require(
+        revision_before->cache_revision == "shader-rev1" && revision_after->cache_revision == "shader-rev2",
+        "shader runtime entries expose parsed cache revisions");
+    require(
+        revision_before->content_hash == revision_after->content_hash,
+        "revisioned shader fixture keeps identical byte hash evidence");
+    require(
+        revision_before->runtime_identity != revision_after->runtime_identity,
+        "shader revision changes invalidate runtime identity even when bytes are unchanged");
+
+    const asset_shader_payload_runtime_entry* fragment_before = before.find_ready("changed_fragment");
+    const asset_shader_payload_runtime_entry* fragment_after = after.find_ready("changed_fragment");
+    require(
+        fragment_before != nullptr && fragment_after != nullptr,
+        "shader runtime summary finds content-changing shader payloads");
+    require(
+        fragment_before->stage == asset_shader_payload_runtime_stage::fragment,
+        "shader runtime entry infers fragment stage from source uri");
+    require(
+        fragment_before->cache_revision == fragment_after->cache_revision,
+        "content-changing shader keeps stable manifest revision token");
+    require(
+        fragment_before->content_hash != fragment_after->content_hash,
+        "content-changing shader records changed hash evidence");
+    require(
+        fragment_before->runtime_identity != fragment_after->runtime_identity,
+        "changed shader bytes invalidate runtime identity");
+
+    const asset_shader_payload_runtime_entry* compute = before.find_ready("compute_shader");
+    require(compute != nullptr, "shader runtime summary finds compute shader payloads");
+    require(
+        compute->stage == asset_shader_payload_runtime_stage::compute,
+        "shader runtime entry infers compute stage from source uri");
+    require(
+        asset_shader_payload_runtime_stage_name(compute->stage) == "compute",
+        "shader runtime stage names are stable");
+
+    require(!diff.empty(), "shader runtime diff reports revision and content invalidation evidence");
+    require(diff.change_count() == 2U, "shader runtime diff counts changed shader payload identities");
+    require(diff.invalidation_count() == 2U, "shader runtime diff counts invalidating shader payload changes");
+    require(diff.reused.size() == 2U, "shader runtime diff records unchanged shader payloads as reused");
+    require(diff.replaced.size() == 2U, "shader runtime diff records revision and content changes as replacements");
+    require(diff.added.empty(), "shader runtime diff has no added entries for stable id sets");
+    require(diff.removed.empty(), "shader runtime diff has no removed entries for stable id sets");
+    require(diff.invalidated.empty(), "shader runtime diff has no blocked transitions for ready-only fixtures");
+    require(diff.ready_delta == 0, "shader runtime diff keeps ready count delta stable");
+    require(diff.blocked_delta == 0, "shader runtime diff keeps blocked count delta stable");
+    require(diff.missing_revision_delta == 0, "shader runtime diff keeps missing revision count delta stable");
+
+    const asset_shader_payload_runtime_diff_entry* stable = diff.find_reused("stable_vertex");
+    require(stable != nullptr, "shader runtime diff finds stable shader payloads");
+    require(
+        stable->kind == asset_shader_payload_runtime_delta_kind::reused,
+        "shader runtime diff marks unchanged runtime identities as reused");
+    require(!stable->invalidates(), "reused shader runtime entries do not invalidate cache identity");
+    require(stable->before_missing_revision, "reused shader diff records missing revision before");
+    require(stable->after_missing_revision, "reused shader diff records missing revision after");
+    require(!stable->missing_revision_changed, "unchanged missing revision state is not a replacement");
+    require(stable->materialized_path_changed, "reused shader diff records host path movement separately");
+    require(!stable->cache_key_changed, "host path movement does not alter shader cache key");
+    require(!stable->content_hash_changed, "unchanged shader bytes keep content hash evidence");
+    require(!stable->runtime_identity_changed, "unchanged shader bytes keep runtime identity");
+    require(
+        stable->before->runtime_identity.find(fixture_root.string()) == std::string::npos
+            && stable->after->runtime_identity.find(fixture_root.string()) == std::string::npos,
+        "reused shader runtime identities do not leak absolute fixture paths");
+
+    const asset_shader_payload_runtime_diff_entry* revision = diff.find_replaced("revision_vertex");
+    require(revision != nullptr, "shader runtime diff finds revision changes");
+    require(revision->invalidates(), "shader revision changes invalidate runtime identity");
+    require(revision->cache_key_changed, "shader revision diff records cache key change");
+    require(revision->cache_revision_changed, "shader revision diff records revision token change");
+    require(!revision->missing_revision_changed, "revision replacement keeps revision presence stable");
+    require(!revision->content_hash_changed, "shader revision diff can keep byte content unchanged");
+    require(revision->runtime_identity_changed, "shader revision changes runtime identity");
+    require(
+        revision->invalidated_runtime_identity == revision->before->runtime_identity,
+        "shader revision diff records invalidated runtime identity");
+    require(
+        revision->replacement_runtime_identity == revision->after->runtime_identity,
+        "shader revision diff records replacement runtime identity");
+
+    const asset_shader_payload_runtime_diff_entry* fragment = diff.find_replaced("changed_fragment");
+    require(fragment != nullptr, "shader runtime diff finds content changes");
+    require(fragment->invalidates(), "shader content changes invalidate runtime identity");
+    require(!fragment->cache_key_changed, "shader content change can keep cache key stable");
+    require(!fragment->cache_revision_changed, "shader content change can keep revision token stable");
+    require(fragment->content_hash_changed, "shader content diff records hash change");
+    require(fragment->payload_byte_count_changed, "shader content diff records payload byte-count change");
+    require(fragment->runtime_identity_changed, "shader content diff records runtime identity change");
+    require(
+        asset_shader_payload_runtime_delta_kind_name(fragment->kind) == "replaced",
+        "shader runtime diff delta names are stable");
+}
+
+void test_shader_payload_runtime_diff_tracks_stage_revision_and_readiness_changes()
+{
+    using namespace quiz_vulkan::assets;
+
+    const auto make_ready_entry = [](
+        std::string id,
+        asset_shader_payload_runtime_stage stage,
+        std::string source_uri,
+        std::string cache_revision) {
+        asset_cache_key cache_key = make_asset_cache_key(asset_type::shader, source_uri);
+        if (!cache_revision.empty()) {
+            cache_key += "|rev=" + cache_revision;
+        }
+        const std::string content_hash = "hash:" + id;
+        const std::string runtime_identity = "shader-runtime|stage="
+            + asset_shader_payload_runtime_stage_name(stage) + "|key=" + cache_key + "|hash="
+            + content_hash + "|bytes=8";
+        return asset_shader_payload_runtime_entry{
+            .id = std::move(id),
+            .stage = stage,
+            .source_kind = asset_shader_byte_pipeline_source_kind::manifest,
+            .blocker = asset_shader_byte_pipeline_blocker_kind::none,
+            .cache_key = std::move(cache_key),
+            .source_uri = std::move(source_uri),
+            .materialized_path = "/tmp/asset-test/shaders/runtime.spv",
+            .byte_count = 8U,
+            .payload_byte_count = 8U,
+            .content_hash = content_hash,
+            .cache_revision = std::move(cache_revision),
+            .materialized_byte_identity = "materialized:" + content_hash,
+            .runtime_identity = runtime_identity,
+            .ready = true,
+            .diagnostic = "test shader runtime entry ready",
+        };
+    };
+    const auto make_blocked_entry = [&make_ready_entry](
+        std::string id,
+        asset_shader_payload_runtime_stage stage,
+        std::string source_uri,
+        std::string cache_revision) {
+        asset_shader_payload_runtime_entry entry = make_ready_entry(
+            std::move(id),
+            stage,
+            std::move(source_uri),
+            std::move(cache_revision));
+        entry.blocker = asset_shader_byte_pipeline_blocker_kind::byte_load_blocked;
+        entry.runtime_identity.clear();
+        entry.ready = false;
+        entry.diagnostic = "test shader runtime entry blocked";
+        return entry;
+    };
+
+    asset_shader_payload_runtime_summary before{
+        .ready = {
+            make_ready_entry(
+                "stage_shader",
+                asset_shader_payload_runtime_stage::vertex,
+                "asset://shaders/stage.vert.spv",
+                "stage-rev1"),
+            make_ready_entry(
+                "ready_to_blocked",
+                asset_shader_payload_runtime_stage::fragment,
+                "asset://shaders/ready-to-block.frag.spv",
+                ""),
+            make_ready_entry(
+                "revision_added",
+                asset_shader_payload_runtime_stage::compute,
+                "asset://shaders/revision-added.comp.spv",
+                ""),
+        },
+        .blocked = {
+            make_blocked_entry(
+                "blocked_to_ready",
+                asset_shader_payload_runtime_stage::vertex,
+                "asset://shaders/repaired.vert.spv",
+                ""),
+        },
+        .input_shader_count = 4U,
+        .requested_shader_count = 4U,
+        .vertex_stage_count = 2U,
+        .fragment_stage_count = 1U,
+        .compute_stage_count = 1U,
+        .revisioned_count = 1U,
+        .missing_revision_count = 3U,
+    };
+    asset_shader_payload_runtime_summary after{
+        .ready = {
+            make_ready_entry(
+                "stage_shader",
+                asset_shader_payload_runtime_stage::fragment,
+                "asset://shaders/stage.frag.spv",
+                "stage-rev1"),
+            make_ready_entry(
+                "blocked_to_ready",
+                asset_shader_payload_runtime_stage::vertex,
+                "asset://shaders/repaired.vert.spv",
+                ""),
+            make_ready_entry(
+                "revision_added",
+                asset_shader_payload_runtime_stage::compute,
+                "asset://shaders/revision-added.comp.spv",
+                "compute-rev1"),
+        },
+        .blocked = {
+            make_blocked_entry(
+                "ready_to_blocked",
+                asset_shader_payload_runtime_stage::fragment,
+                "asset://shaders/ready-to-block.frag.spv",
+                ""),
+        },
+        .input_shader_count = 4U,
+        .requested_shader_count = 4U,
+        .vertex_stage_count = 1U,
+        .fragment_stage_count = 2U,
+        .compute_stage_count = 1U,
+        .revisioned_count = 2U,
+        .missing_revision_count = 2U,
+    };
+
+    const asset_shader_payload_runtime_diff_summary diff =
+        diff_shader_payload_runtime_summaries(before, after);
+
+    require(!diff.empty(), "shader runtime diff reports stage revision and readiness changes");
+    require(diff.change_count() == 4U, "shader runtime diff counts all changing entries");
+    require(diff.invalidation_count() == 3U, "shader runtime diff counts replacements and invalidations");
+    require(diff.reused.empty(), "synthetic shader runtime diff has no reused entries");
+    require(diff.added.size() == 1U, "shader runtime diff reports blocked to ready as added readiness");
+    require(diff.replaced.size() == 2U, "shader runtime diff reports stage and revision-presence replacements");
+    require(diff.invalidated.size() == 1U, "shader runtime diff reports ready to blocked invalidation");
+    require(diff.removed.empty(), "shader runtime diff has no removed entries");
+    require(diff.ready_delta == 0, "shader runtime diff keeps ready count delta stable across transitions");
+    require(diff.blocked_delta == 0, "shader runtime diff keeps blocked count delta stable across transitions");
+    require(diff.missing_revision_delta == -1, "shader runtime diff records missing revision count changes");
+
+    const asset_shader_payload_runtime_diff_entry* stage = diff.find_replaced("stage_shader");
+    require(stage != nullptr, "shader runtime diff finds stage changes");
+    require(stage->stage_changed, "shader runtime diff records stage changes");
+    require(stage->cache_key_changed, "shader runtime diff records stage source cache key changes");
+    require(!stage->cache_revision_changed, "stage changes can keep revision token stable");
+    require(stage->runtime_identity_changed, "stage changes replace runtime identity");
+    require(!stage->before_missing_revision && !stage->after_missing_revision, "stage change keeps revision present");
+
+    const asset_shader_payload_runtime_diff_entry* revision = diff.find_replaced("revision_added");
+    require(revision != nullptr, "shader runtime diff finds missing revision changes");
+    require(revision->cache_key_changed, "missing revision change updates cache key");
+    require(revision->cache_revision_changed, "missing revision change records revision token change");
+    require(revision->missing_revision_changed, "shader runtime diff detects missing revision changes");
+    require(revision->before_missing_revision && !revision->after_missing_revision, "revision presence is explicit");
+    require(revision->runtime_identity_changed, "revision presence change replaces runtime identity");
+
+    const asset_shader_payload_runtime_diff_entry* repaired = diff.find_added("blocked_to_ready");
+    require(repaired != nullptr, "shader runtime diff finds blocked to ready transitions");
+    require(!repaired->invalidates(), "blocked to ready transition does not invalidate a previous runtime identity");
+    require(repaired->readiness_changed, "blocked to ready diff records readiness change");
+    require(repaired->blocker_changed, "blocked to ready diff records blocker change");
+    require(repaired->replacement_runtime_identity == repaired->after->runtime_identity, "ready transition records new identity");
+
+    const asset_shader_payload_runtime_diff_entry* blocked = diff.find_invalidated("ready_to_blocked");
+    require(blocked != nullptr, "shader runtime diff finds ready to blocked transitions");
+    require(blocked->invalidates(), "ready to blocked transition invalidates previous runtime identity");
+    require(blocked->readiness_changed, "ready to blocked diff records readiness change");
+    require(blocked->blocker_changed, "ready to blocked diff records blocker change");
+    require(
+        blocked->invalidated_runtime_identity == blocked->before->runtime_identity,
+        "ready to blocked transition records invalidated runtime identity");
+    require(blocked->replacement_runtime_identity.empty(), "blocked replacement has no runtime identity");
+}
+
 void test_render_resource_payload_bridge_matches_addresses_to_materialized_payloads()
 {
     using namespace quiz_vulkan::assets;
@@ -2375,6 +2996,791 @@ void test_render_resource_payload_bridge_matches_addresses_to_materialized_paylo
         asset_render_resource_payload_bridge_status_name(duplicate_b->status)
             == "duplicate_canonical_identity",
         "render resource payload bridge status names are stable");
+}
+
+void test_render_resource_manifest_to_payload_bridge_e2e_uses_materialized_bytes()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    write_fixture_file(fixture_root / "packaged" / "cards" / "front.png", "image bytes");
+    write_fixture_file(fixture_root / "packaged" / "fonts" / "body.ttf", "font bytes");
+    write_fixture_file(fixture_root / "build" / "external" / "shader_pack" / "shaders" / "ui.vert.spv", "shader bytes");
+
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .root_path = fixture_root / "packaged",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "external_shader_pack",
+        .root_path = fixture_root / "build" / "external" / "shader_pack",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "ASSET:///cards/./front.png",
+        .root_id = "packaged",
+        .cache_revision = "image-rev1",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "body_font",
+        .type = asset_type::font,
+        .uri = "asset://fonts/body.ttf",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "ui_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/ui.vert.spv",
+        .root_id = "external_shader_pack",
+        .cache_revision = "shader-rev2",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "bad_traversal",
+        .type = asset_type::image,
+        .uri = "asset://cards/%2e%2e/secret.png",
+        .root_id = "packaged",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const runtime_asset_catalog catalog = build_runtime_asset_catalog(manifest, resolver);
+    const local_file_asset_bytes_provider provider;
+    const asset_typed_materialized_bytes_summary typed =
+        summarize_typed_materialized_asset_bytes(provider, catalog);
+    const asset_materialized_byte_payload_bundle bundle =
+        make_materialized_asset_byte_payload_bundle(provider, catalog);
+    const asset_render_resource_address_summary addresses =
+        summarize_asset_render_resource_addresses(manifest, resolver);
+    const asset_render_resource_payload_bridge_summary bridge =
+        bridge_asset_render_resource_addresses_to_payloads(addresses, bundle);
+
+    require(!catalog.ok(), "runtime catalog preserves traversal diagnostics alongside valid entries");
+    require(catalog.assets.size() == 3U, "runtime catalog keeps only valid materializable render resources");
+    require(catalog.find("bad_traversal") == nullptr, "runtime catalog omits traversal entries");
+    require(catalog.find_diagnostic("bad_traversal") != nullptr, "runtime catalog records traversal diagnostic");
+
+    require(typed.ok(), "typed materialized bytes summary accepts valid manifest entries");
+    require(typed.entry_count() == 3U, "typed materialized bytes summary groups image font and shader entries");
+    require(typed.cache_policy.loaded_count == 3U, "typed materialized bytes summary loads all valid entries");
+    require(typed.cache_policy.failed_count == 0U, "typed materialized bytes summary has no valid-entry failures");
+    require(typed.images.size() == 1U, "typed materialized bytes summary keeps image group");
+    require(typed.fonts.size() == 1U, "typed materialized bytes summary keeps font group");
+    require(typed.shaders.size() == 1U, "typed materialized bytes summary keeps shader group");
+
+    require(bundle.ok(), "materialized byte payload bundle is ready for valid entries");
+    require(bundle.ready_count() == 3U, "payload bundle keeps ready image font and shader bytes");
+    require(bundle.blocked_count() == 0U, "payload bundle has no blocked valid entries");
+    require(bundle.images.find_ready("card_front") != nullptr, "payload bundle exposes ready image bytes");
+    require(bundle.fonts.find_ready("body_font") != nullptr, "payload bundle exposes ready font bytes");
+    require(bundle.shaders.find_ready("ui_shader") != nullptr, "payload bundle exposes ready shader bytes");
+
+    require(!addresses.ok(), "render resource address summary preserves traversal diagnostics");
+    require(addresses.entry_count() == 3U, "render resource address summary emits valid addresses only");
+    require(addresses.path_traversal_rejection_count == 1U, "render addresses count traversal rejection");
+    require(addresses.find_entry("bad_traversal") == nullptr, "render addresses omit traversal entries");
+
+    require(bridge.ok(), "render resource payload bridge accepts valid materialized manifest entries");
+    require(bridge.requested_address_count == 3U, "bridge considers every valid render resource address");
+    require(bridge.accepted_count == 3U, "bridge accepts image font and shader payloads");
+    require(bridge.blocked_count() == 0U, "bridge has no blocked valid payloads");
+
+    const asset_render_resource_payload_bridge_entry* image = bridge.find_accepted("card_front");
+    require(image != nullptr, "bridge finds accepted image from manifest address");
+    require(image->selected_snapshot.has_value(), "accepted image keeps compact selected payload snapshot");
+    require(image->selection.payload != nullptr, "accepted image keeps pointer to materialized payload bytes");
+    require(bytes_to_string(image->selection.payload->bytes) == "image bytes", "image bytes come from materialized payload");
+    require(image->address.canonical_identity == "asset://cards/front.png", "image keeps canonical asset uri identity");
+    require(
+        image->selected_snapshot->cache_key == "image|asset://cards/front.png|rev=image-rev1",
+        "image bridge keeps stable revised cache key");
+    require(
+        image->selected_snapshot->cache_key.find(fixture_root.string()) == std::string::npos,
+        "image cache key does not leak absolute fixture paths");
+    require(
+        image->selected_snapshot->materialized_path
+            == std::filesystem::absolute(fixture_root / "packaged" / "cards" / "front.png").lexically_normal(),
+        "image bridge keeps materialized path separately from cache identity");
+    require(
+        image->selected_snapshot->content_hash
+            == make_asset_bytes_content_hash(detail::make_asset_byte_vector("image bytes")),
+        "image bridge keeps loaded byte content hash");
+
+    const asset_render_resource_payload_bridge_entry* font = bridge.find_accepted("body_font");
+    require(font != nullptr, "bridge finds accepted font from manifest address");
+    require(bytes_to_string(font->selection.payload->bytes) == "font bytes", "font bytes come from materialized payload");
+    require(font->address.canonical_identity == "asset://fonts/body.ttf", "font keeps canonical asset uri identity");
+    require(font->selected_snapshot->cache_key == "font|asset://fonts/body.ttf", "font bridge keeps cache key");
+    require(
+        font->selected_snapshot->cache_key.find(fixture_root.string()) == std::string::npos,
+        "font cache key does not leak absolute fixture paths");
+
+    const asset_render_resource_payload_bridge_entry* shader = bridge.find_accepted("ui_shader");
+    require(shader != nullptr, "bridge finds accepted shader from manifest address");
+    require(
+        bytes_to_string(shader->selection.payload->bytes) == "shader bytes",
+        "shader bytes come from materialized payload");
+    require(
+        shader->address.canonical_identity == "asset://shaders/ui.vert.spv",
+        "shader keeps canonical asset uri identity");
+    require(
+        shader->selected_snapshot->cache_key == "shader|asset://shaders/ui.vert.spv|rev=shader-rev2",
+        "shader bridge keeps stable revised cache key");
+    require(
+        shader->selected_snapshot->cache_key.find(fixture_root.string()) == std::string::npos,
+        "shader cache key does not leak build-external fixture paths");
+    require(
+        shader->selected_snapshot->materialized_path
+            == std::filesystem::absolute(
+                   fixture_root / "build" / "external" / "shader_pack" / "shaders" / "ui.vert.spv")
+                   .lexically_normal(),
+        "shader bridge keeps build-external materialized path as payload evidence");
+
+    const runtime_materialized_asset_lookup_result missing_lookup =
+        lookup_runtime_materialized_asset(catalog, runtime_materialized_asset_lookup_request{
+            .id = "missing_card",
+            .expected_type = asset_type::image,
+        });
+    require(
+        missing_lookup.status == runtime_materialized_asset_lookup_status::missing_id,
+        "runtime materialized lookup reports missing manifest ids");
+    require(addresses.find_entry("missing_card") == nullptr, "missing manifest id has no render address");
+    require(bridge.find_entry("missing_card") == nullptr, "missing manifest id has no bridge entry");
+
+    const asset_materialized_byte_payload_selection_result missing_payload =
+        select_materialized_asset_byte_payload(bundle, asset_materialized_byte_payload_selection_request{
+            .id = "missing_card",
+            .expected_type = asset_type::image,
+        });
+    require(
+        missing_payload.status == asset_materialized_byte_payload_selection_status::missing_id,
+        "payload selection reports missing manifest-derived payload ids");
+
+    const runtime_materialized_asset_lookup_result wrong_lookup =
+        lookup_runtime_materialized_asset(catalog, runtime_materialized_asset_lookup_request{
+            .id = "card_front",
+            .expected_type = asset_type::font,
+        });
+    require(
+        wrong_lookup.status == runtime_materialized_asset_lookup_status::type_mismatch,
+        "runtime materialized lookup reports mismatched typed resource kinds");
+
+    const asset_materialized_byte_payload_selection_result wrong_selection =
+        select_materialized_asset_byte_payload(bundle, asset_materialized_byte_payload_selection_request{
+            .id = "card_front",
+            .expected_type = asset_type::font,
+        });
+    require(
+        wrong_selection.status == asset_materialized_byte_payload_selection_status::wrong_type,
+        "payload selection reports mismatched typed resource kinds");
+    require(wrong_selection.actual_type == asset_type::image, "wrong-kind payload selection keeps actual type evidence");
+
+    asset_materialized_byte_payload_bundle mismatched_bundle = bundle;
+    asset_materialized_byte_payload mismatched_payload = mismatched_bundle.images.ready.front();
+    mismatched_bundle.images.ready.clear();
+    mismatched_payload.type = asset_type::font;
+    mismatched_bundle.fonts.ready.push_back(std::move(mismatched_payload));
+
+    const asset_render_resource_payload_bridge_summary mismatched_bridge =
+        bridge_asset_render_resource_addresses_to_payloads(addresses, mismatched_bundle);
+    const asset_render_resource_payload_bridge_entry* wrong_bridge =
+        mismatched_bridge.find_blocked("card_front");
+    require(wrong_bridge != nullptr, "bridge reports mismatched typed resource kinds");
+    require(
+        wrong_bridge->status == asset_render_resource_payload_bridge_status::type_mismatch,
+        "bridge maps mismatched typed payloads to type mismatch status");
+    require(wrong_bridge->selection.actual_type == asset_type::font, "bridge keeps mismatched actual payload type");
+    require(wrong_bridge->selection.expected_type == asset_type::image, "bridge keeps expected render address type");
+}
+
+void test_render_resource_materialized_cache_summary_reuses_manifest_payload_identity()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    write_fixture_file(fixture_root / "packaged" / "cards" / "front.png", "image bytes");
+    write_fixture_file(fixture_root / "packaged" / "fonts" / "body.ttf", "font bytes");
+    write_fixture_file(fixture_root / "build" / "external" / "shader_pack" / "shaders" / "ui.vert.spv", "shader bytes");
+
+    asset_manifest manifest;
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "packaged",
+        .root_path = fixture_root / "packaged",
+    });
+    manifest.roots.push_back(asset_manifest_root{
+        .id = "external_shader_pack",
+        .root_path = fixture_root / "build" / "external" / "shader_pack",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "card_front",
+        .type = asset_type::image,
+        .uri = "ASSET:///cards/./front.png",
+        .root_id = "packaged",
+        .cache_revision = "image-rev1",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "body_font",
+        .type = asset_type::font,
+        .uri = "asset://fonts/body.ttf",
+        .root_id = "packaged",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "ui_shader",
+        .type = asset_type::shader,
+        .uri = "asset://shaders/ui.vert.spv",
+        .root_id = "external_shader_pack",
+        .cache_revision = "shader-rev2",
+    });
+    manifest.entries.push_back(asset_manifest_entry{
+        .id = "bad_traversal",
+        .type = asset_type::image,
+        .uri = "asset://cards/%2e%2e/secret.png",
+        .root_id = "packaged",
+    });
+
+    const normalizing_asset_resolver resolver;
+    const local_file_asset_bytes_provider provider;
+    const std::vector<asset_render_resource_materialized_cache_request> requests{
+        asset_render_resource_materialized_cache_request{
+            .id = "card_front",
+            .expected_type = asset_type::image,
+        },
+        asset_render_resource_materialized_cache_request{
+            .id = "body_font",
+            .expected_type = asset_type::font,
+        },
+        asset_render_resource_materialized_cache_request{
+            .id = "ui_shader",
+            .expected_type = asset_type::shader,
+        },
+        asset_render_resource_materialized_cache_request{
+            .id = "bad_traversal",
+            .expected_type = asset_type::image,
+        },
+        asset_render_resource_materialized_cache_request{
+            .id = "missing_card",
+            .expected_type = asset_type::image,
+        },
+        asset_render_resource_materialized_cache_request{
+            .id = "body_font",
+            .expected_type = asset_type::image,
+        },
+    };
+
+    const runtime_asset_catalog first_catalog = build_runtime_asset_catalog(manifest, resolver);
+    const asset_render_resource_address_summary first_addresses =
+        summarize_asset_render_resource_addresses(manifest, resolver);
+    const asset_materialized_byte_payload_bundle first_bundle =
+        make_materialized_asset_byte_payload_bundle(provider, first_catalog);
+    const asset_render_resource_materialized_cache_summary first_cache =
+        make_asset_render_resource_materialized_cache_summary(first_addresses, first_bundle, requests);
+
+    const runtime_asset_catalog second_catalog = build_runtime_asset_catalog(manifest, resolver);
+    const asset_render_resource_address_summary second_addresses =
+        summarize_asset_render_resource_addresses(manifest, resolver);
+    const asset_materialized_byte_payload_bundle second_bundle =
+        make_materialized_asset_byte_payload_bundle(provider, second_catalog);
+    const asset_render_resource_materialized_cache_summary second_cache =
+        make_asset_render_resource_materialized_cache_summary(second_addresses, second_bundle, requests);
+
+    require(!first_cache.ok(), "render resource materialized cache reports blocked request evidence");
+    require(first_cache.requested_count == 6U, "render resource materialized cache preserves request count");
+    require(first_cache.entry_count() == 6U, "render resource materialized cache emits one result per request");
+    require(first_cache.ready_count == 3U, "render resource materialized cache counts reusable payloads");
+    require(first_cache.blocked_count() == 3U, "render resource materialized cache counts blocked entries");
+    require(first_cache.address_rejected_count == 1U, "render resource materialized cache counts rejected addresses");
+    require(
+        first_cache.missing_render_resource_address_count == 1U,
+        "render resource materialized cache counts missing requested ids");
+    require(first_cache.type_mismatch_count == 1U, "render resource materialized cache counts request type mismatches");
+
+    const asset_render_resource_materialized_cache_entry* first_image = first_cache.find_ready("card_front");
+    const asset_render_resource_materialized_cache_entry* second_image = second_cache.find_ready("card_front");
+    require(first_image != nullptr && second_image != nullptr, "render cache finds repeated image entries");
+    require(first_image->ready() && second_image->ready(), "repeated image cache entries are reusable");
+    require(first_image->runtime_cache_key == second_image->runtime_cache_key, "image runtime cache key is stable");
+    require(first_image->cache_key == second_image->cache_key, "image manifest cache key is stable");
+    require(first_image->content_hash == second_image->content_hash, "image content hash evidence is stable");
+    require(first_image->byte_count == second_image->byte_count, "image byte count evidence is stable");
+    require(
+        first_image->payload_byte_count == second_image->payload_byte_count,
+        "image payload byte count evidence is stable");
+    require(
+        first_image->materialized_path == second_image->materialized_path,
+        "image materialized path evidence is stable");
+    require(
+        first_cache.find_runtime_cache_key(first_image->runtime_cache_key) == first_image,
+        "render cache can look up entries by runtime cache key");
+    require(
+        first_image->runtime_cache_key
+            == "render-resource|image|asset://cards/front.png|image|asset://cards/front.png|rev=image-rev1|hash="
+                + make_asset_bytes_content_hash(detail::make_asset_byte_vector("image bytes")),
+        "image runtime cache key includes resource identity cache key and content hash");
+    require(
+        first_image->runtime_cache_key.find(fixture_root.string()) == std::string::npos,
+        "image runtime cache key does not leak absolute fixture paths");
+
+    const asset_render_resource_materialized_cache_entry* first_font = first_cache.find_ready("body_font");
+    const asset_render_resource_materialized_cache_entry* second_font = second_cache.find_ready("body_font");
+    require(first_font != nullptr && second_font != nullptr, "render cache finds repeated font entries");
+    require(first_font->runtime_cache_key == second_font->runtime_cache_key, "font runtime cache key is stable");
+    require(first_font->canonical_identity == "asset://fonts/body.ttf", "font runtime cache preserves identity");
+    require(
+        first_font->runtime_cache_key.find(fixture_root.string()) == std::string::npos,
+        "font runtime cache key does not leak absolute fixture paths");
+
+    const asset_render_resource_materialized_cache_entry* first_shader = first_cache.find_ready("ui_shader");
+    const asset_render_resource_materialized_cache_entry* second_shader = second_cache.find_ready("ui_shader");
+    require(first_shader != nullptr && second_shader != nullptr, "render cache finds repeated shader entries");
+    require(first_shader->runtime_cache_key == second_shader->runtime_cache_key, "shader runtime cache key is stable");
+    require(
+        first_shader->runtime_cache_key
+            == "render-resource|shader|asset://shaders/ui.vert.spv|shader|asset://shaders/ui.vert.spv|rev=shader-rev2|hash="
+                + make_asset_bytes_content_hash(detail::make_asset_byte_vector("shader bytes")),
+        "shader runtime cache key includes revised shader identity and content hash");
+    require(
+        first_shader->runtime_cache_key.find(fixture_root.string()) == std::string::npos,
+        "shader runtime cache key does not leak build-external fixture paths");
+    require(
+        first_shader->materialized_path
+            == std::filesystem::absolute(
+                   fixture_root / "build" / "external" / "shader_pack" / "shaders" / "ui.vert.spv")
+                   .lexically_normal(),
+        "shader runtime cache keeps build-external path as evidence outside the cache key");
+
+    const asset_render_resource_materialized_cache_entry* traversal = first_cache.find_blocked("bad_traversal");
+    require(traversal != nullptr, "render cache keeps traversal rejection evidence");
+    require(
+        traversal->status == asset_render_resource_materialized_cache_status::address_rejected,
+        "render cache maps traversal to address rejection");
+    require(
+        traversal->diagnostic == "asset path traversal is not allowed",
+        "render cache preserves traversal diagnostic");
+
+    const asset_render_resource_materialized_cache_entry* missing = first_cache.find_blocked("missing_card");
+    require(missing != nullptr, "render cache keeps missing requested id evidence");
+    require(
+        missing->status == asset_render_resource_materialized_cache_status::missing_render_resource_address,
+        "render cache reports missing render resource addresses explicitly");
+    require(
+        asset_render_resource_materialized_cache_status_name(missing->status)
+            == "missing_render_resource_address",
+        "render cache missing-id status name is stable");
+
+    const asset_render_resource_materialized_cache_entry* wrong_type = first_cache.find_blocked("body_font");
+    require(wrong_type != nullptr, "render cache keeps request type mismatch evidence");
+    require(
+        wrong_type->status == asset_render_resource_materialized_cache_status::type_mismatch,
+        "render cache reports request type mismatches explicitly");
+    require(wrong_type->type == asset_type::font, "render cache type mismatch keeps actual manifest type");
+    require(wrong_type->cache_key == "font|asset://fonts/body.ttf", "render cache type mismatch keeps cache key");
+}
+
+void test_render_resource_materialized_cache_diff_tracks_reuse_and_invalidation()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    const std::filesystem::path before_root = fixture_root / "before";
+    const std::filesystem::path after_root = fixture_root / "after";
+    write_fixture_file(before_root / "packaged" / "cards" / "front.png", "image bytes v1");
+    write_fixture_file(before_root / "packaged" / "fonts" / "body.ttf", "font bytes");
+    write_fixture_file(before_root / "build" / "external" / "shader_pack" / "shaders" / "ui.vert.spv", "shader bytes");
+    write_fixture_file(after_root / "packaged" / "cards" / "front.png", "image bytes v2");
+    write_fixture_file(after_root / "packaged" / "fonts" / "body.ttf", "font bytes");
+    write_fixture_file(after_root / "build" / "external" / "shader_pack" / "shaders" / "ui.vert.spv", "shader bytes");
+
+    const auto make_cache = [](const std::filesystem::path& root, std::string shader_revision) {
+        asset_manifest manifest;
+        manifest.roots.push_back(asset_manifest_root{
+            .id = "packaged",
+            .root_path = root / "packaged",
+        });
+        manifest.roots.push_back(asset_manifest_root{
+            .id = "external_shader_pack",
+            .root_path = root / "build" / "external" / "shader_pack",
+        });
+        manifest.entries.push_back(asset_manifest_entry{
+            .id = "card_front",
+            .type = asset_type::image,
+            .uri = "asset://cards/front.png",
+            .root_id = "packaged",
+            .cache_revision = "image-rev1",
+        });
+        manifest.entries.push_back(asset_manifest_entry{
+            .id = "body_font",
+            .type = asset_type::font,
+            .uri = "asset://fonts/body.ttf",
+            .root_id = "packaged",
+        });
+        manifest.entries.push_back(asset_manifest_entry{
+            .id = "ui_shader",
+            .type = asset_type::shader,
+            .uri = "asset://shaders/ui.vert.spv",
+            .root_id = "external_shader_pack",
+            .cache_revision = std::move(shader_revision),
+        });
+
+        const normalizing_asset_resolver resolver;
+        const local_file_asset_bytes_provider provider;
+        const runtime_asset_catalog catalog = build_runtime_asset_catalog(manifest, resolver);
+        const asset_render_resource_address_summary addresses =
+            summarize_asset_render_resource_addresses(manifest, resolver);
+        const asset_materialized_byte_payload_bundle bundle =
+            make_materialized_asset_byte_payload_bundle(provider, catalog);
+        return make_asset_render_resource_materialized_cache_summary(addresses, bundle);
+    };
+
+    const asset_render_resource_materialized_cache_summary before = make_cache(before_root, "shader-rev1");
+    const asset_render_resource_materialized_cache_summary after = make_cache(after_root, "shader-rev2");
+    const asset_render_resource_materialized_cache_diff_summary diff =
+        diff_asset_render_resource_materialized_cache_summaries(before, after);
+
+    require(before.ok(), "before render cache starts with reusable materialized entries");
+    require(after.ok(), "after render cache starts with reusable materialized entries");
+    require(!diff.empty(), "render cache diff reports materialized cache invalidation evidence");
+    require(diff.change_count() == 2U, "render cache diff counts content and revision replacements");
+    require(diff.invalidation_count() == 2U, "render cache diff counts replaced entries as invalidations");
+    require(diff.reused.size() == 1U, "render cache diff records stable reusable entries");
+    require(diff.replaced.size() == 2U, "render cache diff records replaced entries");
+    require(diff.added.empty(), "render cache diff has no added entries");
+    require(diff.removed.empty(), "render cache diff has no removed entries");
+    require(diff.invalidated.empty(), "render cache diff has no blocked invalidations");
+    require(diff.requested_delta == 0, "render cache diff keeps request count delta stable");
+    require(diff.ready_delta == 0, "render cache diff keeps ready count delta stable");
+    require(diff.blocked_delta == 0, "render cache diff keeps blocked count delta stable");
+
+    const asset_render_resource_materialized_cache_diff_entry* font = diff.find_reused("body_font");
+    require(font != nullptr, "render cache diff finds reused font entry");
+    require(
+        font->kind == asset_render_resource_materialized_cache_delta_kind::reused,
+        "render cache diff marks unchanged logical identity as reused");
+    require(!font->invalidates(), "reused render cache entries do not invalidate");
+    require(font->before.has_value() && font->after.has_value(), "reused entry keeps before and after evidence");
+    require(
+        font->before->runtime_cache_key == font->after->runtime_cache_key,
+        "unchanged content reuses the same runtime cache key");
+    require(
+        font->before->materialized_path != font->after->materialized_path,
+        "reused entry can move between host materialized paths");
+    require(font->materialized_path_changed, "reused entry records materialized path movement");
+    require(!font->runtime_cache_key_changed, "host path movement does not alter renderer-facing cache key");
+    require(!font->cache_key_changed, "host path movement does not alter manifest cache key");
+    require(!font->content_hash_changed, "unchanged content keeps hash evidence stable");
+    require(
+        font->before->runtime_cache_key.find(fixture_root.string()) == std::string::npos
+            && font->after->runtime_cache_key.find(fixture_root.string()) == std::string::npos,
+        "reused runtime cache keys do not leak host paths");
+
+    const asset_render_resource_materialized_cache_diff_entry* image = diff.find_replaced("card_front");
+    require(image != nullptr, "render cache diff finds content-hash replacements");
+    require(image->invalidates(), "content changes invalidate the previous render cache entry");
+    require(image->before.has_value() && image->after.has_value(), "content replacement keeps before and after evidence");
+    require(!image->logical_identity_changed, "content replacement keeps logical asset identity");
+    require(!image->cache_key_changed, "content replacement keeps revision cache key stable");
+    require(image->content_hash_changed, "content replacement records hash change");
+    require(image->runtime_cache_key_changed, "content replacement creates a new runtime cache key");
+    require(image->materialized_path_changed, "content replacement records materialized path movement");
+    require(
+        image->invalidated_runtime_cache_key == image->before->runtime_cache_key,
+        "content replacement records invalidated cache key");
+    require(
+        image->replacement_runtime_cache_key == image->after->runtime_cache_key,
+        "content replacement records replacement cache key");
+    require(
+        image->before->runtime_cache_key != image->after->runtime_cache_key,
+        "changed content creates a distinct renderer-facing cache key");
+    require(
+        image->after->runtime_cache_key.find(fixture_root.string()) == std::string::npos,
+        "content replacement runtime cache key does not leak host paths");
+    require(
+        image->diagnostic == "render resource materialized cache entry replaced by revision or content change",
+        "content replacement diagnostic is stable");
+
+    const asset_render_resource_materialized_cache_diff_entry* shader = diff.find_replaced("ui_shader");
+    require(shader != nullptr, "render cache diff finds revision replacements");
+    require(shader->invalidates(), "revision changes invalidate the previous render cache entry");
+    require(shader->before.has_value() && shader->after.has_value(), "revision replacement keeps before and after evidence");
+    require(!shader->logical_identity_changed, "revision replacement keeps logical asset identity");
+    require(shader->cache_key_changed, "revision replacement records manifest cache key change");
+    require(!shader->content_hash_changed, "revision replacement can keep identical content hash");
+    require(shader->runtime_cache_key_changed, "revision replacement creates a new runtime cache key");
+    require(
+        shader->before->cache_key == "shader|asset://shaders/ui.vert.spv|rev=shader-rev1",
+        "revision replacement keeps old revision cache key");
+    require(
+        shader->after->cache_key == "shader|asset://shaders/ui.vert.spv|rev=shader-rev2",
+        "revision replacement keeps new revision cache key");
+    require(
+        shader->before->content_hash == shader->after->content_hash,
+        "revision replacement keeps unchanged byte hash evidence");
+    require(
+        shader->after->runtime_cache_key.find(fixture_root.string()) == std::string::npos,
+        "revision replacement runtime cache key does not leak build host paths");
+    require(
+        asset_render_resource_materialized_cache_delta_kind_name(shader->kind) == "replaced",
+        "render cache diff delta names are stable");
+}
+
+void test_render_resource_runtime_packet_cache_handoff_preserves_diff_state_and_manifest_evidence()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_render_resource_materialized_cache_summary before{
+        .requested_count = 5U,
+    };
+    add_asset_render_resource_materialized_cache_entry(
+        before,
+        make_render_cache_entry(
+            "body_font",
+            asset_type::font,
+            "asset://fonts/body.ttf",
+            "",
+            "hash:font",
+            fixture_root / "before" / "fonts" / "body.ttf",
+            10U));
+    add_asset_render_resource_materialized_cache_entry(
+        before,
+        make_render_cache_entry(
+            "card_front",
+            asset_type::image,
+            "asset://cards/front.png",
+            "image-rev1",
+            "hash:image-old",
+            fixture_root / "before" / "cards" / "front.png",
+            11U));
+    add_asset_render_resource_materialized_cache_entry(
+        before,
+        make_render_cache_entry(
+            "ui_shader",
+            asset_type::shader,
+            "asset://shaders/ui.vert.spv",
+            "shader-rev1",
+            "hash:shader",
+            fixture_root / "before" / "shaders" / "ui.vert.spv",
+            12U));
+    add_asset_render_resource_materialized_cache_entry(
+        before,
+        make_render_cache_entry(
+            "answer_sound",
+            asset_type::sound,
+            "asset://sounds/correct.ogg",
+            "",
+            "hash:sound",
+            fixture_root / "before" / "sounds" / "correct.ogg",
+            13U));
+    add_asset_render_resource_materialized_cache_entry(
+        before,
+        make_render_cache_entry(
+            "main_deck",
+            asset_type::deck,
+            "asset://decks/main.quiz",
+            "deck-rev1",
+            "hash:deck",
+            fixture_root / "before" / "decks" / "main.quiz",
+            9U));
+
+    asset_render_resource_materialized_cache_summary after{
+        .requested_count = 4U,
+    };
+    add_asset_render_resource_materialized_cache_entry(
+        after,
+        make_render_cache_entry(
+            "body_font",
+            asset_type::font,
+            "asset://fonts/body.ttf",
+            "",
+            "hash:font",
+            fixture_root / "after" / "fonts" / "body.ttf",
+            10U));
+    add_asset_render_resource_materialized_cache_entry(
+        after,
+        make_render_cache_entry(
+            "card_front",
+            asset_type::image,
+            "asset://cards/front.png",
+            "image-rev1",
+            "hash:image-new",
+            fixture_root / "after" / "cards" / "front.png",
+            11U));
+    add_asset_render_resource_materialized_cache_entry(
+        after,
+        make_render_cache_entry(
+            "ui_shader",
+            asset_type::shader,
+            "asset://shaders/ui.vert.spv",
+            "shader-rev2",
+            "hash:shader",
+            fixture_root / "after" / "shaders" / "ui.vert.spv",
+            12U));
+    add_asset_render_resource_materialized_cache_entry(
+        after,
+        make_render_cache_entry(
+            "answer_sound",
+            asset_type::sound,
+            "asset://sounds/correct.ogg",
+            "",
+            "hash:sound",
+            fixture_root / "after" / "sounds" / "correct.ogg",
+            0U,
+            asset_render_resource_materialized_cache_status::missing_materialized_bytes));
+
+    asset_manifest manifest;
+    manifest.schema_version = "manifest.v2";
+    manifest.required_features = {"renderer.packet_cache"};
+    manifest.optional_features = {"renderer.strict_optional"};
+    const std::vector<std::string_view> supported_features = {"renderer.packet_cache"};
+    const asset_manifest_version_policy_summary manifest_policy =
+        summarize_asset_manifest_version_policy(manifest, "manifest.v2", supported_features);
+    const asset_render_resource_materialized_cache_diff_summary diff =
+        diff_asset_render_resource_materialized_cache_summaries(before, after);
+    const asset_render_resource_runtime_packet_cache_handoff_summary handoff =
+        make_asset_render_resource_runtime_packet_cache_handoff_summary(after, diff, manifest_policy);
+
+    require(manifest_policy.ok(), "manifest policy accepts supported required packet-cache features");
+    require(!manifest_policy.strict_accepted, "manifest policy records unsupported optional feature evidence");
+    require(diff.reused.size() == 1U, "render cache diff keeps one cache hit before handoff");
+    require(diff.replaced.size() == 2U, "render cache diff keeps content and revision replacements before handoff");
+    require(diff.invalidated.size() == 1U, "render cache diff keeps blocked replacement invalidation");
+    require(diff.removed.size() == 1U, "render cache diff keeps removed runtime entry invalidation");
+
+    require(!handoff.ok(), "runtime packet cache handoff reports invalidated packet inputs");
+    require(handoff.manifest.checked, "runtime packet handoff records checked manifest policy");
+    require(handoff.manifest.schema_version == "manifest.v2", "runtime packet handoff keeps manifest schema version");
+    require(handoff.manifest.expected_schema_version == "manifest.v2", "runtime packet handoff keeps expected version");
+    require(handoff.manifest.compatible_accepted, "runtime packet handoff keeps compatible manifest evidence");
+    require(handoff.manifest.unsupported_features.size() == 1U, "runtime packet handoff keeps optional feature evidence");
+    require(handoff.requested_count == 4U, "runtime packet handoff keeps current request count");
+    require(handoff.entry_count() == 5U, "runtime packet handoff includes current entries and removed invalidations");
+    require(handoff.ready_count == 3U, "runtime packet handoff exposes three packet-ready resource inputs");
+    require(handoff.blocked_count == 2U, "runtime packet handoff counts invalidations as blocked packet inputs");
+    require(handoff.cache_hit_count == 1U, "runtime packet handoff classifies stable cache hits");
+    require(handoff.replaced_count == 2U, "runtime packet handoff classifies replaced cache entries");
+    require(handoff.invalidated_count == 1U, "runtime packet handoff classifies blocked replacements as invalidated");
+    require(handoff.removed_count == 1U, "runtime packet handoff classifies removed cache entries");
+    require(handoff.invalidation_count == 4U, "runtime packet handoff counts all cache invalidating states");
+    require(handoff.materialized_available_count == 4U, "runtime packet handoff preserves materialized byte availability");
+
+    const asset_render_resource_runtime_packet_cache_entry* font = handoff.find_ready("body_font");
+    require(font != nullptr, "runtime packet handoff finds cache-hit font entry");
+    require(font->cache_state == asset_render_resource_runtime_packet_cache_state::cache_hit,
+        "font handoff marks stable runtime identity as cache hit");
+    require(font->ready_for_packet(), "font handoff is ready for renderer resource packet input");
+    require(font->runtime_identity.find(fixture_root.string()) == std::string::npos,
+        "font runtime packet identity does not leak host paths");
+    require(handoff.find_runtime_identity(font->runtime_identity) == font,
+        "runtime packet handoff indexes ready entries by host-path-free identity");
+
+    const asset_render_resource_runtime_packet_cache_entry* image = handoff.find_ready("card_front");
+    require(image != nullptr, "runtime packet handoff finds replaced image entry");
+    require(image->type == asset_type::image, "runtime packet handoff preserves asset kind");
+    require(image->logical_id == "card_front", "runtime packet handoff preserves logical id");
+    require(image->cache_revision == "image-rev1", "runtime packet handoff extracts manifest cache revision");
+    require(image->cache_revision_present, "runtime packet handoff reports revision presence");
+    require(image->content_hash == "hash:image-new", "runtime packet handoff keeps current content hash");
+    require(image->materialized_bytes_available, "runtime packet handoff marks materialized bytes available");
+    require(image->materialized_byte_count == 11U, "runtime packet handoff keeps materialized byte count");
+    require(image->payload_byte_count == 11U, "runtime packet handoff keeps payload byte count");
+    require(image->cache_state == asset_render_resource_runtime_packet_cache_state::replaced,
+        "runtime packet handoff marks image content changes as replaced");
+    require(!image->invalidated_runtime_identity.empty(), "replaced image keeps invalidated runtime identity");
+    require(image->replacement_runtime_identity == image->runtime_identity,
+        "replaced image keeps replacement runtime identity");
+    require(image->runtime_identity.find(fixture_root.string()) == std::string::npos,
+        "image runtime packet identity does not leak host paths");
+    require(image->manifest.checked && image->manifest.compatible_accepted,
+        "runtime packet entry keeps manifest compatibility evidence");
+
+    const asset_render_resource_runtime_packet_cache_entry* shader = handoff.find_ready("ui_shader");
+    require(shader != nullptr, "runtime packet handoff finds replaced shader entry");
+    require(shader->cache_revision == "shader-rev2", "runtime packet handoff keeps new shader revision");
+    require(shader->cache_state == asset_render_resource_runtime_packet_cache_state::replaced,
+        "runtime packet handoff marks shader revision change as replaced");
+    require(shader->content_hash == "hash:shader", "shader replacement can preserve content hash evidence");
+
+    const asset_render_resource_runtime_packet_cache_entry* sound = handoff.find_invalidated("answer_sound");
+    require(sound != nullptr, "runtime packet handoff exposes blocked replacement invalidation");
+    require(sound->cache_state == asset_render_resource_runtime_packet_cache_state::invalidated,
+        "runtime packet handoff marks blocked replacement as invalidated");
+    require(sound->blocker == asset_render_resource_runtime_packet_blocker_kind::missing_materialized_bytes,
+        "runtime packet handoff preserves blocked replacement reason");
+    require(!sound->ready_for_packet(), "blocked replacement is not ready for packet consumption");
+    require(!sound->materialized_bytes_available, "blocked replacement records missing materialized bytes");
+    require(!sound->invalidated_runtime_identity.empty(), "blocked replacement records invalidated runtime identity");
+
+    const asset_render_resource_runtime_packet_cache_entry* deck = handoff.find_invalidated("main_deck");
+    require(deck != nullptr, "runtime packet handoff exposes removed resource invalidation");
+    require(deck->cache_state == asset_render_resource_runtime_packet_cache_state::removed,
+        "runtime packet handoff marks removed resources");
+    require(deck->materialized_bytes_available, "removed invalidation keeps previous materialized byte evidence");
+    require(deck->invalidated_runtime_identity == deck->runtime_identity,
+        "removed invalidation keeps previous runtime identity");
+    require(!deck->ready_for_packet(), "removed resources are never packet-ready");
+
+    require(asset_render_resource_runtime_packet_cache_state_name(image->cache_state) == "replaced",
+        "runtime packet cache state names are stable");
+    require(asset_render_resource_runtime_packet_blocker_kind_name(sound->blocker) == "missing_materialized_bytes",
+        "runtime packet blocker names are stable");
+}
+
+void test_render_resource_runtime_packet_cache_handoff_blocks_incompatible_manifests()
+{
+    using namespace quiz_vulkan::assets;
+
+    const std::filesystem::path fixture_root = reset_fixture_root();
+    asset_render_resource_materialized_cache_summary cache{
+        .requested_count = 1U,
+    };
+    add_asset_render_resource_materialized_cache_entry(
+        cache,
+        make_render_cache_entry(
+            "card_front",
+            asset_type::image,
+            "asset://cards/front.png",
+            "image-rev1",
+            "hash:image",
+            fixture_root / "packaged" / "cards" / "front.png",
+            11U));
+
+    asset_manifest manifest;
+    manifest.schema_version = "manifest.v1";
+    manifest.required_features = {"renderer.packet_cache"};
+    const std::vector<std::string_view> supported_features = {"renderer.packet_cache"};
+    const asset_manifest_version_policy_summary manifest_policy =
+        summarize_asset_manifest_version_policy(manifest, "manifest.v2", supported_features);
+    const asset_render_resource_runtime_packet_cache_handoff_summary handoff =
+        make_asset_render_resource_runtime_packet_cache_handoff_summary(cache, manifest_policy);
+
+    require(!manifest_policy.ok(), "mismatched manifest policy is incompatible");
+    require(!handoff.ok(), "runtime packet handoff blocks incompatible manifests");
+    require(handoff.ready_count == 0U, "incompatible manifests produce no ready packet entries");
+    require(handoff.blocked_count == 1U, "incompatible manifests block otherwise materialized entries");
+    require(handoff.manifest_incompatible_count == 1U, "handoff counts manifest incompatibility blockers");
+    require(handoff.cache_hit_count == 1U, "handoff preserves cache state even when manifest blocks packet input");
+    require(handoff.materialized_available_count == 1U,
+        "handoff preserves materialized byte availability under manifest blockers");
+
+    const asset_render_resource_runtime_packet_cache_entry* image = handoff.find_blocked("card_front");
+    require(image != nullptr, "incompatible manifest handoff keeps blocked image entry");
+    require(image->cache_state == asset_render_resource_runtime_packet_cache_state::cache_hit,
+        "blocked manifest entry preserves cache-hit state");
+    require(image->blocker == asset_render_resource_runtime_packet_blocker_kind::manifest_incompatible,
+        "blocked manifest entry records manifest blocker");
+    require(image->manifest.checked && !image->manifest.compatible_accepted,
+        "blocked manifest entry keeps incompatible version evidence");
+    require(image->manifest.schema_version == "manifest.v1",
+        "blocked manifest entry keeps actual schema version");
+    require(image->manifest.expected_schema_version == "manifest.v2",
+        "blocked manifest entry keeps expected schema version");
+    require(
+        image->diagnostic == "asset manifest schema_version does not match the expected version",
+        "blocked manifest entry keeps compatibility diagnostic");
+    require(image->materialized_bytes_available,
+        "blocked manifest entry keeps materialized byte availability evidence");
+    require(!image->ready_for_packet(), "manifest-blocked entries are not packet-ready");
+    require(asset_render_resource_runtime_packet_blocker_kind_name(image->blocker) == "manifest_incompatible",
+        "manifest blocker name is stable");
 }
 
 void test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics()
@@ -3187,9 +4593,17 @@ int main()
     test_materialized_asset_bytes_handoff_summary_groups_ready_and_blocked_payloads();
     test_materialized_asset_byte_payload_bundle_groups_loaded_bytes_by_type();
     test_materialized_asset_byte_payload_bundle_diff_tracks_snapshot_changes();
+    test_runtime_payload_manifest_summary_lists_engine_payload_identities();
     test_shader_materialized_byte_pipeline_summary_classifies_shader_payloads();
     test_shader_byte_pipeline_source_summary_combines_manifest_fallback_and_payload_evidence();
+    test_shader_payload_runtime_summary_tracks_stage_revision_and_cache_identity();
+    test_shader_payload_runtime_diff_tracks_stage_revision_and_readiness_changes();
     test_render_resource_payload_bridge_matches_addresses_to_materialized_payloads();
+    test_render_resource_manifest_to_payload_bridge_e2e_uses_materialized_bytes();
+    test_render_resource_materialized_cache_summary_reuses_manifest_payload_identity();
+    test_render_resource_materialized_cache_diff_tracks_reuse_and_invalidation();
+    test_render_resource_runtime_packet_cache_handoff_preserves_diff_state_and_manifest_evidence();
+    test_render_resource_runtime_packet_cache_handoff_blocks_incompatible_manifests();
     test_materialized_asset_byte_payload_selection_filters_payloads_and_reports_diagnostics();
     test_materialized_asset_byte_payload_request_transaction_preserves_order_and_counts();
     test_materialized_asset_byte_payload_request_transaction_review_summary_groups_by_expected_type();

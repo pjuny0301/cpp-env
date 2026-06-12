@@ -6560,6 +6560,7 @@ vulkan_command_packet_bridge_result build_vulkan_command_packet_bridge(
 namespace {
 
 constexpr std::uintptr_t k_native_command_packet_vertex_buffer_handle_base = 15000;
+constexpr std::string_view k_native_vertex_buffer_bind_symbol = "vkCmdBindVertexBuffers";
 
 std::string native_vertex_buffer_packet_identity(const vulkan_command_packet& packet)
 {
@@ -6570,21 +6571,37 @@ std::string native_vertex_buffer_packet_identity(const vulkan_command_packet& pa
         + ":vertex_buffer:vertices:" + std::to_string(packet.vertices.size());
 }
 
-vulkan_native_command_packet_vertex_buffer_bind make_native_vertex_buffer_bind_for_packet(
-    const vulkan_command_packet& packet)
+bool native_function_table_has_ready_symbol(
+    const vulkan_native_function_table_diagnostics& native_functions,
+    std::string_view symbol_name)
 {
-    const bool vertices_available = !packet.vertices.empty();
+    if (!native_functions.checked) {
+        return false;
+    }
+    for (const vulkan_native_entrypoint_symbol_diagnostics& symbol :
+         native_functions.symbols) {
+        if (symbol.name == symbol_name) {
+            return symbol.completed();
+        }
+    }
+    return false;
+}
+
+vulkan_native_command_packet_vertex_buffer_bind make_native_vertex_buffer_bind_for_packet(
+    const vulkan_command_packet& packet,
+    std::uintptr_t vertex_buffer_handle,
+    vulkan_native_vertex_buffer_fake_allocator_options options)
+{
+    const bool vertices_available = !packet.vertices.empty() && vertex_buffer_handle != 0;
     return vulkan_native_command_packet_vertex_buffer_bind{
         .packet_index = packet.packet_index,
         .command_index = packet.command_index,
         .vertex_buffer =
             vulkan_native_vertex_buffer_handle{
-                .value = vertices_available
-                    ? k_native_command_packet_vertex_buffer_handle_base + packet.packet_index
-                    : 0,
+                .value = vertices_available ? vertex_buffer_handle : 0,
             },
-        .binding = 0,
-        .offset = 0,
+        .binding = options.binding,
+        .offset = options.offset,
         .vertex_count = packet.vertices.size(),
         .packet_identity = native_vertex_buffer_packet_identity(packet),
         .required = true,
@@ -6597,7 +6614,177 @@ vulkan_native_command_packet_vertex_buffer_bind make_native_vertex_buffer_bind_f
     };
 }
 
+bool vertex_buffer_binding_result_has_packet(
+    const vulkan_native_vertex_buffer_binding_result& result,
+    const vulkan_command_packet& packet)
+{
+    for (const vulkan_native_vertex_buffer_binding_operation& operation :
+         result.operations) {
+        if (operation.packet_index == packet.packet_index
+            && operation.command_index == packet.command_index) {
+            return true;
+        }
+    }
+    return false;
+}
+
+vulkan_native_vertex_buffer_binding_operation make_native_vertex_buffer_binding_operation(
+    const vulkan_command_packet& packet,
+    std::size_t operation_index,
+    const vulkan_native_command_packet_vertex_buffer_bind& bind,
+    bool native_function_table_checked,
+    bool native_bind_symbol_ready)
+{
+    const bool packet_vertices_ready = !packet.vertices.empty() && bind.vertex_count > 0;
+    return vulkan_native_vertex_buffer_binding_operation{
+        .operation_index = operation_index,
+        .packet_index = packet.packet_index,
+        .command_index = packet.command_index,
+        .category = packet.category,
+        .batch_kind = packet.batch_kind,
+        .symbol_name = std::string{k_native_vertex_buffer_bind_symbol},
+        .vertex_count = bind.vertex_count,
+        .native_function_table_checked = native_function_table_checked,
+        .native_bind_symbol_ready = native_bind_symbol_ready,
+        .packet_vertices_ready = packet_vertices_ready,
+        .allocation_ready = bind.vertex_buffer.valid(),
+        .bind_ready = bind.bind_ready,
+        .draw_ready = bind.draw_ready,
+        .blocked = false,
+        .diagnostic = bind.completed()
+            ? "Native Vulkan vertex buffer allocation and bind operation is ready"
+            : "Native Vulkan vertex buffer allocation and bind operation is incomplete",
+        .vertex_buffer_bind = bind,
+    };
+}
+
 } // namespace
+
+vulkan_native_vertex_buffer_binding_result build_fake_vulkan_native_vertex_buffer_binding_result(
+    const vulkan_command_packet_bridge_result& bridge,
+    const vulkan_native_function_table_diagnostics& native_functions,
+    vulkan_native_vertex_buffer_fake_allocator_options options)
+{
+    vulkan_native_vertex_buffer_binding_result result{
+        .checked = true,
+        .status = vulkan_native_vertex_buffer_binding_status::not_checked,
+        .fallback_reason = vulkan_backend_fallback_reason::not_requested,
+        .packet_bridge_checked = bridge.checked,
+        .packet_bridge_ready = bridge.completed(),
+        .native_function_table_checked = native_functions.checked,
+        .native_bind_symbol_ready =
+            native_function_table_has_ready_symbol(native_functions, k_native_vertex_buffer_bind_symbol),
+        .missing_native_symbol_name = {},
+        .planned_packet_count = bridge.packet_count,
+        .operation_count = 0,
+        .allocated_vertex_buffer_count = 0,
+        .bound_vertex_buffer_count = 0,
+        .failed_packet_index = 0,
+        .failed_command_index = 0,
+        .failed_category = vulkan_command_packet_category::rect,
+        .failed_batch_kind = vulkan_batch_kind::quad,
+        .diagnostic = {},
+        .operations = {},
+        .vertex_buffer_binds = {},
+    };
+
+    if (!bridge.completed()) {
+        result.status = vulkan_native_vertex_buffer_binding_status::packet_bridge_unavailable;
+        result.fallback_reason = bridge.fallback_reason == vulkan_backend_fallback_reason::none
+            ? vulkan_backend_fallback_reason::record_commands_failed
+            : bridge.fallback_reason;
+        result.diagnostic =
+            "Native Vulkan vertex buffer binding is missing ready command packets";
+        return result;
+    }
+
+    if (!native_functions.checked) {
+        result.status =
+            vulkan_native_vertex_buffer_binding_status::native_function_table_unavailable;
+        result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+        result.missing_native_symbol_name = std::string{k_native_vertex_buffer_bind_symbol};
+        result.diagnostic =
+            "Native Vulkan vertex buffer binding is missing checked native function table diagnostics";
+        return result;
+    }
+
+    if (!result.native_bind_symbol_ready) {
+        result.status =
+            vulkan_native_vertex_buffer_binding_status::native_command_symbol_unavailable;
+        result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+        result.missing_native_symbol_name = std::string{k_native_vertex_buffer_bind_symbol};
+        result.diagnostic =
+            "Native Vulkan vertex buffer binding is missing required command symbol: "
+            + result.missing_native_symbol_name;
+        return result;
+    }
+
+    result.status = vulkan_native_vertex_buffer_binding_status::ready;
+    result.fallback_reason = vulkan_backend_fallback_reason::none;
+    result.diagnostic =
+        "Native Vulkan vertex buffer allocation and bind operations are ready";
+    result.operations.reserve(bridge.packets.size());
+    result.vertex_buffer_binds.reserve(bridge.packets.size());
+
+    for (const vulkan_command_packet& packet : bridge.packets) {
+        if (vertex_buffer_binding_result_has_packet(result, packet)) {
+            result.status =
+                vulkan_native_vertex_buffer_binding_status::duplicate_packet_binding;
+            result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+            result.failed_packet_index = packet.packet_index;
+            result.failed_command_index = packet.command_index;
+            result.failed_category = packet.category;
+            result.failed_batch_kind = packet.batch_kind;
+            result.diagnostic =
+                "Native Vulkan vertex buffer binding found duplicate packet binding";
+            return result;
+        }
+
+        if (packet.vertices.empty()) {
+            result.status =
+                vulkan_native_vertex_buffer_binding_status::invalid_packet_vertices;
+            result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+            result.failed_packet_index = packet.packet_index;
+            result.failed_command_index = packet.command_index;
+            result.failed_category = packet.category;
+            result.failed_batch_kind = packet.batch_kind;
+            result.diagnostic =
+                "Native Vulkan vertex buffer binding received invalid packet vertices";
+            return result;
+        }
+
+        const std::uintptr_t vertex_buffer_handle =
+            options.first_vertex_buffer_handle + result.operations.size();
+        vulkan_native_command_packet_vertex_buffer_bind bind =
+            make_native_vertex_buffer_bind_for_packet(packet, vertex_buffer_handle, options);
+        vulkan_native_vertex_buffer_binding_operation operation =
+            make_native_vertex_buffer_binding_operation(
+                packet,
+                result.operations.size(),
+                bind,
+                result.native_function_table_checked,
+                result.native_bind_symbol_ready);
+        if (!operation.completed()) {
+            result.status =
+                vulkan_native_vertex_buffer_binding_status::invalid_packet_vertices;
+            result.fallback_reason = vulkan_backend_fallback_reason::record_commands_failed;
+            result.failed_packet_index = packet.packet_index;
+            result.failed_command_index = packet.command_index;
+            result.failed_category = packet.category;
+            result.failed_batch_kind = packet.batch_kind;
+            result.diagnostic = operation.diagnostic;
+            return result;
+        }
+
+        ++result.operation_count;
+        ++result.allocated_vertex_buffer_count;
+        ++result.bound_vertex_buffer_count;
+        result.vertex_buffer_binds.push_back(bind);
+        result.operations.push_back(std::move(operation));
+    }
+
+    return result;
+}
 
 vulkan_native_command_packet_executor_evidence build_vulkan_native_command_packet_executor_evidence(
     const vulkan_backend_frame_result& frame,
@@ -6613,11 +6800,13 @@ vulkan_native_command_packet_executor_evidence build_vulkan_native_command_packe
         .descriptor_sets = {},
         .descriptor_write_payloads = {},
         .descriptor_payload_binds = {},
+        .descriptor_write_calls = {},
+        .descriptor_bind_calls = {},
+        .descriptor_update_commands = {},
         .vertex_buffer_binds = {},
     };
 
     for (const vulkan_command_packet& packet : frame.command_packets.packets) {
-        evidence.vertex_buffer_binds.push_back(make_native_vertex_buffer_bind_for_packet(packet));
         for (std::size_t descriptor_index = 0;
              descriptor_index < packet.descriptor_set_count;
              ++descriptor_index) {
@@ -6636,6 +6825,25 @@ vulkan_native_command_packet_executor_evidence build_vulkan_native_command_packe
         }
     }
 
+    return merge_vulkan_native_vertex_buffer_binding_result(
+        std::move(evidence),
+        build_fake_vulkan_native_vertex_buffer_binding_result(
+            frame.command_packets,
+            native_functions,
+            vulkan_native_vertex_buffer_fake_allocator_options{
+                .first_vertex_buffer_handle = k_native_command_packet_vertex_buffer_handle_base,
+            }));
+}
+
+vulkan_native_command_packet_executor_evidence merge_vulkan_native_vertex_buffer_binding_result(
+    vulkan_native_command_packet_executor_evidence evidence,
+    const vulkan_native_vertex_buffer_binding_result& vertex_buffer_binding)
+{
+    if (!vertex_buffer_binding.completed()) {
+        return evidence;
+    }
+
+    evidence.vertex_buffer_binds = vertex_buffer_binding.vertex_buffer_binds;
     return evidence;
 }
 
@@ -7353,6 +7561,141 @@ bool native_call_completed_for_packet(
     return false;
 }
 
+const vulkan_native_command_packet_call_evidence* native_call_for_packet(
+    const vulkan_native_command_packet_execution_result& native_result,
+    const vulkan_command_packet& packet,
+    vulkan_native_command_packet_call_kind kind)
+{
+    for (const vulkan_native_command_packet_call_evidence& call : native_result.calls) {
+        if (call.kind == kind
+            && call.packet_index == packet.packet_index
+            && call.command_index == packet.command_index) {
+            return &call;
+        }
+    }
+    return nullptr;
+}
+
+vulkan_native_command_packet_call_evidence native_call_or_empty_for_packet(
+    const vulkan_native_command_packet_execution_result& native_result,
+    const vulkan_command_packet& packet,
+    vulkan_native_command_packet_call_kind kind)
+{
+    const vulkan_native_command_packet_call_evidence* call =
+        native_call_for_packet(native_result, packet, kind);
+    return call == nullptr ? vulkan_native_command_packet_call_evidence{} : *call;
+}
+
+bool native_required_call_completed_for_packet(
+    const vulkan_native_command_packet_execution_result& native_result,
+    const vulkan_command_packet& packet,
+    vulkan_native_command_packet_call_kind kind)
+{
+    const vulkan_native_command_packet_call_evidence* call =
+        native_call_for_packet(native_result, packet, kind);
+    return call != nullptr && call->successful();
+}
+
+vulkan_native_draw_packet_resource_execution_record make_draw_packet_resource_execution_record(
+    const vulkan_native_command_packet_execution_result& native_result,
+    const vulkan_command_packet& packet,
+    vulkan_native_command_packet_execution_status blocker_status,
+    vulkan_backend_fallback_reason fallback_reason,
+    std::string fallback_blocker)
+{
+    const bool descriptor_bind_required =
+        packet_requires_descriptor_set_bind(packet)
+        || packet_requires_descriptor_payload_bind(packet);
+    const bool pipeline_bind_completed =
+        native_required_call_completed_for_packet(
+            native_result,
+            packet,
+            vulkan_native_command_packet_call_kind::bind_pipeline);
+    const bool descriptor_bind_call_completed =
+        native_required_call_completed_for_packet(
+            native_result,
+            packet,
+            vulkan_native_command_packet_call_kind::bind_descriptor_sets);
+    const bool descriptor_bind_ready =
+        !descriptor_bind_required || descriptor_bind_call_completed;
+    const bool vertex_buffer_bind_completed =
+        native_required_call_completed_for_packet(
+            native_result,
+            packet,
+            vulkan_native_command_packet_call_kind::bind_vertex_buffers);
+    const bool draw_call_completed =
+        native_required_call_completed_for_packet(
+            native_result,
+            packet,
+            vulkan_native_command_packet_call_kind::draw);
+
+    return vulkan_native_draw_packet_resource_execution_record{
+        .packet_index = packet.packet_index,
+        .command_index = packet.command_index,
+        .category = packet.category,
+        .batch_kind = packet.batch_kind,
+        .packet_identity = native_draw_packet_identity(packet),
+        .pipeline_bind_required = true,
+        .pipeline_bind_ready = pipeline_bind_completed,
+        .pipeline_bind_completed = pipeline_bind_completed,
+        .descriptor_bind_required = descriptor_bind_required,
+        .descriptor_bind_ready = descriptor_bind_ready,
+        .descriptor_bind_completed = descriptor_bind_required && descriptor_bind_call_completed,
+        .vertex_buffer_bind_required = true,
+        .vertex_buffer_bind_ready = vertex_buffer_bind_completed,
+        .vertex_buffer_bind_completed = vertex_buffer_bind_completed,
+        .draw_call_required = true,
+        .draw_call_ready = draw_call_completed,
+        .draw_call_completed = draw_call_completed,
+        .vertex_count = native_draw_vertex_count(packet),
+        .instance_count = native_draw_instance_count(packet),
+        .pipeline_bind_call =
+            native_call_or_empty_for_packet(
+                native_result,
+                packet,
+                vulkan_native_command_packet_call_kind::bind_pipeline),
+        .descriptor_bind_call =
+            native_call_or_empty_for_packet(
+                native_result,
+                packet,
+                vulkan_native_command_packet_call_kind::bind_descriptor_sets),
+        .vertex_buffer_bind_call =
+            native_call_or_empty_for_packet(
+                native_result,
+                packet,
+                vulkan_native_command_packet_call_kind::bind_vertex_buffers),
+        .draw_call =
+            native_call_or_empty_for_packet(
+                native_result,
+                packet,
+                vulkan_native_command_packet_call_kind::draw),
+        .blocker_status = blocker_status,
+        .fallback_reason = fallback_reason,
+        .fallback_blocker = std::move(fallback_blocker),
+    };
+}
+
+void append_draw_packet_resource_execution_record(
+    vulkan_native_command_packet_execution_result& native_result,
+    const vulkan_command_packet& packet,
+    vulkan_native_command_packet_execution_status blocker_status,
+    vulkan_backend_fallback_reason fallback_reason,
+    std::string fallback_blocker)
+{
+    vulkan_native_draw_packet_resource_execution_record record =
+        make_draw_packet_resource_execution_record(
+            native_result,
+            packet,
+            blocker_status,
+            fallback_reason,
+            std::move(fallback_blocker));
+    ++native_result.draw_packet_resource_execution_count;
+    if (record.completed()) {
+        ++native_result.completed_draw_packet_resource_execution_count;
+    }
+    native_result.draw_packet_resource_executions.push_back(std::move(record));
+}
+
 bool native_draw_payload_identity_matches_packet(
     const vulkan_command_packet& packet,
     const vulkan_native_command_packet_descriptor_payload_bind& descriptor_payload_bind)
@@ -7632,9 +7975,12 @@ vulkan_native_command_packet_executor::execute_packets(
         .vertex_buffer_bind_count = vertex_buffer_bind_count(evidence_),
         .draw_call_count = 0,
         .draw_payload_identity_count = 0,
+        .draw_packet_resource_execution_count = 0,
+        .completed_draw_packet_resource_execution_count = 0,
         .planned_packet_count = bridge.packet_count,
         .diagnostic = {},
         .calls = {},
+        .draw_packet_resource_executions = {},
     };
 
     if (!bridge.completed()) {
@@ -7750,6 +8096,12 @@ vulkan_native_command_packet_executor::execute_packets(
         const std::string invalid_packet_diagnostic = invalid_packet_diagnostic_for(packet);
         if (!invalid_packet_diagnostic.empty()) {
             native_result_.draw_calls_ready = false;
+            append_draw_packet_resource_execution_record(
+                native_result_,
+                packet,
+                vulkan_native_command_packet_execution_status::invalid_packet_data,
+                vulkan_backend_fallback_reason::record_commands_failed,
+                invalid_packet_diagnostic);
             mark_native_packet_failure(
                 result_,
                 native_result_,
@@ -7765,13 +8117,21 @@ vulkan_native_command_packet_executor::execute_packets(
         if (!descriptor_sets_ready_for_packet(evidence_, packet)) {
             native_result_.descriptor_sets_ready = false;
             native_result_.draw_calls_ready = false;
+            const std::string descriptor_set_diagnostic =
+                "Native Vulkan command packet executor is missing descriptor set handle evidence";
+            append_draw_packet_resource_execution_record(
+                native_result_,
+                packet,
+                vulkan_native_command_packet_execution_status::descriptor_sets_unavailable,
+                vulkan_backend_fallback_reason::record_commands_failed,
+                descriptor_set_diagnostic);
             mark_native_packet_failure(
                 result_,
                 native_result_,
                 packet_event,
                 packet,
                 vulkan_native_command_packet_execution_status::descriptor_sets_unavailable,
-                "Native Vulkan command packet executor is missing descriptor set handle evidence");
+                descriptor_set_diagnostic);
             return result_;
         }
 
@@ -7783,6 +8143,12 @@ vulkan_native_command_packet_executor::execute_packets(
             if (!descriptor_payload_diagnostic.empty()) {
                 native_result_.descriptor_payload_binds_ready = false;
                 native_result_.draw_calls_ready = false;
+                append_draw_packet_resource_execution_record(
+                    native_result_,
+                    packet,
+                    vulkan_native_command_packet_execution_status::descriptor_payloads_unavailable,
+                    vulkan_backend_fallback_reason::record_commands_failed,
+                    descriptor_payload_diagnostic);
                 mark_native_packet_failure(
                     result_,
                     native_result_,
@@ -7800,6 +8166,12 @@ vulkan_native_command_packet_executor::execute_packets(
         if (!vertex_buffer_diagnostic.empty()) {
             native_result_.vertex_buffer_binds_ready = false;
             native_result_.draw_calls_ready = false;
+            append_draw_packet_resource_execution_record(
+                native_result_,
+                packet,
+                vulkan_native_command_packet_execution_status::vertex_buffer_unavailable,
+                vulkan_backend_fallback_reason::record_commands_failed,
+                vertex_buffer_diagnostic);
             mark_native_packet_failure(
                 result_,
                 native_result_,
@@ -7851,6 +8223,12 @@ vulkan_native_command_packet_executor::execute_packets(
                 descriptor_payload_bind);
         if (!draw_call_diagnostic.empty()) {
             native_result_.draw_calls_ready = false;
+            append_draw_packet_resource_execution_record(
+                native_result_,
+                packet,
+                vulkan_native_command_packet_execution_status::invalid_packet_data,
+                vulkan_backend_fallback_reason::record_commands_failed,
+                draw_call_diagnostic);
             mark_native_packet_failure(
                 result_,
                 native_result_,
@@ -7868,6 +8246,12 @@ vulkan_native_command_packet_executor::execute_packets(
             0,
             descriptor_payload_bind,
             vertex_buffer_bind);
+        append_draw_packet_resource_execution_record(
+            native_result_,
+            packet,
+            vulkan_native_command_packet_execution_status::completed,
+            vulkan_backend_fallback_reason::none,
+            {});
 
         packet_event.completed = true;
         ++result_.executed_packet_count;

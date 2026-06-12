@@ -127,6 +127,15 @@ quiz_vulkan::render::render_text_renderer_glyph_quad_packet_snapshot make_quads(
         });
 }
 
+quiz_vulkan::render::render_text_renderer_draw_payload_snapshot make_payloads(
+    quiz_vulkan::render::render_text_renderer_glyph_quad_packet_snapshot quads)
+{
+    return quiz_vulkan::render::make_render_text_renderer_draw_payloads(
+        quiz_vulkan::render::render_text_renderer_draw_payload_request{
+            .glyph_quads = std::move(quads),
+        });
+}
+
 quiz_vulkan::render::render_text_frame_draw_packet_snapshot draw_packet_for_resource(
     const quiz_vulkan::render::render_text_frame_resource_packet_materialization_entry& entry)
 {
@@ -314,6 +323,183 @@ void test_ready_resource_packets_become_glyph_quads()
         "fallback glyph evidence is preserved as false");
 }
 
+void test_ready_glyph_quads_become_renderer_draw_payloads()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_resource_packet_materialization_entry entry =
+        ready_resource_packet("resource-payload", U'R', 0);
+    const render_text_renderer_glyph_quad_packet_snapshot quads =
+        make_quads(resources_for({entry}));
+    const render_text_renderer_draw_payload_snapshot payloads =
+        make_payloads(quads);
+
+    require(payloads.ok(), "ready glyph quad produces ready renderer draw payload snapshot");
+    require(payloads.policy.glyph_quad_packet_count == 1U, "payload snapshot counts source glyph quad");
+    require(payloads.policy.payload_count == 1U, "one draw payload is emitted");
+    require(payloads.policy.ready_payload_count == 1U, "ready draw payload is counted");
+    require(payloads.policy.uploaded_payload_count == 1U, "uploaded draw payload is counted");
+    require(payloads.policy.clean_reuse_payload_count == 0U, "uploaded draw payload is not clean reuse");
+    require(payloads.policy.total_upload_rgba_bytes == 256U, "draw payload preserves upload bytes");
+    require(payloads.policy.used_real_backend, "draw payload policy preserves real backend evidence");
+    require(!payloads.policy.has_blockers, "ready draw payload snapshot has no blockers");
+    require(payloads.ready_payload_ids.size() == 1U, "ready draw payload id is exposed");
+
+    const render_text_renderer_draw_payload_record& payload = payloads.payloads.front();
+    const render_text_renderer_glyph_quad_packet_record& quad = quads.packets.front();
+    require(payload.drawable(), "draw payload is drawable");
+    require(
+        payload.status == render_text_renderer_draw_payload_status::payload_ready,
+        "draw payload status is ready");
+    require(payload.payload_id.find(quad.quad_packet_id) != std::string::npos, "payload id includes quad identity");
+    require(payload.quad_packet_id == quad.quad_packet_id, "quad packet identity is preserved");
+    require(payload.resource_packet_id == quad.resource_packet_id, "resource packet identity is preserved");
+    require(payload.draw_packet_id == quad.draw_packet_id, "draw packet identity is preserved");
+    require(payload.cache_key == quad.cache_key, "atlas cache key is preserved");
+    require(payload.page_id == quad.page_id, "atlas page id is preserved");
+    require(payload.page_revision == quad.page_revision, "atlas page revision is preserved");
+    require(payload.quad_bounds.x == quad.layout_bounds.x, "quad layout bounds are preserved");
+    require(payload.atlas_bounds.y == quad.atlas_bounds.y, "atlas bounds are preserved");
+    require(payload.uv_bounds.u1 == quad.uv_bounds.u1, "UV bounds are preserved");
+    require(payload.sampler_key == quad.sampler_key, "sampler key is preserved");
+    require(payload.upload_request_id == quad.upload_request_id, "upload request id is preserved");
+    require(payload.upload_operation_id == quad.upload_operation_id, "upload operation id is preserved");
+    require(payload.uploaded, "uploaded evidence is preserved");
+    require(!payload.clean_reuse, "clean reuse is false for uploaded payload");
+    require(payload.upload_consumed, "upload consumption is preserved");
+    require(payload.upload_rgba_bytes == quad.upload_rgba_bytes, "upload byte count is preserved");
+    require(payload.atlas_consumption.cache_key == quad.cache_key, "atlas consumption cache key is preserved");
+    require(
+        payload.atlas_consumption.upload_generation == payload.page_revision,
+        "upload generation is preserved");
+}
+
+void test_clean_reuse_glyph_quads_become_renderer_draw_payloads()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_frame_resource_packet_materialization_entry entry =
+        ready_resource_packet("resource-reuse-payload", U'R', 0);
+    entry.handoff_status = render_text_frame_upload_handoff_packet_status::ready_clean_reuse;
+    entry.upload_result_status = render_text_glyph_atlas_upload_result_status::accepted_clean_reuse;
+    entry.status = render_text_frame_resource_packet_materialization_status::materialized_clean_reuse;
+    entry.uploaded = false;
+    entry.clean_reuse = true;
+    entry.upload_consumed = false;
+    entry.upload_rgba_bytes = 0U;
+    entry.atlas_consumption.clean_reuse = true;
+
+    const render_text_renderer_draw_payload_snapshot payloads =
+        make_payloads(make_quads(resources_for({entry})));
+
+    require(payloads.ok(), "clean-reuse glyph quad produces ready draw payload snapshot");
+    require(payloads.policy.ready_payload_count == 1U, "clean-reuse draw payload is ready");
+    require(payloads.policy.uploaded_payload_count == 0U, "clean-reuse draw payload has no fresh upload");
+    require(payloads.policy.clean_reuse_payload_count == 1U, "clean-reuse draw payload is counted");
+    require(payloads.policy.total_upload_rgba_bytes == 0U, "clean-reuse draw payload carries no upload bytes");
+
+    const render_text_renderer_draw_payload_record& payload = payloads.payloads.front();
+    require(payload.drawable(), "clean-reuse draw payload is drawable");
+    require(!payload.uploaded, "clean-reuse draw payload has no fresh upload");
+    require(payload.clean_reuse, "clean-reuse evidence is preserved");
+    require(!payload.upload_consumed, "clean-reuse payload does not consume a fresh upload");
+    require(payload.upload_rgba_bytes == 0U, "clean-reuse payload has no upload byte count");
+    require(payload.atlas_consumption.clean_reuse, "atlas consumption records clean reuse");
+    require(payload.uv_bounds.valid, "clean-reuse payload still preserves UVs");
+}
+
+void test_draw_payload_diff_reports_stable_no_change()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_renderer_draw_payload_snapshot payloads =
+        make_payloads(make_quads(resources_for({
+            ready_resource_packet("resource-payload-stable", U'R', 0),
+        })));
+    const render_text_renderer_draw_payload_diff_snapshot diff =
+        diff_render_text_renderer_draw_payloads(payloads, payloads);
+
+    require(diff.stable_no_change(), "identical draw payload frames report stable no-change");
+    require(!diff.has_changes(), "identical draw payload frames have no changes");
+    require(diff.policy.unchanged_payload_count == 1U, "unchanged draw payload is counted");
+    require(diff.policy.added_payload_count == 0U, "stable payload diff has no additions");
+    require(diff.policy.removed_payload_count == 0U, "stable payload diff has no removals");
+    require(diff.policy.changed_payload_count == 0U, "stable payload diff has no changes");
+    require(diff.unchanged_payload_ids.size() == 1U, "stable payload id is exposed");
+    require(!diff.summary.empty(), "stable payload diff carries summary text");
+}
+
+void test_draw_payload_diff_reports_uploaded_to_clean_reuse()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_resource_packet_materialization_entry uploaded =
+        ready_resource_packet("resource-payload-reuse", U'R', 0);
+    render_text_frame_resource_packet_materialization_entry clean_reuse = uploaded;
+    clean_reuse.handoff_status = render_text_frame_upload_handoff_packet_status::ready_clean_reuse;
+    clean_reuse.upload_result_status = render_text_glyph_atlas_upload_result_status::accepted_clean_reuse;
+    clean_reuse.status = render_text_frame_resource_packet_materialization_status::materialized_clean_reuse;
+    clean_reuse.uploaded = false;
+    clean_reuse.clean_reuse = true;
+    clean_reuse.upload_consumed = false;
+    clean_reuse.upload_rgba_bytes = 0U;
+    clean_reuse.atlas_consumption.clean_reuse = true;
+
+    const render_text_renderer_draw_payload_diff_snapshot diff =
+        diff_render_text_renderer_draw_payloads(
+            make_payloads(make_quads(resources_for({uploaded}))),
+            make_payloads(make_quads(resources_for({clean_reuse}))));
+
+    require(diff.has_changes(), "uploaded-to-clean-reuse payload diff reports a change");
+    require(diff.policy.changed_payload_count == 1U, "uploaded-to-clean-reuse payload is changed");
+    require(
+        diff.policy.uploaded_to_clean_reuse_count == 1U,
+        "uploaded-to-clean-reuse transition is counted");
+    require(diff.uploaded_to_clean_reuse_payload_ids.size() == 1U, "transition payload id is exposed");
+    require(diff.policy.uploaded_payload_count_delta == -1, "uploaded payload count decreases");
+    require(diff.policy.clean_reuse_payload_count_delta == 1, "clean-reuse payload count increases");
+    require(diff.policy.total_upload_rgba_bytes_delta == -256, "upload byte delta is preserved");
+    require(diff.payload_diffs.front().uploaded_to_clean_reuse, "payload diff marks uploaded-to-clean-reuse");
+}
+
+void test_draw_payload_diff_counts_atlas_uv_and_bounds_changes()
+{
+    using namespace quiz_vulkan::render;
+
+    const render_text_frame_resource_packet_materialization_entry before =
+        ready_resource_packet("resource-payload-change", U'R', 0);
+    render_text_frame_resource_packet_materialization_entry after = before;
+    after.layout_bounds.x += 3.0f;
+    after.atlas_bounds.y += 4.0f;
+    after.uv_bounds.u1 += 0.25f;
+    after.page_id += 1;
+    after.page_revision += 1;
+    after.atlas_consumption.upload_generation += 1;
+    after.sampler_key = render_text_frame_resource_packet_sampler_key_for(after.page_id, after.page_revision);
+    after.upload_request_id = "upload-payload-changed";
+    after.upload_operation_id = "operation-payload-changed";
+    after.upload_rgba_bytes = 512U;
+
+    const render_text_renderer_draw_payload_diff_snapshot diff =
+        diff_render_text_renderer_draw_payloads(
+            make_payloads(make_quads(resources_for({before}))),
+            make_payloads(make_quads(resources_for({after}))));
+
+    require(diff.policy.changed_payload_count == 1U, "payload field changes produce one changed payload");
+    require(diff.policy.quad_bounds_changed_count == 1U, "quad bounds changes are counted");
+    require(diff.policy.atlas_bounds_changed_count == 1U, "atlas bounds changes are counted");
+    require(diff.policy.uv_bounds_changed_count == 1U, "UV changes are counted");
+    require(diff.policy.atlas_page_changed_count == 1U, "atlas page changes are counted");
+    require(diff.policy.page_revision_changed_count == 1U, "page revision changes are counted");
+    require(diff.policy.sampler_key_changed_count == 1U, "sampler key changes are counted");
+    require(diff.policy.upload_request_id_changed_count == 1U, "upload request changes are counted");
+    require(diff.policy.upload_operation_id_changed_count == 1U, "upload operation changes are counted");
+    require(diff.policy.uploaded_byte_count_changed_count == 1U, "upload byte changes are counted");
+    require(diff.payload_diffs.front().upload_rgba_bytes_delta == 256, "upload byte delta is preserved");
+    require(diff.payload_diffs.front().previous_page_id == before.page_id, "previous atlas page id is preserved");
+    require(diff.payload_diffs.front().current_page_id == after.page_id, "current atlas page id is preserved");
+}
+
 void test_blocked_resource_packet_stays_blocked()
 {
     using namespace quiz_vulkan::render;
@@ -341,6 +527,116 @@ void test_blocked_resource_packet_stays_blocked()
     require(
         quads.packets.front().blocker_summary == "draw packet has no ready upload handoff evidence",
         "resource blocker summary is preserved");
+}
+
+void test_blocked_glyph_quads_stay_blocked_as_draw_payloads()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_frame_resource_packet_materialization_entry blocked =
+        ready_resource_packet("resource-blocked-payload", U'B', 0);
+    blocked.status = render_text_frame_resource_packet_materialization_status::blocked_upload_rejected;
+    blocked.ready = false;
+    blocked.blocked = true;
+    blocked.renderer_boundary_ready = false;
+    blocked.uploaded = false;
+    blocked.upload_consumed = false;
+    blocked.upload_rgba_bytes = 0;
+    blocked.blocker_summary = "upload handoff rejected the draw packet upload";
+
+    const render_text_renderer_draw_payload_snapshot payloads =
+        make_payloads(make_quads(resources_for({blocked})));
+
+    require(!payloads.ok(), "blocked glyph quad keeps draw payload snapshot blocked");
+    require(payloads.has_blockers(), "blocked draw payload snapshot exposes blockers");
+    require(payloads.policy.blocked_payload_count == 1U, "blocked draw payload is counted");
+    require(payloads.policy.glyph_quad_blocked_count == 1U, "blocked source glyph quad is counted");
+    require(payloads.blocker_payload_ids.size() == 1U, "blocked draw payload id is exposed");
+
+    const render_text_renderer_draw_payload_record& payload = payloads.payloads.front();
+    require(!payload.drawable(), "blocked draw payload is not drawable");
+    require(
+        payload.status == render_text_renderer_draw_payload_status::blocked_glyph_quad,
+        "blocked draw payload preserves glyph quad blocker status");
+    require(
+        payload.quad_status == render_text_renderer_glyph_quad_packet_status::blocked_resource_packet,
+        "blocked draw payload preserves source glyph quad status");
+    require(
+        payload.blocker_summary == "upload handoff rejected the draw packet upload",
+        "blocked draw payload preserves blocker summary");
+}
+
+void test_draw_payload_diff_classifies_ready_blocked_transitions()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_frame_resource_packet_materialization_entry ready =
+        ready_resource_packet("resource-payload-transition", U'R', 0);
+    render_text_frame_resource_packet_materialization_entry blocked = ready;
+    blocked.status = render_text_frame_resource_packet_materialization_status::blocked_upload_rejected;
+    blocked.ready = false;
+    blocked.blocked = true;
+    blocked.renderer_boundary_ready = false;
+    blocked.uploaded = false;
+    blocked.upload_consumed = false;
+    blocked.upload_rgba_bytes = 0U;
+    blocked.blocker_summary = "upload handoff rejected the draw packet upload";
+
+    const render_text_renderer_draw_payload_snapshot ready_payloads =
+        make_payloads(make_quads(resources_for({ready})));
+    const render_text_renderer_draw_payload_snapshot blocked_payloads =
+        make_payloads(make_quads(resources_for({blocked})));
+    const render_text_renderer_draw_payload_diff_snapshot regression =
+        diff_render_text_renderer_draw_payloads(ready_payloads, blocked_payloads);
+    const render_text_renderer_draw_payload_diff_snapshot recovery =
+        diff_render_text_renderer_draw_payloads(blocked_payloads, ready_payloads);
+
+    require(regression.has_changes(), "ready-to-blocked payload diff reports a change");
+    require(regression.policy.readiness_regression_count == 1U, "ready-to-blocked payload is a regression");
+    require(regression.policy.readiness_changed_count == 1U, "payload readiness change is counted");
+    require(regression.policy.status_changed_count == 1U, "payload status change is counted");
+    require(regression.policy.blocker_summary_changed_count == 1U, "payload blocker summary change is counted");
+    require(regression.readiness_regressed_payload_ids.size() == 1U, "regressed payload id is exposed");
+    require(regression.payload_diffs.front().current_blocker_summary == blocked.blocker_summary, "blocker summary is preserved");
+    require(recovery.policy.readiness_recovery_count == 1U, "blocked-to-ready payload is a recovery");
+    require(recovery.readiness_recovered_payload_ids.size() == 1U, "recovered payload id is exposed");
+}
+
+void test_draw_payload_diff_reports_missing_identity_with_blocker_summary()
+{
+    using namespace quiz_vulkan::render;
+
+    render_text_frame_resource_packet_materialization_entry blocked =
+        ready_resource_packet("resource-payload-missing-id", U'B', 0);
+    blocked.status = render_text_frame_resource_packet_materialization_status::blocked_missing_upload_handoff;
+    blocked.ready = false;
+    blocked.blocked = true;
+    blocked.renderer_boundary_ready = false;
+    blocked.uploaded = false;
+    blocked.upload_consumed = false;
+    blocked.upload_rgba_bytes = 0U;
+    blocked.blocker_summary = "draw packet has no ready upload handoff evidence";
+
+    render_text_renderer_draw_payload_snapshot missing =
+        make_payloads(make_quads(resources_for({blocked})));
+    missing.payloads.front().payload_id.clear();
+    const render_text_renderer_draw_payload_diff_snapshot diff =
+        diff_render_text_renderer_draw_payloads(
+            make_payloads(make_quads(resources_for({ready_resource_packet("resource-payload-existing", U'R', 0)}))),
+            missing);
+
+    require(diff.policy.missing_identity_count == 1U, "missing payload identity is counted");
+    require(diff.missing_identity_payload_ids.size() == 1U, "missing payload identity is exposed deterministically");
+    const auto missing_diff = std::find_if(
+        diff.payload_diffs.begin(),
+        diff.payload_diffs.end(),
+        [](const render_text_renderer_draw_payload_diff_record& record) {
+            return record.missing_identity;
+        });
+    require(missing_diff != diff.payload_diffs.end(), "missing identity diff record is present");
+    require(
+        missing_diff->current_blocker_summary == "draw packet has no ready upload handoff evidence",
+        "missing identity diff preserves blocked glyph quad summary");
 }
 
 void test_glyph_quad_packet_order_is_deterministic()
@@ -680,7 +976,15 @@ void test_glyph_quad_diff_reports_added_removed_duplicate_and_missing_identity()
 int main()
 {
     test_ready_resource_packets_become_glyph_quads();
+    test_ready_glyph_quads_become_renderer_draw_payloads();
+    test_clean_reuse_glyph_quads_become_renderer_draw_payloads();
+    test_draw_payload_diff_reports_stable_no_change();
+    test_draw_payload_diff_reports_uploaded_to_clean_reuse();
+    test_draw_payload_diff_counts_atlas_uv_and_bounds_changes();
     test_blocked_resource_packet_stays_blocked();
+    test_blocked_glyph_quads_stay_blocked_as_draw_payloads();
+    test_draw_payload_diff_classifies_ready_blocked_transitions();
+    test_draw_payload_diff_reports_missing_identity_with_blocker_summary();
     test_glyph_quad_packet_order_is_deterministic();
     test_duplicate_and_missing_identities_are_diagnosed();
     test_render_frame_handoff_summary_preserves_ready_quad_facts();

@@ -70,6 +70,16 @@ struct keyboard_chord_diagnostic {
     keyboard_shortcut_intent intent = keyboard_shortcut_intent::none;
 };
 
+struct text_focus_route_state {
+    bool has_focus = false;
+    std::string target_id;
+    std::size_t text_byte_count = 0;
+    text_range caret;
+    bool has_selection = false;
+    text_range selection;
+    ime_composition_state composition;
+};
+
 enum class action_route_policy_kind {
     pointer_capture_reset,
     pointer_capture_arbitration,
@@ -106,6 +116,8 @@ struct action_route_policy_diagnostic {
     bool has_selection_after = false;
     text_range selection_before;
     text_range selection_after;
+    text_focus_route_state text_route_before;
+    text_focus_route_state text_route_after;
     normalized_input_event_summary normalized_event;
     ime_composition_state composition;
     ime_composition_state composition_before;
@@ -156,6 +168,7 @@ struct input_routing_diagnostics {
     std::vector<normalized_input_event_summary> normalized_events;
     std::vector<action_route_policy_diagnostic> action_routes;
     pointer_capture_snapshot pointer_capture;
+    text_focus_route_state text_route_state;
     input_diagnostic_summary summary;
 };
 
@@ -324,6 +337,21 @@ struct input_routing_pointer_capture_delta {
     input_routing_count_delta tracked_pointer_count;
     bool lifecycle_changed = false;
     bool pointer_id_changed = false;
+    bool changed = false;
+};
+
+struct input_routing_text_focus_route_delta {
+    text_focus_route_state before_state;
+    text_focus_route_state after_state;
+    input_routing_bool_delta has_focus;
+    input_routing_count_delta text_byte_count;
+    input_routing_bool_delta has_selection;
+    bool target_id_changed = false;
+    bool caret_changed = false;
+    bool selection_changed = false;
+    bool composition_active_changed = false;
+    bool composition_text_changed = false;
+    bool composition_range_changed = false;
     bool changed = false;
 };
 
@@ -531,6 +559,7 @@ struct input_routing_diagnostics_diff {
     input_routing_keyboard_route_count_deltas keyboard_routes;
     input_routing_gesture_policy_diff gesture_policies;
     input_routing_pointer_capture_delta pointer_capture;
+    input_routing_text_focus_route_delta text_route_state;
     input_routing_bool_delta pointer_capture_ended_cleanly;
     input_routing_bool_delta focus_ended_cleanly;
     input_routing_bool_delta preedit_ended_cleanly;
@@ -539,8 +568,119 @@ struct input_routing_diagnostics_diff {
     bool keyboard_routes_changed = false;
     bool gesture_policy_changed = false;
     bool pointer_capture_changed = false;
+    bool text_route_state_changed = false;
     bool clean_state_changed = false;
     bool changed = false;
+};
+
+struct input_routing_text_route_replay_counts {
+    std::size_t text_commit = 0;
+    std::size_t selection_replacement = 0;
+    std::size_t text_backspace = 0;
+    std::size_t text_delete_forward = 0;
+    std::size_t caret_moved = 0;
+    std::size_t selection_changed = 0;
+    std::size_t ime_preedit_start = 0;
+    std::size_t ime_preedit_update = 0;
+    std::size_t ime_commit = 0;
+    std::size_t ime_cancel = 0;
+    std::size_t focus_loss_cleanup = 0;
+};
+
+struct input_routing_text_route_replay_entry {
+    std::size_t step_index = 0;
+    input_routing_diagnostics_diff diff;
+    bool text_route_changed = false;
+    bool text_commit = false;
+    bool selection_replacement = false;
+    bool text_backspace = false;
+    bool text_delete_forward = false;
+    bool caret_moved = false;
+    bool selection_changed = false;
+    bool ime_preedit_start = false;
+    bool ime_preedit_update = false;
+    bool ime_commit = false;
+    bool ime_cancel = false;
+    bool focus_loss_cleanup = false;
+    std::size_t emitted_route_input_event_count = 0;
+    std::size_t diagnostic_only_route_count = 0;
+    std::size_t normalized_input_event_count = 0;
+    bool emits_external_route_action = false;
+};
+
+struct input_routing_text_route_replay_summary {
+    std::vector<input_routing_text_route_replay_entry> transcript;
+    input_routing_text_route_replay_counts counts;
+    std::size_t compared_diagnostic_count = 0;
+    std::size_t changed_step_count = 0;
+    std::size_t emitted_route_input_event_count = 0;
+    std::size_t diagnostic_only_route_count = 0;
+    std::size_t normalized_input_event_count = 0;
+    bool text_route_changed = false;
+    bool pointer_capture_changed = false;
+    bool emits_external_route_action = false;
+};
+
+struct input_routing_gesture_route_replay_counts {
+    std::size_t pointer_capture_started = 0;
+    std::size_t pointer_capture_updated = 0;
+    std::size_t pointer_capture_released = 0;
+    std::size_t pointer_capture_reset = 0;
+    std::size_t ignored_by_capture = 0;
+    std::size_t mouse_arbitration = 0;
+    std::size_t touch_arbitration = 0;
+    std::size_t tap = 0;
+    std::size_t long_press = 0;
+    std::size_t swipe_left = 0;
+    std::size_t swipe_right = 0;
+    std::size_t drag_start = 0;
+    std::size_t drag_update = 0;
+    std::size_t drag_end = 0;
+    std::size_t drag_cancel = 0;
+    std::size_t wheel = 0;
+    std::size_t gesture_canceled = 0;
+};
+
+struct input_routing_gesture_route_replay_entry {
+    std::size_t step_index = 0;
+    input_routing_diagnostics_diff diff;
+    std::int32_t pointer_id = 0;
+    pointer_contact_kind pointer_contact = pointer_contact_kind::unknown;
+    pointer_arbitration_decision pointer_decision = pointer_arbitration_decision::none;
+    bool pointer_capture_changed = false;
+    bool pointer_capture_started = false;
+    bool pointer_capture_updated = false;
+    bool pointer_capture_released = false;
+    bool pointer_capture_reset = false;
+    bool ignored_by_capture = false;
+    bool mouse_arbitration = false;
+    bool touch_arbitration = false;
+    bool tap = false;
+    bool long_press = false;
+    bool swipe_left = false;
+    bool swipe_right = false;
+    bool drag_start = false;
+    bool drag_update = false;
+    bool drag_end = false;
+    bool drag_cancel = false;
+    bool wheel = false;
+    bool gesture_canceled = false;
+    std::size_t emitted_route_input_event_count = 0;
+    std::size_t diagnostic_only_route_count = 0;
+    std::size_t normalized_input_event_count = 0;
+    bool emits_external_route_action = false;
+};
+
+struct input_routing_gesture_route_replay_summary {
+    std::vector<input_routing_gesture_route_replay_entry> transcript;
+    input_routing_gesture_route_replay_counts counts;
+    std::size_t compared_diagnostic_count = 0;
+    std::size_t changed_step_count = 0;
+    std::size_t emitted_route_input_event_count = 0;
+    std::size_t diagnostic_only_route_count = 0;
+    std::size_t normalized_input_event_count = 0;
+    bool pointer_capture_changed = false;
+    bool emits_external_route_action = false;
 };
 
 [[nodiscard]] inline std::int64_t input_routing_size_delta(
@@ -888,6 +1028,49 @@ inline void count_input_routing_keyboard_repeat_policy(
         || diff.tracked_pointer_count.changed
         || diff.lifecycle_changed
         || diff.pointer_id_changed;
+    return diff;
+}
+
+[[nodiscard]] inline bool input_routing_text_range_changed(text_range before, text_range after)
+{
+    return before.start_byte != after.start_byte || before.end_byte != after.end_byte;
+}
+
+[[nodiscard]] inline input_routing_text_focus_route_delta diff_input_routing_text_focus_route_state(
+    text_focus_route_state before,
+    text_focus_route_state after)
+{
+    input_routing_text_focus_route_delta diff{};
+    diff.before_state = std::move(before);
+    diff.after_state = std::move(after);
+    diff.has_focus = diff_input_routing_bool(diff.before_state.has_focus, diff.after_state.has_focus);
+    diff.text_byte_count =
+        diff_input_routing_count(diff.before_state.text_byte_count, diff.after_state.text_byte_count);
+    diff.has_selection =
+        diff_input_routing_bool(diff.before_state.has_selection, diff.after_state.has_selection);
+    diff.target_id_changed = diff.before_state.target_id != diff.after_state.target_id;
+    diff.caret_changed = input_routing_text_range_changed(diff.before_state.caret, diff.after_state.caret);
+    diff.selection_changed =
+        input_routing_text_range_changed(diff.before_state.selection, diff.after_state.selection);
+    diff.composition_active_changed =
+        diff.before_state.composition.active != diff.after_state.composition.active;
+    diff.composition_text_changed =
+        diff.before_state.composition.preedit_text != diff.after_state.composition.preedit_text;
+    diff.composition_range_changed =
+        input_routing_text_range_changed(diff.before_state.composition.replacement_range,
+            diff.after_state.composition.replacement_range)
+        || input_routing_text_range_changed(diff.before_state.composition.preedit_range,
+            diff.after_state.composition.preedit_range);
+    diff.changed =
+        diff.has_focus.changed
+        || diff.text_byte_count.changed
+        || diff.has_selection.changed
+        || diff.target_id_changed
+        || diff.caret_changed
+        || diff.selection_changed
+        || diff.composition_active_changed
+        || diff.composition_text_changed
+        || diff.composition_range_changed;
     return diff;
 }
 
@@ -1309,6 +1492,8 @@ inline void accumulate_input_routing_gesture_policy_threshold_counts(
         .keyboard_routes = diff_input_routing_keyboard_route_counts(before_keyboard_routes, after_keyboard_routes),
         .gesture_policies = diff_input_routing_gesture_policies(before, after),
         .pointer_capture = diff_input_routing_pointer_capture(before.pointer_capture, after.pointer_capture),
+        .text_route_state =
+            diff_input_routing_text_focus_route_state(before.text_route_state, after.text_route_state),
         .pointer_capture_ended_cleanly =
             diff_input_routing_bool(
                 before.summary.pointer_capture_ended_cleanly,
@@ -1330,6 +1515,7 @@ inline void accumulate_input_routing_gesture_policy_threshold_counts(
     diff.keyboard_routes_changed = diff.keyboard_routes.changed;
     diff.gesture_policy_changed = diff.gesture_policies.changed;
     diff.pointer_capture_changed = diff.pointer_capture.changed;
+    diff.text_route_state_changed = diff.text_route_state.changed;
     diff.clean_state_changed =
         diff.pointer_capture_ended_cleanly.changed
         || diff.focus_ended_cleanly.changed
@@ -1340,8 +1526,340 @@ inline void accumulate_input_routing_gesture_policy_threshold_counts(
         || diff.keyboard_routes_changed
         || diff.gesture_policy_changed
         || diff.pointer_capture_changed
+        || diff.text_route_state_changed
         || diff.clean_state_changed;
     return diff;
+}
+
+[[nodiscard]] inline std::size_t count_input_routing_emitting_policy_routes(
+    const input_routing_diagnostics& diagnostics)
+{
+    std::size_t count = 0;
+    for (const action_route_policy_diagnostic& route : diagnostics.action_routes) {
+        if (route.emits_input_event) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+[[nodiscard]] inline input_routing_text_route_replay_entry make_input_routing_text_route_replay_entry(
+    std::size_t step_index,
+    const input_routing_diagnostics& before,
+    const input_routing_diagnostics& after)
+{
+    input_routing_diagnostics_diff diff = diff_input_routing_diagnostics(before, after);
+    const bool has_preedit_route =
+        diff.action_routes.ime_preedit.after_count > 0
+        || diff.action_routes.ime_composition_start.after_count > 0;
+    const std::size_t emitting_route_count = count_input_routing_emitting_policy_routes(after);
+    const std::size_t diagnostic_route_count =
+        after.action_routes.size() >= emitting_route_count
+            ? after.action_routes.size() - emitting_route_count
+            : 0;
+    const bool text_route_changed = diff.text_route_state_changed;
+    const bool text_commit = diff.action_routes.text_commit_boundary.after_count > 0;
+    const bool selection_replacement =
+        text_commit
+        && diff.text_route_state.before_state.has_selection
+        && !diff.text_route_state.after_state.has_selection;
+    const bool text_backspace = diff.action_routes.text_backspace_boundary.after_count > 0;
+    const bool text_delete_forward = diff.action_routes.text_delete_forward_boundary.after_count > 0;
+    const bool caret_moved = diff.action_routes.caret_moved.after_count > 0;
+    const bool selection_changed = diff.action_routes.selection_changed.after_count > 0;
+    const bool ime_preedit_start =
+        has_preedit_route
+        && !diff.text_route_state.before_state.composition.active
+        && diff.text_route_state.after_state.composition.active;
+    const bool ime_preedit_update =
+        has_preedit_route
+        && diff.text_route_state.before_state.composition.active
+        && diff.text_route_state.after_state.composition.active;
+    const bool ime_commit = diff.action_routes.ime_commit.after_count > 0;
+    const bool ime_cancel = diff.action_routes.ime_cancel.after_count > 0;
+    const bool focus_loss_cleanup =
+        diff.action_routes.focus_loss.after_count > 0
+        && !diff.text_route_state.after_state.has_focus;
+
+    return input_routing_text_route_replay_entry{
+        .step_index = step_index,
+        .diff = std::move(diff),
+        .text_route_changed = text_route_changed,
+        .text_commit = text_commit,
+        .selection_replacement = selection_replacement,
+        .text_backspace = text_backspace,
+        .text_delete_forward = text_delete_forward,
+        .caret_moved = caret_moved,
+        .selection_changed = selection_changed,
+        .ime_preedit_start = ime_preedit_start,
+        .ime_preedit_update = ime_preedit_update,
+        .ime_commit = ime_commit,
+        .ime_cancel = ime_cancel,
+        .focus_loss_cleanup = focus_loss_cleanup,
+        .emitted_route_input_event_count = emitting_route_count,
+        .diagnostic_only_route_count = diagnostic_route_count,
+        .normalized_input_event_count = after.summary.normalized_event_count,
+        .emits_external_route_action = false,
+    };
+}
+
+inline void accumulate_input_routing_text_route_replay_counts(
+    input_routing_text_route_replay_summary& summary,
+    const input_routing_text_route_replay_entry& entry)
+{
+    if (entry.text_commit) {
+        ++summary.counts.text_commit;
+    }
+    if (entry.selection_replacement) {
+        ++summary.counts.selection_replacement;
+    }
+    if (entry.text_backspace) {
+        ++summary.counts.text_backspace;
+    }
+    if (entry.text_delete_forward) {
+        ++summary.counts.text_delete_forward;
+    }
+    if (entry.caret_moved) {
+        ++summary.counts.caret_moved;
+    }
+    if (entry.selection_changed) {
+        ++summary.counts.selection_changed;
+    }
+    if (entry.ime_preedit_start) {
+        ++summary.counts.ime_preedit_start;
+    }
+    if (entry.ime_preedit_update) {
+        ++summary.counts.ime_preedit_update;
+    }
+    if (entry.ime_commit) {
+        ++summary.counts.ime_commit;
+    }
+    if (entry.ime_cancel) {
+        ++summary.counts.ime_cancel;
+    }
+    if (entry.focus_loss_cleanup) {
+        ++summary.counts.focus_loss_cleanup;
+    }
+}
+
+[[nodiscard]] inline input_routing_text_route_replay_summary summarize_input_routing_text_route_replay(
+    const std::vector<input_routing_diagnostics>& diagnostics)
+{
+    input_routing_text_route_replay_summary summary{};
+    if (diagnostics.size() < 2) {
+        return summary;
+    }
+
+    summary.compared_diagnostic_count = diagnostics.size() - 1;
+    summary.transcript.reserve(summary.compared_diagnostic_count);
+    for (std::size_t index = 0; index < summary.compared_diagnostic_count; ++index) {
+        input_routing_text_route_replay_entry entry =
+            make_input_routing_text_route_replay_entry(index, diagnostics[index], diagnostics[index + 1]);
+        if (entry.diff.changed) {
+            ++summary.changed_step_count;
+        }
+        summary.emitted_route_input_event_count += entry.emitted_route_input_event_count;
+        summary.diagnostic_only_route_count += entry.diagnostic_only_route_count;
+        summary.normalized_input_event_count += entry.normalized_input_event_count;
+        summary.text_route_changed = summary.text_route_changed || entry.text_route_changed;
+        summary.pointer_capture_changed =
+            summary.pointer_capture_changed || entry.diff.pointer_capture_changed;
+        summary.emits_external_route_action =
+            summary.emits_external_route_action || entry.emits_external_route_action;
+        accumulate_input_routing_text_route_replay_counts(summary, entry);
+        summary.transcript.push_back(std::move(entry));
+    }
+    return summary;
+}
+
+[[nodiscard]] inline input_routing_gesture_route_replay_entry make_input_routing_gesture_route_replay_entry(
+    std::size_t step_index,
+    const input_routing_diagnostics& before,
+    const input_routing_diagnostics& after)
+{
+    input_routing_diagnostics_diff diff = diff_input_routing_diagnostics(before, after);
+    const std::size_t emitting_route_count = count_input_routing_emitting_policy_routes(after);
+    const std::size_t diagnostic_route_count =
+        after.action_routes.size() >= emitting_route_count
+            ? after.action_routes.size() - emitting_route_count
+            : 0;
+
+    std::int32_t pointer_id = 0;
+    pointer_contact_kind pointer_contact = pointer_contact_kind::unknown;
+    pointer_arbitration_decision pointer_decision = pointer_arbitration_decision::none;
+    bool mouse_arbitration = false;
+    bool touch_arbitration = false;
+    bool ignored_by_capture = false;
+    bool gesture_canceled = after.summary.normalized_events.drag_cancel > 0;
+    for (const action_route_policy_diagnostic& route : after.action_routes) {
+        if (pointer_id == 0 && route.pointer_id != 0) {
+            pointer_id = route.pointer_id;
+        }
+        if (pointer_id == 0 && route.normalized_event.pointer_id != 0) {
+            pointer_id = route.normalized_event.pointer_id;
+        }
+        if (pointer_id == 0 && route.gesture_policy.pointer_id != 0) {
+            pointer_id = route.gesture_policy.pointer_id;
+        }
+        if (pointer_contact == pointer_contact_kind::unknown
+            && route.pointer_contact != pointer_contact_kind::unknown) {
+            pointer_contact = route.pointer_contact;
+        }
+        if (pointer_decision == pointer_arbitration_decision::none
+            && route.pointer_decision != pointer_arbitration_decision::none) {
+            pointer_decision = route.pointer_decision;
+        }
+        if (route.kind == action_route_policy_kind::pointer_capture_arbitration
+            && route.pointer_contact == pointer_contact_kind::mouse_like) {
+            mouse_arbitration = true;
+        }
+        if (route.kind == action_route_policy_kind::pointer_capture_arbitration
+            && route.pointer_contact == pointer_contact_kind::touch_like) {
+            touch_arbitration = true;
+        }
+        if (route.pointer_decision == pointer_arbitration_decision::ignored_by_capture) {
+            ignored_by_capture = true;
+        }
+        if (route.pointer_decision == pointer_arbitration_decision::canceled
+            || route.pointer_decision == pointer_arbitration_decision::restarted) {
+            gesture_canceled = true;
+        }
+    }
+
+    const bool before_has_capture = diff.pointer_capture.before_has_state;
+    const bool after_has_capture = diff.pointer_capture.after_has_state;
+    const bool pointer_capture_started = !before_has_capture && after_has_capture;
+    const bool pointer_capture_released = before_has_capture && !after_has_capture;
+    const bool pointer_capture_updated =
+        before_has_capture && after_has_capture && diff.pointer_capture.changed;
+    const bool pointer_capture_changed = diff.pointer_capture_changed;
+    const bool pointer_capture_reset = diff.action_routes.pointer_capture_reset.after_count > 0;
+    const bool tap = after.summary.normalized_events.tap > 0;
+    const bool long_press = after.summary.normalized_events.long_press > 0;
+    const bool swipe_left = after.summary.normalized_events.swipe_left > 0;
+    const bool swipe_right = after.summary.normalized_events.swipe_right > 0;
+    const bool drag_start = after.summary.normalized_events.drag_start > 0;
+    const bool drag_update = after.summary.normalized_events.drag_update > 0;
+    const bool drag_end = after.summary.normalized_events.drag_end > 0;
+    const bool drag_cancel = after.summary.normalized_events.drag_cancel > 0;
+    const bool wheel = after.summary.normalized_events.wheel > 0;
+    const std::size_t normalized_input_event_count = after.summary.normalized_event_count;
+
+    return input_routing_gesture_route_replay_entry{
+        .step_index = step_index,
+        .diff = std::move(diff),
+        .pointer_id = pointer_id,
+        .pointer_contact = pointer_contact,
+        .pointer_decision = pointer_decision,
+        .pointer_capture_changed = pointer_capture_changed,
+        .pointer_capture_started = pointer_capture_started,
+        .pointer_capture_updated = pointer_capture_updated,
+        .pointer_capture_released = pointer_capture_released,
+        .pointer_capture_reset = pointer_capture_reset,
+        .ignored_by_capture = ignored_by_capture,
+        .mouse_arbitration = mouse_arbitration,
+        .touch_arbitration = touch_arbitration,
+        .tap = tap,
+        .long_press = long_press,
+        .swipe_left = swipe_left,
+        .swipe_right = swipe_right,
+        .drag_start = drag_start,
+        .drag_update = drag_update,
+        .drag_end = drag_end,
+        .drag_cancel = drag_cancel,
+        .wheel = wheel,
+        .gesture_canceled = gesture_canceled,
+        .emitted_route_input_event_count = emitting_route_count,
+        .diagnostic_only_route_count = diagnostic_route_count,
+        .normalized_input_event_count = normalized_input_event_count,
+        .emits_external_route_action = false,
+    };
+}
+
+inline void accumulate_input_routing_gesture_route_replay_counts(
+    input_routing_gesture_route_replay_summary& summary,
+    const input_routing_gesture_route_replay_entry& entry)
+{
+    if (entry.pointer_capture_started) {
+        ++summary.counts.pointer_capture_started;
+    }
+    if (entry.pointer_capture_updated) {
+        ++summary.counts.pointer_capture_updated;
+    }
+    if (entry.pointer_capture_released) {
+        ++summary.counts.pointer_capture_released;
+    }
+    if (entry.pointer_capture_reset) {
+        ++summary.counts.pointer_capture_reset;
+    }
+    if (entry.ignored_by_capture) {
+        ++summary.counts.ignored_by_capture;
+    }
+    if (entry.mouse_arbitration) {
+        ++summary.counts.mouse_arbitration;
+    }
+    if (entry.touch_arbitration) {
+        ++summary.counts.touch_arbitration;
+    }
+    if (entry.tap) {
+        ++summary.counts.tap;
+    }
+    if (entry.long_press) {
+        ++summary.counts.long_press;
+    }
+    if (entry.swipe_left) {
+        ++summary.counts.swipe_left;
+    }
+    if (entry.swipe_right) {
+        ++summary.counts.swipe_right;
+    }
+    if (entry.drag_start) {
+        ++summary.counts.drag_start;
+    }
+    if (entry.drag_update) {
+        ++summary.counts.drag_update;
+    }
+    if (entry.drag_end) {
+        ++summary.counts.drag_end;
+    }
+    if (entry.drag_cancel) {
+        ++summary.counts.drag_cancel;
+    }
+    if (entry.wheel) {
+        ++summary.counts.wheel;
+    }
+    if (entry.gesture_canceled) {
+        ++summary.counts.gesture_canceled;
+    }
+}
+
+[[nodiscard]] inline input_routing_gesture_route_replay_summary summarize_input_routing_gesture_route_replay(
+    const std::vector<input_routing_diagnostics>& diagnostics)
+{
+    input_routing_gesture_route_replay_summary summary{};
+    if (diagnostics.size() < 2) {
+        return summary;
+    }
+
+    summary.compared_diagnostic_count = diagnostics.size() - 1;
+    summary.transcript.reserve(summary.compared_diagnostic_count);
+    for (std::size_t index = 0; index < summary.compared_diagnostic_count; ++index) {
+        input_routing_gesture_route_replay_entry entry =
+            make_input_routing_gesture_route_replay_entry(index, diagnostics[index], diagnostics[index + 1]);
+        if (entry.diff.changed) {
+            ++summary.changed_step_count;
+        }
+        summary.emitted_route_input_event_count += entry.emitted_route_input_event_count;
+        summary.diagnostic_only_route_count += entry.diagnostic_only_route_count;
+        summary.normalized_input_event_count += entry.normalized_input_event_count;
+        summary.pointer_capture_changed =
+            summary.pointer_capture_changed || entry.pointer_capture_changed;
+        summary.emits_external_route_action =
+            summary.emits_external_route_action || entry.emits_external_route_action;
+        accumulate_input_routing_gesture_route_replay_counts(summary, entry);
+        summary.transcript.push_back(std::move(entry));
+    }
+    return summary;
 }
 
 } // namespace quiz_vulkan::input

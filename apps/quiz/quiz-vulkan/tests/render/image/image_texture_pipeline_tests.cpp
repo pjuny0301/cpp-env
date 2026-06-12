@@ -43,6 +43,10 @@ static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_textu
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_batch_plan>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_batch_plan_entry>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_batch_plan>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_pipeline_upload_cache_payload_entry>);
+static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_texture_pipeline_upload_cache_payload_summary>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_pipeline_upload_cache_payload_entry>);
+static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_texture_pipeline_upload_cache_payload_summary>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_draw_list_frame_handoff_entry>);
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_draw_list_frame_handoff_snapshot>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_draw_list_frame_handoff_entry>);
@@ -97,6 +101,12 @@ static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_exter
 static_assert(!HasFakeCacheSnapshotField<quiz_vulkan::render::render_image_external_decoder_selection_snapshot_diff>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_external_decoder_selection_entry_diff>);
 static_assert(!HasFakeUploadSnapshotField<quiz_vulkan::render::render_image_external_decoder_selection_snapshot_diff>);
+static_assert(std::derived_from<
+              quiz_vulkan::render::fake_image_texture_pipeline,
+              quiz_vulkan::render::image_texture_pipeline_upload_cache_diagnostics_interface>);
+static_assert(std::derived_from<
+              quiz_vulkan::render::standard_image_texture_pipeline,
+              quiz_vulkan::render::image_texture_pipeline_upload_cache_diagnostics_interface>);
 
 void require(bool condition, const char* message)
 {
@@ -317,6 +327,31 @@ void write_bytes(const std::filesystem::path& path, const std::vector<std::byte>
     require(file.good(), "image pipeline fixture bytes can be written");
 }
 
+const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot* find_cache_entry_by_source_key(
+    const quiz_vulkan::render::fake_image_texture_cache_snapshot& snapshot,
+    std::string_view source_key)
+{
+    for (const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot& entry : snapshot.entries) {
+        if (entry.key.source_key == source_key) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot*
+find_placeholder_cache_entry_by_requested_source_key(
+    const quiz_vulkan::render::fake_image_texture_cache_snapshot& snapshot,
+    std::string_view source_key)
+{
+    for (const quiz_vulkan::render::fake_image_texture_cache_entry_snapshot& entry : snapshot.entries) {
+        if (entry.placeholder_texture && entry.requested_key.source_key == source_key) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
 quiz_vulkan::render::fake_image_texture_pipeline_snapshot make_optional_stb_pipeline_snapshot(
     std::string uri,
     const std::vector<std::byte>& encoded_bytes,
@@ -449,6 +484,222 @@ void test_filesystem_pipeline_reads_ppm_fixture_and_reuses_cache()
     require(snapshot.entries[1].upload_count_after == 1, "repeat snapshot records unchanged upload count");
     require(snapshot.upload_snapshot.upload_count == 1, "pipeline upload snapshot records one upload");
     require(snapshot.cache_snapshot.texture_count == 1, "pipeline cache snapshot records one texture");
+
+    const image_texture_pipeline_interface& pipeline_interface = pipeline;
+    require(
+        image_texture_pipeline_upload_cache_diagnostics(pipeline_interface) != nullptr,
+        "fake filesystem pipeline exposes upload/cache side interface");
+    const render_image_texture_pipeline_upload_cache_snapshot side_snapshot =
+        render_image_texture_pipeline_upload_cache_diagnostic_snapshot(pipeline_interface);
+    require(side_snapshot.ok(), "fake filesystem side snapshot is available");
+    require(side_snapshot.acquire_count == 2, "fake filesystem side snapshot records both acquires");
+    require(side_snapshot.ready_count == 2, "fake filesystem side snapshot records ready count");
+    require(side_snapshot.cache_hit_count == 1, "fake filesystem side snapshot records cache reuse");
+    require(side_snapshot.upload_diagnostics_available, "fake filesystem side snapshot exposes upload diagnostics");
+    require(side_snapshot.upload_snapshot.upload_count == 1, "fake filesystem side snapshot records one upload");
+    require(side_snapshot.cache_snapshot.texture_count == 1, "fake filesystem side snapshot records cached texture");
+    require(
+        side_snapshot.cache_snapshot.cached_decoded_byte_count == 8,
+        "fake filesystem side snapshot records decoded byte residency");
+}
+
+void test_pipeline_upload_cache_side_interface_reports_fake_placeholder()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path root = test_data_root();
+    reset_test_data_root(root);
+    write_bytes(root / "textures" / "bad-placeholder.ppm", make_short_ppm_2x1_fixture_bytes());
+
+    const normalizing_image_resolver resolver;
+    filesystem_image_source_bytes_loader loader(root);
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    cache.set_placeholder_texture_policy(fake_image_texture_placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    });
+    fake_image_texture_pipeline pipeline(resolver, loader, cache, uploader);
+
+    const image_texture_pipeline_interface& pipeline_interface = pipeline;
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{.uri = "textures/bad-placeholder.ppm"});
+    const render_image_texture_pipeline_upload_cache_snapshot side_snapshot =
+        render_image_texture_pipeline_upload_cache_diagnostic_snapshot(pipeline_interface);
+
+    require(result.ok(), "fake placeholder side interface fixture produces fallback texture");
+    require(is_fake_image_texture_placeholder_key(result.texture.key), "fake placeholder side interface fixture uses placeholder key");
+    require(side_snapshot.ok(), "fake placeholder side snapshot is available");
+    require(side_snapshot.ready_count == 1, "fake placeholder side snapshot records ready fallback");
+    require(side_snapshot.failure_count == 0, "fake placeholder side snapshot records no pipeline failure");
+    require(side_snapshot.decode_failure_count == 0, "fake placeholder side snapshot treats placeholder as ready");
+    require(side_snapshot.upload_snapshot.upload_count == 1, "fake placeholder side snapshot records placeholder upload");
+    require(
+        is_fake_image_texture_placeholder_key(side_snapshot.upload_snapshot.request_snapshots[0].key),
+        "fake placeholder side snapshot records placeholder upload key");
+    require(side_snapshot.cache_snapshot.texture_count == 1, "fake placeholder side snapshot caches placeholder texture");
+    require(
+        side_snapshot.cache_snapshot.placeholder_policy_texture_count == 1,
+        "fake placeholder side snapshot records placeholder cache count");
+    require(
+        find_cache_entry_by_source_key(side_snapshot.cache_snapshot, "textures/bad-placeholder.ppm")
+            == nullptr,
+        "fake placeholder side snapshot does not mark failed source resident");
+    require(
+        find_placeholder_cache_entry_by_requested_source_key(
+            side_snapshot.cache_snapshot,
+            "textures/bad-placeholder.ppm")
+            != nullptr,
+        "fake placeholder side snapshot records requested failed source");
+}
+
+void test_pipeline_upload_cache_payload_summary_matches_fake_and_standard_interfaces()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::string uri = "textures/payload-summary.ppm";
+    const std::vector<std::byte> fixture_bytes = make_ppm_2x1_fixture_bytes();
+    const normalizing_image_resolver resolver;
+
+    render_image_sampler_policy sampler;
+    sampler.min_filter = render_image_filter::nearest;
+    sampler.wrap_u = render_image_wrap_mode::repeat;
+
+    fake_image_source_bytes_loader fake_loader;
+    fake_loader.set_source_bytes(uri, fixture_bytes);
+    ppm_image_decoder decoder;
+    fake_image_texture_uploader uploader;
+    fake_image_texture_cache cache(decoder, uploader);
+    fake_image_texture_pipeline fake_pipeline(resolver, fake_loader, cache, uploader);
+
+    fake_image_source_bytes_loader standard_loader;
+    standard_loader.set_source_bytes(uri, fixture_bytes);
+    standard_image_texture_pipeline standard_pipeline(resolver, standard_loader);
+
+    const render_image_texture_pipeline_request request{
+        .uri = uri,
+        .sampler = sampler,
+    };
+    const render_image_texture_pipeline_result fake_first = fake_pipeline.acquire_texture(request);
+    const render_image_texture_pipeline_result fake_second = fake_pipeline.acquire_texture(request);
+    const render_image_texture_pipeline_result standard_first = standard_pipeline.acquire_texture(request);
+    const render_image_texture_pipeline_result standard_second = standard_pipeline.acquire_texture(request);
+
+    require(fake_first.ok(), "fake payload summary fixture uploads first texture");
+    require(fake_second.ok(), "fake payload summary fixture reuses texture");
+    require(standard_first.ok(), "standard payload summary fixture uploads first texture");
+    require(standard_second.ok(), "standard payload summary fixture reuses texture");
+    require(fake_second.texture.cache_hit, "fake payload summary fixture records cache hit");
+    require(standard_second.texture.cache_hit, "standard payload summary fixture records cache hit");
+
+    const image_texture_pipeline_interface& fake_interface = fake_pipeline;
+    const image_texture_pipeline_interface& standard_interface = standard_pipeline;
+    const render_image_texture_pipeline_upload_cache_payload_summary fake_summary =
+        render_image_texture_pipeline_upload_cache_payload_diagnostic_summary(fake_interface);
+    const render_image_texture_pipeline_upload_cache_payload_summary standard_summary =
+        render_image_texture_pipeline_upload_cache_payload_diagnostic_summary(standard_interface);
+
+    require(fake_summary.ok(), "fake payload summary is ready through side interface");
+    require(standard_summary.ok(), "standard payload summary is ready through side interface");
+    require(fake_summary.entry_count == 1, "fake payload summary has one resident payload");
+    require(standard_summary.entry_count == 1, "standard payload summary has one resident payload");
+    require(fake_summary.ready_payload_count == 1, "fake payload summary counts one ready payload");
+    require(standard_summary.ready_payload_count == 1, "standard payload summary counts one ready payload");
+    require(fake_summary.placeholder_payload_count == 0, "fake payload summary records no placeholder");
+    require(standard_summary.placeholder_payload_count == 0, "standard payload summary records no placeholder");
+    require(fake_summary.blocked_payload_count == 0, "fake payload summary records no blockers");
+    require(standard_summary.blocked_payload_count == 0, "standard payload summary records no blockers");
+    require(fake_summary.cache_hit_payload_count == 1, "fake payload summary observes repeated cache use");
+    require(standard_summary.cache_hit_payload_count == 1, "standard payload summary observes repeated cache use");
+    require(fake_summary.upload_request_count == 1, "fake payload summary records one upload request");
+    require(standard_summary.upload_request_count == 1, "standard payload summary records one upload request");
+    require(fake_summary.upload_result_count == 1, "fake payload summary records one upload result");
+    require(standard_summary.upload_result_count == 1, "standard payload summary records one upload result");
+    require(fake_summary.decoded_byte_count == 8, "fake payload summary records decoded bytes");
+    require(standard_summary.decoded_byte_count == 8, "standard payload summary records decoded bytes");
+    require(fake_summary.staging_byte_count == 8, "fake payload summary records staging bytes");
+    require(standard_summary.staging_byte_count == 8, "standard payload summary records staging bytes");
+    require(fake_summary.uploaded_byte_count == 8, "fake payload summary records uploaded bytes");
+    require(standard_summary.uploaded_byte_count == 8, "standard payload summary records uploaded bytes");
+
+    const render_image_texture_pipeline_upload_cache_payload_entry& fake_entry =
+        fake_summary.entries[0];
+    const render_image_texture_pipeline_upload_cache_payload_entry& standard_entry =
+        standard_summary.entries[0];
+    require(fake_entry.ok(), "fake payload entry is ready");
+    require(standard_entry.ok(), "standard payload entry is ready");
+    require(fake_entry.cache_key == uri, "fake payload entry preserves cache key");
+    require(standard_entry.cache_key == uri, "standard payload entry preserves cache key");
+    require(
+        fake_entry.stable_cache_key == standard_entry.stable_cache_key,
+        "fake and standard payload summaries agree on stable cache key");
+    require(
+        fake_entry.sampler_key == standard_entry.sampler_key,
+        "fake and standard payload summaries agree on sampler key");
+    require(fake_entry.sampler == sampler, "fake payload entry preserves sampler policy");
+    require(standard_entry.sampler == sampler, "standard payload entry preserves sampler policy");
+    require(fake_entry.texture_id != 0, "fake payload entry exposes texture id");
+    require(standard_entry.texture_id != 0, "standard payload entry exposes texture id");
+    require(fake_entry.texture_revision == 1, "fake payload entry exposes texture revision");
+    require(standard_entry.texture_revision == 1, "standard payload entry exposes texture revision");
+    require(fake_entry.decoded_width == 2, "fake payload entry records decoded width");
+    require(standard_entry.decoded_width == 2, "standard payload entry records decoded width");
+    require(fake_entry.decoded_height == 1, "fake payload entry records decoded height");
+    require(standard_entry.decoded_height == 1, "standard payload entry records decoded height");
+    require(fake_entry.pixel_count == 2, "fake payload entry records pixel count");
+    require(standard_entry.pixel_count == 2, "standard payload entry records pixel count");
+    require(fake_entry.decoded_payload_hash != 0, "fake payload entry records decoded hash");
+    require(standard_entry.decoded_payload_hash != 0, "standard payload entry records decoded hash");
+    require(
+        fake_entry.decoded_payload_hash == standard_entry.decoded_payload_hash,
+        "fake and standard payload summaries agree on decoded payload hash");
+    require(fake_entry.upload_generation_id == 1, "fake payload entry records upload generation");
+    require(standard_entry.upload_generation_id == 1, "standard payload entry records upload generation");
+}
+
+void test_pipeline_upload_cache_payload_summary_reports_missing_and_decode_blockers()
+{
+    using namespace quiz_vulkan::render;
+
+    const normalizing_image_resolver resolver;
+    fake_image_source_bytes_loader loader;
+    loader.set_source_bytes("textures/bad-summary.ppm", make_short_ppm_2x1_fixture_bytes());
+    standard_image_texture_pipeline pipeline(resolver, loader);
+
+    const image_texture_pipeline_interface& pipeline_interface = pipeline;
+    const render_image_texture_pipeline_result missing = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{.uri = "textures/missing-summary.ppm"});
+    const render_image_texture_pipeline_result malformed = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{.uri = "textures/bad-summary.ppm"});
+    const render_image_texture_pipeline_upload_cache_payload_summary summary =
+        render_image_texture_pipeline_upload_cache_payload_diagnostic_summary(pipeline_interface);
+
+    require(!missing.ok(), "payload summary missing-source fixture fails");
+    require(missing.status == render_image_texture_pipeline_status::source_load_failed, "missing fixture records source load failure");
+    require(!malformed.ok(), "payload summary malformed fixture fails");
+    require(malformed.status == render_image_texture_pipeline_status::decode_failed, "malformed fixture records decode failure");
+    require(!summary.ok(), "payload summary with failures is blocked");
+    require(summary.cache_entry_count == 0, "payload summary failure fixture has no resident texture");
+    require(summary.upload_request_count == 0, "payload summary failure fixture queues no upload");
+    require(summary.upload_result_count == 0, "payload summary failure fixture completes no upload");
+    require(summary.ready_payload_count == 0, "payload summary failure fixture has no ready payloads");
+    require(summary.placeholder_payload_count == 0, "payload summary failure fixture has no placeholders");
+    require(summary.blocked_payload_count == 2, "payload summary failure fixture records both blockers");
+    require(summary.entry_count == 2, "payload summary failure fixture records two blocked entries");
+    require(summary.source_load_failure_count == 1, "payload summary records source-load failure count");
+    require(summary.decode_failure_count == 1, "payload summary records decode failure count");
+    require(
+        summary.blocker_summary.find("source_load_failed=1") != std::string::npos,
+        "payload summary names source-load blocker");
+    require(
+        summary.blocker_summary.find("decode_failed=1") != std::string::npos,
+        "payload summary names decode blocker");
+    require(summary.entries[0].blocked, "first failure payload entry is blocked");
+    require(summary.entries[1].blocked, "second failure payload entry is blocked");
+    require(summary.entries[0].blocked_acquire_count == 1, "first failure payload entry records blocked acquire count");
+    require(summary.entries[1].blocked_acquire_count == 1, "second failure payload entry records blocked acquire count");
 }
 
 void test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff()
@@ -466,8 +717,16 @@ void test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff()
     const stb_image_decoder_dependency_manifest manifest = probe.probe_dependency();
     standard_image_texture_pipeline pipeline(resolver, loader);
 
-    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
-        render_image_texture_pipeline_request{.uri = "textures/real-stb.jpg"});
+    render_image_sampler_policy sampler;
+    sampler.min_filter = render_image_filter::nearest;
+    sampler.mag_filter = render_image_filter::linear;
+    sampler.wrap_u = render_image_wrap_mode::repeat;
+
+    const render_image_texture_pipeline_request request{
+        .uri = "textures/real-stb.jpg",
+        .sampler = sampler,
+    };
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(request);
 
     require(result.resolve.ok(), "real JPEG pipeline resolves local file source");
     require(result.source_bytes.ok(), "real JPEG pipeline loads source bytes from filesystem");
@@ -505,6 +764,7 @@ void test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff()
     require(!result.texture.cache_hit, "real JPEG first acquire is a cache miss");
     require(result.texture.texture.width == 1, "real JPEG texture preserves decoded width");
     require(result.texture.texture.height == 1, "real JPEG texture preserves decoded height");
+    require(result.texture.key.sampler == sampler, "real JPEG texture key preserves sampler policy");
     require(result.texture.decode_metadata.decoder_id == "stb_image_decoder", "standard pipeline real JPEG decode uses stb backend");
     require(result.texture.decode_metadata.width == 1, "real JPEG metadata records width");
     require(result.texture.decode_metadata.height == 1, "real JPEG metadata records height");
@@ -522,6 +782,15 @@ void test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff()
     require(
         !result.texture.external_decoder_selection.fallback_to_standard_decoder_chain,
         "real JPEG selection records no standard fallback");
+
+    const std::string stable_cache_key =
+        make_render_image_texture_key_diagnostic(result.texture.key).stable_cache_key;
+    require(
+        stable_cache_key.find("source=textures/real-stb.jpg") != std::string::npos,
+        "real JPEG stable cache key preserves normalized source");
+    require(
+        stable_cache_key.find(render_image_sampler_policy_stable_fragment(sampler)) != std::string::npos,
+        "real JPEG stable cache key preserves sampler identity");
 
     const standard_image_texture_pipeline_snapshot standard_snapshot = pipeline.standard_diagnostic_snapshot();
     require(standard_snapshot.decoder.support_check_count == 1, "real JPEG standard decoder records support check");
@@ -550,6 +819,9 @@ void test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff()
     require(
         snapshot.upload_snapshot.request_snapshots[0].staging_byte_count == 4,
         "real JPEG upload snapshot records staging bytes");
+    require(
+        snapshot.upload_snapshot.request_snapshots[0].key.sampler == sampler,
+        "real JPEG upload request snapshot preserves sampler policy");
     const render_image_decoded_payload_evidence& upload_payload =
         snapshot.upload_snapshot.request_snapshots[0].decoded_payload;
     require(upload_payload.payload_valid, "real JPEG upload snapshot records valid decoded payload evidence");
@@ -576,8 +848,22 @@ void test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff()
     require(snapshot.entries[0].upload_count_after == 1, "real JPEG snapshot records upload count after");
     require(!snapshot.cache_snapshot.entries.empty(), "real JPEG cache snapshot exposes cache entry");
 
-    const render_image_upload_readiness_snapshot& readiness =
-        snapshot.cache_snapshot.entries[0].upload_readiness;
+    const fake_image_texture_cache_entry_snapshot* cache_entry =
+        find_cache_entry_by_source_key(snapshot.cache_snapshot, "textures/real-stb.jpg");
+    require(cache_entry != nullptr, "real JPEG cache snapshot records source-keyed resident entry");
+    require(cache_entry->key.sampler == sampler, "real JPEG cache entry preserves sampler policy");
+    require(cache_entry->upload_generation_id == 1, "real JPEG cache entry records upload generation");
+    require(cache_entry->access_count == 1, "real JPEG cache entry records first frame access");
+    require(!cache_entry->placeholder_texture, "real JPEG cache entry is not placeholder-backed");
+    require(
+        cache_entry->upload_readiness.key_diagnostic.stable_cache_key == stable_cache_key,
+        "real JPEG cache entry preserves stable cache identity");
+    require(
+        cache_entry->upload_readiness.sampler_policy.stable_key_fragment
+            == render_image_sampler_policy_stable_fragment(sampler),
+        "real JPEG cache entry preserves stable sampler identity");
+
+    const render_image_upload_readiness_snapshot& readiness = cache_entry->upload_readiness;
     require(readiness.upload_ready, "real JPEG cache entry is upload-ready");
     require(readiness.decode_metadata_matches_image, "real JPEG cache entry validates decode handoff metadata");
     require(readiness.decoded_byte_count == 4, "real JPEG readiness records decoded bytes");
@@ -595,6 +881,125 @@ void test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff()
     require(
         readiness.decode_handoff_diagnostic == "decode handoff metadata matches decoded image",
         "real JPEG readiness records matching handoff diagnostic");
+
+    const render_image_texture_pipeline_result repeated = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{
+            .uri = "  ./textures\\real-stb.jpg  ",
+            .sampler = sampler,
+        });
+    const standard_image_texture_pipeline_snapshot repeated_snapshot =
+        pipeline.standard_diagnostic_snapshot();
+
+    require(repeated.ok(), "repeat real JPEG pipeline acquire succeeds");
+    require(repeated.resolve.source.cache_key() == result.resolve.source.cache_key(), "repeat real JPEG acquire normalizes source identity");
+    require(repeated.texture.cache_hit, "repeat real JPEG acquire reuses cache residency");
+    require(repeated.texture.key == result.texture.key, "repeat real JPEG acquire preserves texture cache key");
+    require(repeated.texture.texture.id == result.texture.texture.id, "repeat real JPEG acquire reuses texture id");
+    require(repeated.texture.decode_metadata.decoder_id == "stb_image_decoder", "repeat real JPEG acquire preserves decoder metadata");
+    require(repeated_snapshot.pipeline.acquire_count == 2, "repeat real JPEG snapshot records both acquires");
+    require(repeated_snapshot.pipeline.ready_count == 2, "repeat real JPEG snapshot records both requests ready");
+    require(repeated_snapshot.pipeline.cache_hit_count == 1, "repeat real JPEG snapshot counts cache hit");
+    require(repeated_snapshot.pipeline.upload_snapshot.upload_count == 1, "repeat real JPEG snapshot does not upload again");
+    require(repeated_snapshot.decoder.support_check_count == 1, "repeat real JPEG snapshot does not check decoder support again");
+    require(repeated_snapshot.decoder.decode_attempt_count == 1, "repeat real JPEG snapshot does not decode again");
+    require(repeated_snapshot.pipeline.cache_snapshot.texture_count == 1, "repeat real JPEG snapshot keeps one resident texture");
+    require(
+        repeated_snapshot.pipeline.cache_snapshot.resident_access_count == 2,
+        "repeat real JPEG snapshot records two resident accesses");
+    require(repeated_snapshot.pipeline.entries.size() == 2, "repeat real JPEG snapshot records both entries");
+    require(!repeated_snapshot.pipeline.entries[0].cache_reused, "first real JPEG entry records cache miss");
+    require(repeated_snapshot.pipeline.entries[1].cache_reused, "second real JPEG entry records cache reuse");
+    require(
+        repeated_snapshot.pipeline.entries[1].upload_count_before
+            == repeated_snapshot.pipeline.entries[1].upload_count_after,
+        "repeat real JPEG entry records unchanged upload count");
+
+    const fake_image_texture_cache_entry_snapshot* repeated_cache_entry =
+        find_cache_entry_by_source_key(repeated_snapshot.pipeline.cache_snapshot, "textures/real-stb.jpg");
+    require(repeated_cache_entry != nullptr, "repeat real JPEG cache snapshot keeps resident entry");
+    require(repeated_cache_entry->access_count == 2, "repeat real JPEG cache entry records reuse access count");
+    require(
+        repeated_cache_entry->upload_generation_id == cache_entry->upload_generation_id,
+        "repeat real JPEG cache entry reuses upload generation");
+    require(
+        repeated_cache_entry->upload_readiness.decoded_payload.stable_byte_hash
+            == readiness.decoded_payload.stable_byte_hash,
+        "repeat real JPEG cache entry preserves decoded payload identity");
+}
+
+void test_filesystem_standard_jpeg_decode_failure_uses_placeholder_without_original_residency()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path root = test_data_root();
+    reset_test_data_root(root);
+    write_bytes(root / "textures" / "bad-real-stb.jpg", make_jpeg_signature_bytes());
+
+    const normalizing_image_resolver resolver;
+    filesystem_image_source_bytes_loader loader(root);
+    standard_image_texture_pipeline pipeline(resolver, loader);
+    pipeline.set_placeholder_texture_policy(fake_image_texture_placeholder_policy{
+        .enabled = true,
+        .width = 2,
+        .height = 2,
+    });
+
+    render_image_sampler_policy sampler;
+    sampler.min_filter = render_image_filter::nearest;
+    sampler.wrap_u = render_image_wrap_mode::repeat;
+
+    const render_image_texture_pipeline_result result = pipeline.acquire_texture(
+        render_image_texture_pipeline_request{
+            .uri = "textures/bad-real-stb.jpg",
+            .sampler = sampler,
+        });
+    const standard_image_texture_pipeline_snapshot snapshot = pipeline.standard_diagnostic_snapshot();
+
+    require(result.resolve.ok(), "bad real JPEG placeholder path resolves local source");
+    require(result.source_bytes.ok(), "bad real JPEG placeholder path loads source bytes");
+    require(result.texture.external_decoder_selection.diagnostics_available, "bad real JPEG placeholder path records decoder selection");
+    require(
+        result.texture.external_decoder_selection.detected_format == render_image_encoded_format::jpeg,
+        "bad real JPEG placeholder path records detected JPEG format");
+    require(result.ok(), "bad real JPEG placeholder path produces placeholder texture");
+    require(result.status == render_image_texture_pipeline_status::ready, "bad real JPEG placeholder result is pipeline-ready");
+    require(is_fake_image_texture_placeholder_key(result.texture.key), "bad real JPEG placeholder path returns placeholder key");
+    require(!result.texture.cache_hit, "bad real JPEG placeholder path uploads placeholder once");
+    require(
+        result.texture.decode_metadata.decoder_id == "fake_image_texture_placeholder_policy",
+        "bad real JPEG placeholder path records placeholder decoder metadata");
+    require(snapshot.decoder.decode_attempt_count == 1, "bad real JPEG placeholder path attempts standard decode");
+    require(snapshot.decoder.failed_decode_count == 1, "bad real JPEG placeholder path records failed decode");
+    require(snapshot.pipeline.ready_count == 1, "bad real JPEG placeholder path remains ready through fallback");
+    require(snapshot.pipeline.failure_count == 0, "bad real JPEG placeholder path records no pipeline failure");
+    require(snapshot.pipeline.upload_snapshot.upload_count == 1, "bad real JPEG placeholder path uploads placeholder");
+    require(
+        is_fake_image_texture_placeholder_key(snapshot.pipeline.upload_snapshot.request_snapshots[0].key),
+        "bad real JPEG placeholder path records placeholder upload request");
+    require(snapshot.pipeline.cache_snapshot.texture_count == 1, "bad real JPEG placeholder path caches placeholder texture");
+    require(
+        snapshot.pipeline.cache_snapshot.placeholder_policy_texture_count == 1,
+        "bad real JPEG placeholder path records placeholder cache entry");
+    require(
+        find_cache_entry_by_source_key(snapshot.pipeline.cache_snapshot, "textures/bad-real-stb.jpg")
+            == nullptr,
+        "bad real JPEG placeholder path does not mark failed source resident");
+
+    const fake_image_texture_cache_entry_snapshot* placeholder_entry =
+        find_placeholder_cache_entry_by_requested_source_key(
+            snapshot.pipeline.cache_snapshot,
+            "textures/bad-real-stb.jpg");
+    require(placeholder_entry != nullptr, "bad real JPEG placeholder path tracks requested source");
+    require(placeholder_entry->key == result.texture.key, "bad real JPEG placeholder cache entry matches result key");
+    require(placeholder_entry->requested_key.source_key == "textures/bad-real-stb.jpg", "bad real JPEG placeholder remembers requested source key");
+    require(placeholder_entry->requested_key.sampler == sampler, "bad real JPEG placeholder remembers requested sampler");
+    require(placeholder_entry->decoded_byte_count == 16, "bad real JPEG placeholder records deterministic RGBA bytes");
+    require(
+        placeholder_entry->placeholder_reason == fake_image_texture_placeholder_reason::decode_failed,
+        "bad real JPEG placeholder records decode failure reason");
+    require(
+        placeholder_entry->placeholder_diagnostic.find("using deterministic placeholder texture for decode_failed") == 0,
+        "bad real JPEG placeholder diagnostic is deterministic");
 }
 
 void test_filesystem_pipeline_reports_missing_file_source_load_failed()
@@ -4182,7 +4587,11 @@ void test_texture_frame_upload_handoff_diff_reports_frame_to_frame_evidence()
 int main()
 {
     test_filesystem_pipeline_reads_ppm_fixture_and_reuses_cache();
+    test_pipeline_upload_cache_side_interface_reports_fake_placeholder();
+    test_pipeline_upload_cache_payload_summary_matches_fake_and_standard_interfaces();
+    test_pipeline_upload_cache_payload_summary_reports_missing_and_decode_blockers();
     test_filesystem_pipeline_routes_real_jpeg_through_stb_upload_handoff();
+    test_filesystem_standard_jpeg_decode_failure_uses_placeholder_without_original_residency();
     test_filesystem_pipeline_reports_missing_file_source_load_failed();
     test_filesystem_pipeline_reports_empty_file_source_load_failed();
     test_filesystem_pipeline_reports_malformed_ppm_decode_failed();

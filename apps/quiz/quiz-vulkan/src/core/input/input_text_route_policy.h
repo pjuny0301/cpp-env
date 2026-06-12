@@ -6,10 +6,13 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace quiz_vulkan::input::detail {
 
 struct text_edit_snapshot {
+    bool has_focus = false;
+    std::string target_id;
     std::size_t text_byte_count = 0;
     text_range caret;
     bool has_selection = false;
@@ -20,6 +23,8 @@ struct text_edit_snapshot {
 [[nodiscard]] inline text_edit_snapshot capture_text_edit(const text_input_model& model)
 {
     text_edit_snapshot snapshot{};
+    snapshot.has_focus = model.has_focus();
+    snapshot.target_id = model.focus_id();
     snapshot.text_byte_count = model.text().size();
     snapshot.caret = model.caret_range();
     if (const std::optional<text_range> selection = model.selection_range()) {
@@ -28,6 +33,24 @@ struct text_edit_snapshot {
     }
     snapshot.composition = model.ime_composition();
     return snapshot;
+}
+
+[[nodiscard]] inline text_focus_route_state make_text_focus_route_state(text_edit_snapshot snapshot)
+{
+    return text_focus_route_state{
+        .has_focus = snapshot.has_focus,
+        .target_id = std::move(snapshot.target_id),
+        .text_byte_count = snapshot.text_byte_count,
+        .caret = snapshot.caret,
+        .has_selection = snapshot.has_selection,
+        .selection = snapshot.selection,
+        .composition = std::move(snapshot.composition),
+    };
+}
+
+[[nodiscard]] inline text_focus_route_state make_text_focus_route_state(const text_input_model& model)
+{
+    return make_text_focus_route_state(capture_text_edit(model));
 }
 
 inline void apply_text_edit_boundary(
@@ -45,6 +68,8 @@ inline void apply_text_edit_boundary(
     diagnostic.selection_after = after.selection;
     diagnostic.composition_before = before.composition;
     diagnostic.composition_after = after.composition;
+    diagnostic.text_route_before = make_text_focus_route_state(before);
+    diagnostic.text_route_after = make_text_focus_route_state(after);
 }
 
 [[nodiscard]] inline std::size_t removed_text_byte_count(text_edit_snapshot before, text_edit_snapshot after)

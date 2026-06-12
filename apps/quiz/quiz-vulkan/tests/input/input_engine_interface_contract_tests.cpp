@@ -3346,6 +3346,19 @@ static_assert(ignored_pointer_contract == input::pointer_arbitration_decision::i
 constexpr input::pointer_contact_kind touch_like_pointer_contract = input::pointer_contact_kind::touch_like;
 static_assert(touch_like_pointer_contract == input::pointer_contact_kind::touch_like);
 
+constexpr input::text_focus_route_state text_route_contract{
+    .has_focus = true,
+    .target_id = "answer",
+    .text_byte_count = 6,
+    .caret = input::text_range{.start_byte = 6, .end_byte = 6},
+    .has_selection = false,
+    .selection = input::text_range{},
+    .composition = input::ime_composition_state{},
+};
+static_assert(text_route_contract.has_focus);
+static_assert(text_route_contract.target_id == "answer");
+static_assert(text_route_contract.caret.start_byte == 6);
+
 constexpr input::action_route_policy_kind text_commit_policy_kind =
     input::action_route_policy_kind::text_commit_boundary;
 static_assert(text_commit_policy_kind == input::action_route_policy_kind::text_commit_boundary);

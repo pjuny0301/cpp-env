@@ -135,6 +135,25 @@ quiz_vulkan::render::render_text_request single_glyph_request(
     };
 }
 
+quiz_vulkan::render::render_text_request latin_residency_request(std::string text)
+{
+    return quiz_vulkan::render::render_text_request{
+        .text_runs = {
+            quiz_vulkan::render::render_text_run{
+                .text = std::move(text),
+                .style_token = "payload-freetype",
+            },
+        },
+        .bounds = quiz_vulkan::render::render_rect{0.0f, 0.0f, 320.0f, 0.0f},
+        .style_catalog = style_catalog_for("Payload FreeType Sans", "payload-freetype"),
+        .options = quiz_vulkan::render::render_text_options{
+            .wrap = quiz_vulkan::render::render_text_wrap_mode::no_wrap,
+            .alignment = quiz_vulkan::render::render_text_alignment::start,
+            .max_lines = 0,
+        },
+    };
+}
+
 quiz_vulkan::render::render_text_request multiline_korean_request()
 {
     return quiz_vulkan::render::render_text_request{
@@ -146,6 +165,25 @@ quiz_vulkan::render::render_text_request multiline_korean_request()
             quiz_vulkan::render::render_text_run{
                 .text = "A",
                 .style_token = "payload-latin",
+            },
+        },
+        .bounds = quiz_vulkan::render::render_rect{0.0f, 0.0f, 320.0f, 0.0f},
+        .style_catalog = multiline_korean_style_catalog(),
+        .options = quiz_vulkan::render::render_text_options{
+            .wrap = quiz_vulkan::render::render_text_wrap_mode::no_wrap,
+            .alignment = quiz_vulkan::render::render_text_alignment::start,
+            .max_lines = 0,
+        },
+    };
+}
+
+quiz_vulkan::render::render_text_request hangul_residency_request(std::string text)
+{
+    return quiz_vulkan::render::render_text_request{
+        .text_runs = {
+            quiz_vulkan::render::render_text_run{
+                .text = std::move(text),
+                .style_token = "payload-korean",
             },
         },
         .bounds = quiz_vulkan::render::render_rect{0.0f, 0.0f, 320.0f, 0.0f},
@@ -197,7 +235,8 @@ quiz_vulkan::render::render_text_glyph_atlas_upload_result_snapshot upload_resul
         upload_request_ids_for_diagnostics(diagnostics));
 }
 
-quiz_vulkan::render::render_text_renderer_glyph_quad_packet_snapshot glyph_quads_for_diagnostics(
+quiz_vulkan::render::render_text_frame_resource_packet_materialization
+resource_packets_for_diagnostics(
     const quiz_vulkan::render::fake_text_engine_diagnostics& diagnostics)
 {
     using namespace quiz_vulkan::render;
@@ -210,15 +249,30 @@ quiz_vulkan::render::render_text_renderer_glyph_quad_packet_snapshot glyph_quads
             .draw_plan = diagnostics.text_frame_draw_plan,
             .upload_result = upload_result,
         });
-    const render_text_frame_resource_packet_materialization resources =
-        materialize_render_text_frame_resource_packets(
-            render_text_frame_resource_packet_materialization_request{
-                .draw_plan = diagnostics.text_frame_draw_plan,
-                .upload_handoff = handoff,
-            });
+    return materialize_render_text_frame_resource_packets(
+        render_text_frame_resource_packet_materialization_request{
+            .draw_plan = diagnostics.text_frame_draw_plan,
+            .upload_handoff = handoff,
+        });
+}
+
+quiz_vulkan::render::render_text_renderer_glyph_quad_packet_snapshot glyph_quads_for_diagnostics(
+    const quiz_vulkan::render::fake_text_engine_diagnostics& diagnostics)
+{
+    using namespace quiz_vulkan::render;
+
     return make_render_text_renderer_glyph_quad_packets(
         render_text_renderer_glyph_quad_packet_request{
-            .resource_packets = resources,
+            .resource_packets = resource_packets_for_diagnostics(diagnostics),
+        });
+}
+
+quiz_vulkan::render::render_text_renderer_draw_payload_snapshot draw_payloads_for_quads(
+    quiz_vulkan::render::render_text_renderer_glyph_quad_packet_snapshot quads)
+{
+    return quiz_vulkan::render::make_render_text_renderer_draw_payloads(
+        quiz_vulkan::render::render_text_renderer_draw_payload_request{
+            .glyph_quads = std::move(quads),
         });
 }
 
@@ -243,6 +297,51 @@ summary_for_diagnostics(
                 || draw_diff.policy.changed_packet_count > 0U
                 || draw_diff.policy.readiness_changed_packet_count > 0U,
         });
+}
+
+bool payload_has_matching_harfbuzz_handoff(
+    const quiz_vulkan::render::fake_text_engine_diagnostics& diagnostics,
+    const quiz_vulkan::render::render_text_rasterized_glyph_atlas_payload_snapshot& payload)
+{
+    return std::any_of(
+        diagnostics.shaping_handoffs.begin(),
+        diagnostics.shaping_handoffs.end(),
+        [&](const quiz_vulkan::render::fake_text_engine_shaping_handoff_snapshot& handoff) {
+            return handoff.used_harfbuzz
+                && handoff.materialized_font_bytes
+                && handoff.glyph_id == payload.glyph_id
+                && handoff.glyph_id == payload.cache_key.glyph_id
+                && handoff.resolved_face_id == payload.resolved_face_id
+                && handoff.run_index == payload.run_index
+                && handoff.byte_offset == payload.byte_offset
+                && handoff.byte_count == payload.byte_count;
+        });
+}
+
+bool materialization_preserves_real_shaping_and_raster_stack(
+    const quiz_vulkan::render::render_text_glyph_atlas_materialization_snapshot& materialization,
+    const quiz_vulkan::render::render_text_rasterized_glyph_atlas_payload_snapshot& payload)
+{
+    return materialization.cache_key == payload.cache_key
+        && materialization.resolved_glyph_id == payload.cache_key.glyph_id
+        && std::find(
+               materialization.shaped_glyph_ids.begin(),
+               materialization.shaped_glyph_ids.end(),
+               payload.cache_key.glyph_id)
+            != materialization.shaped_glyph_ids.end()
+        && materialization.shaping_font_backend_library
+            == quiz_vulkan::render::render_text_font_backend_library::harfbuzz
+        && materialization.raster_font_backend_library
+            == quiz_vulkan::render::render_text_font_backend_library::freetype
+        && !materialization.shaping_font_backend_used_deterministic_fallback
+        && !materialization.raster_font_backend_used_deterministic_fallback;
+}
+
+bool contains_atlas_key(
+    const std::vector<quiz_vulkan::render::glyph_atlas_key>& keys,
+    const quiz_vulkan::render::glyph_atlas_key& key)
+{
+    return std::find(keys.begin(), keys.end(), key) != keys.end();
 }
 
 void select_real_text_stack(quiz_vulkan::render::fake_text_engine& engine)
@@ -464,6 +563,403 @@ void test_file_backed_freetype_selection_rasterizes_real_payload()
     require(summary.changed_packet_ids.size() == 1U, "real font summary exposes changed draw packet id");
 }
 
+void test_repeated_file_backed_freetype_text_reuses_resident_atlas_payload()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path font_path = first_available_freetype_real_font_fixture();
+    if (font_path.empty() || !render_text_freetype_memory_face_adapter_available()) {
+        return;
+    }
+
+    fake_text_engine engine;
+    select_real_text_stack(engine);
+    engine.add_font_face(font_face_descriptor{
+        .id = 815,
+        .family = "Payload FreeType Sans",
+        .source_uri = font_path.generic_string(),
+        .version = "external-fixture",
+        .license = "harfbuzz-test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = U'A', .last = U'B'},
+        },
+        .weight = 400,
+    });
+
+    const render_text_layout first_layout = engine.layout_text(latin_residency_request("A"));
+    const fake_text_engine_diagnostics first = engine.last_diagnostics();
+    require(first_layout.glyphs.size() == 1U, "first FreeType cache frame lays out one glyph");
+    require(
+        first.rasterized_glyph_atlas_payload_policy.freetype_rasterizer_count == 1U,
+        "first FreeType cache frame calls the real rasterizer");
+    require(
+        first.rasterized_glyph_atlas_payload_policy.materialized_font_bytes_count == 1U,
+        "first FreeType cache frame materializes font bytes");
+    require(
+        first.rasterized_glyph_atlas_payload_policy.atlas_cache_hit_count == 0U,
+        "first FreeType cache frame is not an atlas cache hit");
+    require(
+        first.glyph_atlas_materialization_policy.upload_ready_count == 1U,
+        "first FreeType cache frame queues one atlas upload");
+    require(
+        first.atlas_upload_request_bridge.policy.unique_upload_request_count == 1U,
+        "first FreeType cache frame exposes one upload request");
+
+    const glyph_atlas_key cached_key = first.rasterized_glyph_atlas_payloads.front().cache_key;
+    const render_text_atlas_page_id cached_page_id = first.glyph_atlas_placements.front().page.id;
+
+    const render_text_layout second_layout = engine.layout_text(latin_residency_request("A"));
+    const fake_text_engine_diagnostics second = engine.last_diagnostics();
+    require(second_layout.glyphs.size() == 1U, "second FreeType cache frame lays out repeated glyph");
+    require(second.rasterized_glyph_atlas_payloads.size() == 1U, "second FreeType cache frame records payload reuse");
+    const render_text_rasterized_glyph_atlas_payload_snapshot& reused_payload =
+        second.rasterized_glyph_atlas_payloads.front();
+    require(
+        reused_payload.status == render_text_font_rasterizer_status::atlas_cache_hit,
+        "second FreeType cache frame reports atlas cache hit instead of fresh rasterization");
+    require(reused_payload.atlas_cache_hit, "second FreeType cache frame marks payload atlas cache hit");
+    require(reused_payload.reused_atlas_payload, "second FreeType cache frame marks resident payload reuse");
+    require(
+        reused_payload.rasterization_skipped_for_atlas_cache_hit,
+        "second FreeType cache frame skips rerasterization for resident payload");
+    require(!reused_payload.used_freetype_rasterizer, "second FreeType cache frame does not rerun FreeType");
+    require(!reused_payload.uses_deterministic_rasterizer, "second FreeType cache frame does not use fake rasterizer");
+    require(!reused_payload.materialized_font_bytes, "second FreeType cache frame does not rematerialize font bytes");
+    require(reused_payload.cache_key == cached_key, "second FreeType cache frame preserves glyph cache key");
+    require(reused_payload.alpha_bytes == 0U, "second FreeType cache frame emits no new alpha payload bytes");
+    require(reused_payload.rgba_bytes == 0U, "second FreeType cache frame emits no new RGBA payload bytes");
+    require(
+        reused_payload.diagnostic.find("resident atlas slot") != std::string::npos,
+        "second FreeType cache frame diagnostic names resident atlas reuse");
+    require(
+        second.rasterized_glyph_atlas_payload_policy.freetype_rasterizer_count == 0U,
+        "second FreeType cache frame records no real rasterizer call");
+    require(
+        second.rasterized_glyph_atlas_payload_policy.materialized_font_bytes_count == 0U,
+        "second FreeType cache frame records no fresh font byte materialization");
+    require(
+        second.rasterized_glyph_atlas_payload_policy.atlas_cache_hit_count == 1U,
+        "second FreeType cache frame counts one atlas cache hit");
+    require(
+        second.rasterized_glyph_atlas_payload_policy.reused_atlas_payload_count == 1U,
+        "second FreeType cache frame counts one reused atlas payload");
+    require(
+        second.rasterized_glyph_atlas_payload_policy.rasterization_skipped_for_atlas_cache_hit_count == 1U,
+        "second FreeType cache frame counts one skipped rasterization");
+    require(second.glyph_atlas_placements.front().cache_hit, "second FreeType cache frame reuses atlas placement");
+    require(
+        second.glyph_atlas_placements.front().page.id == cached_page_id,
+        "second FreeType cache frame preserves atlas page residency");
+    require(
+        second.glyph_atlas_materialization_policy.clean_reuse_count == 1U,
+        "second FreeType cache frame materializes clean reuse");
+    require(
+        second.line_run_atlas_upload_policy.clean_reuse_cluster_count == 1U,
+        "second FreeType cache frame line/run upload records clean reuse");
+    require(
+        second.atlas_upload_request_bridge.policy.unique_upload_request_count == 0U,
+        "second FreeType cache frame emits no new unique upload request");
+
+    const render_text_layout third_layout = engine.layout_text(latin_residency_request("AB"));
+    const fake_text_engine_diagnostics third = engine.last_diagnostics();
+    require(third_layout.glyphs.size() == 2U, "third FreeType cache frame lays out repeated and new glyphs");
+    require(third.rasterized_glyph_atlas_payloads.size() == 2U, "third FreeType cache frame records two payload decisions");
+    require(
+        third.rasterized_glyph_atlas_payload_policy.atlas_cache_hit_count == 1U,
+        "third FreeType cache frame reuses one resident payload");
+    require(
+        third.rasterized_glyph_atlas_payload_policy.freetype_rasterizer_count == 1U,
+        "third FreeType cache frame rasterizes only the new glyph");
+    require(
+        third.rasterized_glyph_atlas_payload_policy.materialized_font_bytes_count == 1U,
+        "third FreeType cache frame materializes bytes only for the new glyph");
+    require(
+        third.glyph_atlas_materialization_policy.clean_reuse_count == 1U,
+        "third FreeType cache frame records one clean reuse materialization");
+    require(
+        third.glyph_atlas_materialization_policy.upload_ready_count == 1U,
+        "third FreeType cache frame records one new upload-ready materialization");
+    require(
+        third.line_run_atlas_upload_policy.clean_reuse_cluster_count == 1U,
+        "third FreeType cache frame line/run evidence preserves reused glyph");
+    require(
+        third.line_run_atlas_upload_policy.upload_ready_cluster_count == 1U,
+        "third FreeType cache frame line/run evidence exposes new glyph upload");
+    require(
+        third.atlas_upload_request_bridge.policy.unique_upload_request_count == 1U,
+        "third FreeType cache frame emits one new upload request");
+}
+
+void test_harfbuzz_shaped_glyph_ids_drive_freetype_atlas_residency()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path font_path = first_available_freetype_real_font_fixture();
+    if (font_path.empty()
+        || !render_text_harfbuzz_shaping_adapter_available()
+        || !render_text_freetype_memory_face_adapter_available()) {
+        return;
+    }
+
+    fake_text_engine engine;
+    select_real_text_stack(engine);
+    engine.add_font_face(font_face_descriptor{
+        .id = 816,
+        .family = "Payload FreeType Sans",
+        .source_uri = font_path.generic_string(),
+        .version = "external-fixture",
+        .license = "harfbuzz-test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = U'A', .last = U'B'},
+        },
+        .weight = 400,
+    });
+
+    const render_text_layout first_layout = engine.layout_text(latin_residency_request("AB"));
+    const fake_text_engine_diagnostics first = engine.last_diagnostics();
+    require(first_layout.glyphs.size() == 2U, "first HarfBuzz/FreeType frame lays out two glyphs");
+    require(first.shaping_handoff_policy.harfbuzz_run_count == 1U, "first frame uses HarfBuzz shaping");
+    require(
+        first.shaping_handoff_policy.materialized_font_byte_run_count == 1U,
+        "first frame materializes font bytes for HarfBuzz");
+    require(
+        first.shaping_line_run_evidence_policy.harfbuzz_cluster_count == 2U,
+        "first frame records two HarfBuzz-shaped clusters");
+    require(
+        first.rasterized_glyph_atlas_payload_policy.freetype_rasterizer_count == 2U,
+        "first frame rasterizes both HarfBuzz glyphs with FreeType");
+    require(
+        first.rasterized_glyph_atlas_payload_policy.materialized_font_bytes_count == 2U,
+        "first frame materializes font bytes for both FreeType payloads");
+    require(
+        first.glyph_atlas_materialization_policy.upload_ready_count == 2U,
+        "first frame queues two upload-ready atlas materializations");
+    require(
+        first.atlas_upload_request_bridge.policy.unique_upload_request_count == 2U,
+        "first frame exposes one upload request per shaped glyph");
+
+    std::vector<glyph_atlas_key> first_keys;
+    bool saw_real_font_glyph_id = false;
+    for (const render_text_rasterized_glyph_atlas_payload_snapshot& payload :
+         first.rasterized_glyph_atlas_payloads) {
+        require(payload.used_freetype_rasterizer, "first payload uses real FreeType");
+        require(payload.materialized_font_bytes, "first payload uses materialized font bytes");
+        require(payload.status == render_text_font_rasterizer_status::rasterized, "first payload rasterizes");
+        require(payload.cache_key.glyph_id == payload.glyph_id, "payload cache key uses shaped glyph id");
+        require(
+            payload_has_matching_harfbuzz_handoff(first, payload),
+            "payload glyph id matches a materialized HarfBuzz handoff");
+        saw_real_font_glyph_id = saw_real_font_glyph_id || payload.cache_key.glyph_id != payload.codepoint;
+        first_keys.push_back(payload.cache_key);
+
+        const auto materialization = std::find_if(
+            first.glyph_atlas_materializations.begin(),
+            first.glyph_atlas_materializations.end(),
+            [&](const render_text_glyph_atlas_materialization_snapshot& candidate) {
+                return candidate.cache_key == payload.cache_key;
+            });
+        require(
+            materialization != first.glyph_atlas_materializations.end(),
+            "first payload has matching atlas materialization");
+        require(
+            materialization_preserves_real_shaping_and_raster_stack(*materialization, payload),
+            "materialization preserves HarfBuzz shaping and FreeType raster evidence");
+        require(
+            materialization->status
+                == render_text_glyph_atlas_materialization_status::materialized_upload_ready,
+            "first materialization is upload-ready");
+    }
+    require(
+        saw_real_font_glyph_id,
+        "HarfBuzz path records at least one font glyph id distinct from the Unicode codepoint");
+
+    const std::vector<std::string> first_upload_request_ids =
+        upload_request_ids_for_diagnostics(first);
+    require(first_upload_request_ids.size() == 2U, "first frame exposes two glyph upload request ids");
+    fake_text_engine_diagnostics ready_first = first;
+    ready_first.text_frame_snapshot =
+        render_text_frame_snapshot_with_consumed_atlas_updates(
+            first.text_frame_snapshot,
+            first_upload_request_ids,
+            first_upload_request_ids.size());
+    ready_first.text_frame_draw_plan =
+        plan_render_text_frame_draw_packets(render_text_frame_draw_plan_request{
+            .frame = ready_first.text_frame_snapshot,
+            .materializations = ready_first.glyph_atlas_materializations,
+            .item_index = 0U,
+        });
+    require(ready_first.text_frame_snapshot.ready_for_renderer(), "first frame is ready after upload consumption");
+    require(
+        ready_first.text_frame_draw_plan.policy.draw_ready_count == 2U,
+        "first frame draw plan has two drawable glyph packets after upload consumption");
+    require(
+        ready_first.text_frame_draw_plan.policy.upload_consumed_count == 2U,
+        "first frame draw plan records consumed atlas uploads");
+
+    const render_text_frame_resource_packet_materialization first_resources =
+        resource_packets_for_diagnostics(ready_first);
+    require(first_resources.ok(), "first real frame resource packets are renderer-boundary ready");
+    require(first_resources.policy.ready_packet_count == 2U, "first frame has two ready resource packets");
+    require(first_resources.policy.uploaded_packet_count == 2U, "first frame resource packets are upload-backed");
+    require(first_resources.policy.clean_reuse_packet_count == 0U, "first frame has no clean resource reuse yet");
+    require(first_resources.policy.used_real_backend, "first frame resource packets preserve real backend evidence");
+
+    const render_text_renderer_glyph_quad_packet_snapshot first_quads =
+        make_render_text_renderer_glyph_quad_packets(render_text_renderer_glyph_quad_packet_request{
+            .resource_packets = first_resources,
+        });
+    require(first_quads.ok(), "first real frame produces renderer-ready glyph quad packets");
+    require(first_quads.policy.quad_packet_count == 2U, "first frame produces one glyph quad per shaped glyph");
+    require(first_quads.policy.ready_quad_count == 2U, "first frame glyph quads are ready");
+    require(first_quads.policy.uploaded_quad_count == 2U, "first frame glyph quads carry upload evidence");
+    require(first_quads.policy.clean_reuse_quad_count == 0U, "first frame glyph quads are not clean reuse");
+    require(first_quads.policy.used_real_backend, "first frame glyph quads preserve real backend evidence");
+    require(!first_quads.policy.used_deterministic_fallback, "first frame glyph quads avoid fallback evidence");
+    for (const render_text_renderer_glyph_quad_packet_record& quad : first_quads.packets) {
+        require(quad.drawable(), "first-frame real glyph quad is drawable");
+        require(quad.uploaded, "first-frame real glyph quad records uploaded payload");
+        require(!quad.clean_reuse, "first-frame real glyph quad is not clean reuse");
+        require(quad.used_real_backend, "first-frame real glyph quad preserves real backend flag");
+        require(!quad.used_deterministic_fallback, "first-frame real glyph quad avoids deterministic fallback");
+        require(quad.upload_consumed, "first-frame real glyph quad records consumed upload");
+        require(quad.upload_rgba_bytes > 0U, "first-frame real glyph quad preserves upload byte count");
+        require(quad.uv_bounds.valid, "first-frame real glyph quad has valid UVs");
+        require(quad.layout_bounds.width > 0.0f, "first-frame real glyph quad preserves layout bounds");
+        require(contains_atlas_key(first_keys, quad.cache_key), "first-frame real glyph quad preserves atlas key");
+        require(
+            quad.atlas_consumption.cache_key == quad.cache_key,
+            "first-frame real glyph quad atlas consumption preserves cache key");
+        require(
+            quad.atlas_consumption.upload_generation == quad.page_revision,
+            "first-frame real glyph quad preserves upload generation");
+        require(!quad.atlas_consumption.missing_glyph, "first-frame real glyph quad has glyph coverage");
+    }
+
+    const render_text_renderer_draw_payload_snapshot first_payloads =
+        draw_payloads_for_quads(first_quads);
+    require(first_payloads.ok(), "first real frame produces renderer-ready draw payloads");
+    require(first_payloads.policy.payload_count == 2U, "first frame produces one draw payload per glyph quad");
+    require(first_payloads.policy.ready_payload_count == 2U, "first frame draw payloads are ready");
+    require(first_payloads.policy.uploaded_payload_count == 2U, "first frame draw payloads carry uploads");
+    require(first_payloads.policy.clean_reuse_payload_count == 0U, "first frame draw payloads are not clean reuse");
+    require(first_payloads.policy.used_real_backend, "first frame draw payloads preserve real backend evidence");
+    require(
+        !first_payloads.policy.used_deterministic_fallback,
+        "first frame draw payloads avoid deterministic fallback evidence");
+    for (const render_text_renderer_draw_payload_record& payload : first_payloads.payloads) {
+        require(payload.drawable(), "first-frame real draw payload is drawable");
+        require(payload.status == render_text_renderer_draw_payload_status::payload_ready, "first-frame draw payload is ready");
+        require(payload.uploaded, "first-frame draw payload records uploaded atlas data");
+        require(!payload.clean_reuse, "first-frame draw payload is not clean reuse");
+        require(payload.upload_consumed, "first-frame draw payload records upload consumption");
+        require(payload.upload_rgba_bytes > 0U, "first-frame draw payload preserves upload byte count");
+        require(payload.quad_bounds.width > 0.0f, "first-frame draw payload preserves quad bounds");
+        require(payload.uv_bounds.valid, "first-frame draw payload preserves UV bounds");
+        require(contains_atlas_key(first_keys, payload.cache_key), "first-frame draw payload preserves atlas key");
+        require(payload.atlas_consumption.cache_key == payload.cache_key, "first-frame draw payload preserves atlas consumption key");
+    }
+
+    const render_text_layout second_layout = engine.layout_text(latin_residency_request("AB"));
+    const fake_text_engine_diagnostics second = engine.last_diagnostics();
+    require(second_layout.glyphs.size() == 2U, "second HarfBuzz/FreeType frame lays out repeated glyphs");
+    require(second.shaping_handoff_policy.harfbuzz_run_count == 1U, "second frame still uses HarfBuzz");
+    require(
+        second.shaping_line_run_evidence_policy.harfbuzz_cluster_count == 2U,
+        "second frame keeps HarfBuzz cluster evidence");
+    require(
+        second.rasterized_glyph_atlas_payload_policy.atlas_cache_hit_count == 2U,
+        "second frame reuses resident atlas payloads for both glyphs");
+    require(
+        second.rasterized_glyph_atlas_payload_policy.freetype_rasterizer_count == 0U,
+        "second frame does not rerun FreeType for resident glyphs");
+    require(
+        second.rasterized_glyph_atlas_payload_policy.materialized_font_bytes_count == 0U,
+        "second frame does not rematerialize font bytes for resident glyph payloads");
+    require(
+        second.glyph_atlas_materialization_policy.clean_reuse_count == 2U,
+        "second frame materializes two clean atlas reuses");
+    require(
+        second.line_run_atlas_upload_policy.clean_reuse_cluster_count == 2U,
+        "second frame line/run evidence records two clean reuses");
+    require(
+        second.atlas_upload_request_bridge.policy.unique_upload_request_count == 0U,
+        "second frame emits no new atlas upload requests");
+
+    for (const render_text_rasterized_glyph_atlas_payload_snapshot& payload :
+         second.rasterized_glyph_atlas_payloads) {
+        require(payload.status == render_text_font_rasterizer_status::atlas_cache_hit, "second payload is a cache hit");
+        require(payload.atlas_cache_hit, "second payload marks atlas cache hit");
+        require(payload.reused_atlas_payload, "second payload marks resident payload reuse");
+        require(
+            payload.rasterization_skipped_for_atlas_cache_hit,
+            "second payload skips rasterization because residency is available");
+        require(!payload.used_freetype_rasterizer, "second payload does not rerun FreeType");
+        require(!payload.materialized_font_bytes, "second payload does not reload font bytes");
+        require(contains_atlas_key(first_keys, payload.cache_key), "second payload preserves first-frame atlas key");
+        require(
+            payload_has_matching_harfbuzz_handoff(second, payload),
+            "cache-hit payload still matches current HarfBuzz-shaped glyph id");
+    }
+
+    const render_text_frame_resource_packet_materialization second_resources =
+        resource_packets_for_diagnostics(second);
+    require(second_resources.ok(), "second real frame resource packets are renderer-boundary ready");
+    require(second_resources.policy.ready_packet_count == 2U, "second frame has two ready resource packets");
+    require(second_resources.policy.uploaded_packet_count == 0U, "second frame has no fresh uploaded packets");
+    require(second_resources.policy.clean_reuse_packet_count == 2U, "second frame has two clean-reuse packets");
+    require(second_resources.policy.used_real_backend, "second frame resource packets preserve real backend evidence");
+
+    const render_text_renderer_glyph_quad_packet_snapshot second_quads =
+        make_render_text_renderer_glyph_quad_packets(render_text_renderer_glyph_quad_packet_request{
+            .resource_packets = second_resources,
+        });
+    require(second_quads.ok(), "second real frame produces renderer-ready clean-reuse glyph quads");
+    require(second_quads.policy.quad_packet_count == 2U, "second frame produces one clean-reuse quad per glyph");
+    require(second_quads.policy.ready_quad_count == 2U, "second frame clean-reuse quads are ready");
+    require(second_quads.policy.uploaded_quad_count == 0U, "second frame quads do not carry fresh uploads");
+    require(second_quads.policy.clean_reuse_quad_count == 2U, "second frame quads carry clean-reuse evidence");
+    require(second_quads.policy.total_upload_rgba_bytes == 0U, "second frame clean-reuse quads add no upload bytes");
+    require(second_quads.policy.used_real_backend, "second frame quads preserve real backend evidence");
+    require(!second_quads.policy.used_deterministic_fallback, "second frame quads avoid fallback evidence");
+    for (const render_text_renderer_glyph_quad_packet_record& quad : second_quads.packets) {
+        require(quad.drawable(), "second-frame clean-reuse glyph quad is drawable");
+        require(!quad.uploaded, "second-frame clean-reuse glyph quad has no fresh upload");
+        require(quad.clean_reuse, "second-frame glyph quad records clean atlas reuse");
+        require(quad.used_real_backend, "second-frame clean-reuse quad preserves real backend flag");
+        require(!quad.used_deterministic_fallback, "second-frame clean-reuse quad avoids deterministic fallback");
+        require(!quad.upload_consumed, "second-frame clean-reuse quad does not consume a fresh upload");
+        require(quad.upload_rgba_bytes == 0U, "second-frame clean-reuse quad has no upload byte payload");
+        require(quad.uv_bounds.valid, "second-frame clean-reuse quad keeps valid UVs");
+        require(contains_atlas_key(first_keys, quad.cache_key), "second-frame clean-reuse quad preserves atlas key");
+        require(
+            quad.atlas_consumption.clean_reuse,
+            "second-frame clean-reuse quad atlas consumption records reuse");
+        require(
+            quad.atlas_consumption.cache_key == quad.cache_key,
+            "second-frame clean-reuse quad atlas consumption preserves cache key");
+    }
+
+    const render_text_renderer_draw_payload_snapshot second_payloads =
+        draw_payloads_for_quads(second_quads);
+    require(second_payloads.ok(), "second real frame produces renderer-ready clean-reuse draw payloads");
+    require(second_payloads.policy.payload_count == 2U, "second frame produces one draw payload per glyph quad");
+    require(second_payloads.policy.ready_payload_count == 2U, "second frame draw payloads are ready");
+    require(second_payloads.policy.uploaded_payload_count == 0U, "second frame draw payloads carry no fresh uploads");
+    require(second_payloads.policy.clean_reuse_payload_count == 2U, "second frame draw payloads carry clean reuse");
+    require(second_payloads.policy.total_upload_rgba_bytes == 0U, "second frame draw payloads add no upload bytes");
+    require(second_payloads.policy.used_real_backend, "second frame draw payloads preserve real backend evidence");
+    for (const render_text_renderer_draw_payload_record& payload : second_payloads.payloads) {
+        require(payload.drawable(), "second-frame clean-reuse draw payload is drawable");
+        require(!payload.uploaded, "second-frame clean-reuse draw payload has no fresh upload");
+        require(payload.clean_reuse, "second-frame draw payload records clean atlas reuse");
+        require(!payload.upload_consumed, "second-frame clean-reuse draw payload consumes no fresh upload");
+        require(payload.upload_rgba_bytes == 0U, "second-frame clean-reuse draw payload has no upload bytes");
+        require(payload.uv_bounds.valid, "second-frame clean-reuse draw payload keeps UV bounds");
+        require(contains_atlas_key(first_keys, payload.cache_key), "second-frame draw payload preserves atlas key");
+        require(payload.atlas_consumption.clean_reuse, "second-frame draw payload preserves atlas reuse evidence");
+    }
+}
+
 void test_multiline_korean_text_reaches_frame_handoff_with_partial_upload_blocker()
 {
     using namespace quiz_vulkan::render;
@@ -673,6 +1169,211 @@ void test_multiline_korean_text_reaches_frame_handoff_with_partial_upload_blocke
         "partial summary counts missing upload consumption blockers");
 }
 
+void test_repeated_hangul_text_reuses_atlas_residency_and_uploads_new_glyph()
+{
+    using namespace quiz_vulkan::render;
+
+    const std::filesystem::path korean_font_path = korean_multiline_font_fixture();
+    if (korean_font_path.empty() || !render_text_freetype_memory_face_adapter_available()) {
+        return;
+    }
+
+    fake_text_engine engine;
+    select_real_text_stack(engine);
+    engine.add_font_face(font_face_descriptor{
+        .id = 814,
+        .family = "Payload Korean Varc",
+        .source_uri = korean_font_path.generic_string(),
+        .version = "external-fixture",
+        .license = "harfbuzz-test-fixture",
+        .coverage = {
+            font_codepoint_range{.first = U'\uAC00', .last = U'\uAC01'},
+        },
+        .weight = 400,
+    });
+
+    const render_text_layout first_layout = engine.layout_text(hangul_residency_request("가"));
+    const fake_text_engine_diagnostics first = engine.last_diagnostics();
+    require(first_layout.glyphs.size() == 1U, "first Hangul frame lays out one glyph");
+    require(first.has_font_source_resolutions(), "first Hangul frame records font source identity");
+    require(first.has_font_source_bytes(), "first Hangul frame records font source byte readiness");
+    require(
+        std::any_of(
+            first.font_source_resolutions.begin(),
+            first.font_source_resolutions.end(),
+            [&](const render_text_font_source_resolution_snapshot& source) {
+                return source.resolved_face_id == 814U
+                    && source.resolved_location == korean_font_path.generic_string();
+            }),
+        "first Hangul frame preserves file-backed font source location");
+    require(
+        first.rasterized_glyph_atlas_payload_policy.materialized_font_bytes_count == 1U,
+        "first Hangul frame materializes font bytes");
+    require(
+        first.rasterized_glyph_atlas_payloads.size() == 1U,
+        "first Hangul frame records one raster payload decision");
+    const render_text_rasterized_glyph_atlas_payload_snapshot& first_hangul_payload =
+        first.rasterized_glyph_atlas_payloads.front();
+    if (first_hangul_payload.used_freetype_rasterizer) {
+        require(
+            first.rasterized_glyph_atlas_payload_policy.freetype_rasterizer_count == 1U,
+            "first Hangul frame records real FreeType raster coverage when fixture supports it");
+    } else {
+        require(
+            !first_hangul_payload.deterministic_fallback_reason.empty(),
+            "first Hangul frame records a fallback reason when FreeType cannot rasterize the fixture glyph");
+        require(
+            first_hangul_payload.deterministic_fallback_reason.find("FreeType") != std::string::npos,
+            "first Hangul fallback diagnostic names the FreeType coverage/raster blocker");
+    }
+    require(first.glyph_cache_readiness.size() == 1U, "first Hangul frame records one cache readiness item");
+    require(
+        first.glyph_cache_readiness.front().codepoint == static_cast<std::uint32_t>(U'\uAC00'),
+        "first Hangul frame preserves Hangul codepoint identity");
+    require(first.glyph_cache_readiness.front().has_atlas_slot, "first Hangul glyph is resident in an atlas slot");
+    require(first.glyph_atlas_placements.size() == 1U, "first Hangul frame records one atlas placement");
+    require(first.glyph_atlas_placements.front().newly_allocated, "first Hangul glyph allocates a new slot");
+    require(!first.glyph_atlas_placements.front().cache_hit, "first Hangul glyph is not an atlas cache hit");
+    require(first.glyph_atlas_metrics.new_slot_count == 1U, "first Hangul frame counts one new atlas slot");
+    require(first.glyph_atlas_metrics.cache_hit_count == 0U, "first Hangul frame records no atlas cache hit");
+    require(
+        first.shaping_line_run_evidence_policy.cluster_count == 1U,
+        "first Hangul frame records one shaped cluster");
+    require(
+        first.shaping_line_run_evidence.front().cluster_byte_count == 3U,
+        "first Hangul cluster preserves UTF-8 byte width");
+    require(
+        first.glyph_atlas_materialization_policy.upload_ready_count == 1U,
+        "first Hangul glyph queues an atlas upload");
+    require(
+        first.line_run_atlas_upload_policy.upload_ready_cluster_count == 1U,
+        "first Hangul line/run evidence records upload-ready atlas work");
+    require(
+        first.line_run_atlas_upload_policy.clean_reuse_cluster_count == 0U,
+        "first Hangul line/run evidence records no clean reuse");
+    require(
+        first.atlas_upload_request_bridge.policy.unique_upload_request_count == 1U,
+        "first Hangul frame exposes one unique upload request");
+
+    const glyph_atlas_key first_key = first.glyph_atlas_placements.front().key;
+    const render_text_atlas_page_id first_page_id = first.glyph_atlas_placements.front().page.id;
+    const render_rect first_atlas_bounds = first.glyph_atlas_placements.front().atlas_bounds;
+
+    const render_text_layout second_layout = engine.layout_text(hangul_residency_request("가"));
+    const fake_text_engine_diagnostics second = engine.last_diagnostics();
+    require(second_layout.glyphs.size() == 1U, "second Hangul frame lays out the repeated glyph");
+    require(second.glyph_cache_readiness.size() == 1U, "second Hangul frame records one cache readiness item");
+    require(
+        second.glyph_cache_readiness.front().has_atlas_slot,
+        "second Hangul glyph remains resident in an atlas slot");
+    require(second.glyph_atlas_placements.size() == 1U, "second Hangul frame records one atlas placement");
+    require(second.glyph_atlas_placements.front().cache_hit, "second Hangul glyph reuses atlas residency");
+    require(
+        !second.glyph_atlas_placements.front().newly_allocated,
+        "second Hangul glyph does not allocate a new slot");
+    require(second.glyph_atlas_placements.front().key == first_key, "second Hangul glyph preserves atlas key");
+    require(second.glyph_atlas_placements.front().page.id == first_page_id, "second Hangul glyph preserves page id");
+    require(
+        second.glyph_atlas_placements.front().atlas_bounds.x == first_atlas_bounds.x
+            && second.glyph_atlas_placements.front().atlas_bounds.y == first_atlas_bounds.y
+            && second.glyph_atlas_placements.front().atlas_bounds.width == first_atlas_bounds.width
+            && second.glyph_atlas_placements.front().atlas_bounds.height == first_atlas_bounds.height,
+        "second Hangul glyph preserves atlas slot bounds");
+    require(second.glyph_atlas_metrics.cache_hit_count == 1U, "second Hangul frame counts one atlas cache hit");
+    require(second.glyph_atlas_metrics.new_slot_count == 0U, "second Hangul frame allocates no new atlas slots");
+    require(second.glyph_atlas_metrics.dirty_page_count == 0U, "second Hangul frame marks no dirty atlas pages");
+    require(
+        second.glyph_atlas_page_policy.repeated_layout_clean_page_count > 0U,
+        "second Hangul frame records clean atlas page reuse");
+    require(
+        second.glyph_atlas_materialization_policy.clean_reuse_count == 1U,
+        "second Hangul materialization records clean reuse");
+    require(
+        second.glyph_atlas_materializations.front().status
+            == render_text_glyph_atlas_materialization_status::materialized_clean_reuse,
+        "second Hangul materialization reports clean atlas reuse");
+    require(
+        second.line_run_atlas_upload_policy.clean_reuse_cluster_count == 1U,
+        "second Hangul line/run evidence records clean reuse");
+    require(
+        second.line_run_atlas_upload_policy.reused_cluster_count == 1U,
+        "second Hangul line/run evidence records atlas data reuse");
+    require(
+        second.line_run_atlas_upload_policy.upload_ready_cluster_count == 0U,
+        "second Hangul frame queues no new upload request");
+    require(
+        second.atlas_upload_request_bridge.policy.clean_reuse_count == 1U,
+        "second Hangul upload bridge records clean reuse");
+    require(
+        second.atlas_upload_request_bridge.policy.unique_upload_request_count == 0U,
+        "second Hangul upload bridge emits no unique upload request");
+    require(
+        second.shaped_atlas_update_trace_policy.clean_atlas_page_reused_count == 1U,
+        "second Hangul shaped-atlas trace records clean page reuse");
+
+    const render_text_layout third_layout = engine.layout_text(hangul_residency_request("가각"));
+    const fake_text_engine_diagnostics third = engine.last_diagnostics();
+    require(third_layout.glyphs.size() == 2U, "third Hangul frame lays out repeated and new glyphs");
+    require(third.glyph_cache_readiness.size() == 2U, "third Hangul frame records two cache readiness items");
+    require(
+        std::all_of(
+            third.glyph_cache_readiness.begin(),
+            third.glyph_cache_readiness.end(),
+            [](const render_text_glyph_cache_readiness_snapshot& readiness) {
+                return readiness.has_atlas_slot;
+            }),
+        "third Hangul frame keeps both shaped glyphs resident in atlas slots");
+    require(
+        std::any_of(
+            third.glyph_cache_readiness.begin(),
+            third.glyph_cache_readiness.end(),
+            [](const render_text_glyph_cache_readiness_snapshot& readiness) {
+                return readiness.codepoint == static_cast<std::uint32_t>(U'\uAC01');
+            }),
+        "third Hangul frame records the new Hangul codepoint");
+    require(third.glyph_atlas_placements.size() == 2U, "third Hangul frame records two atlas placements");
+    const std::size_t third_cache_hits = static_cast<std::size_t>(std::count_if(
+        third.glyph_atlas_placements.begin(),
+        third.glyph_atlas_placements.end(),
+        [](const render_text_glyph_atlas_placement_snapshot& placement) {
+            return placement.cache_hit;
+        }));
+    const std::size_t third_new_slots = static_cast<std::size_t>(std::count_if(
+        third.glyph_atlas_placements.begin(),
+        third.glyph_atlas_placements.end(),
+        [](const render_text_glyph_atlas_placement_snapshot& placement) {
+            return placement.newly_allocated;
+        }));
+    require(third_cache_hits == 1U, "third Hangul frame reuses one existing atlas slot");
+    require(third_new_slots == 1U, "third Hangul frame allocates one new atlas slot");
+    require(third.glyph_atlas_metrics.cache_hit_count == 1U, "third Hangul metrics count one cache hit");
+    require(third.glyph_atlas_metrics.new_slot_count == 1U, "third Hangul metrics count one new slot");
+    require(
+        third.glyph_atlas_materialization_policy.clean_reuse_count == 1U,
+        "third Hangul materialization records one reused glyph");
+    require(
+        third.glyph_atlas_materialization_policy.upload_ready_count == 1U,
+        "third Hangul materialization records one newly upload-ready glyph");
+    require(
+        third.line_run_atlas_upload_policy.clean_reuse_cluster_count == 1U,
+        "third Hangul line/run evidence records one clean reuse");
+    require(
+        third.line_run_atlas_upload_policy.upload_ready_cluster_count == 1U,
+        "third Hangul line/run evidence records one new upload");
+    require(
+        third.atlas_upload_request_bridge.policy.clean_reuse_count == 1U,
+        "third Hangul upload bridge records reused atlas residency");
+    require(
+        third.atlas_upload_request_bridge.policy.unique_upload_request_count == 1U,
+        "third Hangul upload bridge emits one new upload request");
+    require(
+        third.shaped_atlas_update_trace_policy.shaped_glyph_missing_atlas_slot_count == 0U,
+        "third Hangul shaped glyphs all have resident atlas slots");
+    require(
+        third.shaping_atlas_handoff_policy.missing_atlas_slot_cluster_count == 0U,
+        "third Hangul shaping atlas handoff records no missing atlas slot blockers");
+}
+
 void test_missing_file_backed_freetype_payload_falls_back_and_skips()
 {
     using namespace quiz_vulkan::render;
@@ -787,6 +1488,43 @@ void test_missing_file_backed_freetype_payload_falls_back_and_skips()
     require(summary.policy.used_deterministic_fallback, "missing bytes summary marks deterministic fallback");
     require(!summary.policy.used_real_backend, "missing bytes summary does not mark real backend");
     require(!summary.blocker_packet_ids.empty(), "missing bytes summary exposes blocker packet id");
+
+    const render_text_frame_resource_packet_materialization resources =
+        resource_packets_for_diagnostics(diagnostics);
+    require(!resources.ok(), "missing bytes resource packet materialization is blocked");
+    require(resources.policy.blocked_packet_count == 1U, "missing bytes resource packet is counted as blocked");
+    require(resources.has_blockers(), "missing bytes resource packet materialization exposes blockers");
+    require(!resources.blocker_summary.empty(), "missing bytes resource packet preserves blocker summary");
+
+    const render_text_renderer_glyph_quad_packet_snapshot quads =
+        make_render_text_renderer_glyph_quad_packets(render_text_renderer_glyph_quad_packet_request{
+            .resource_packets = resources,
+        });
+    require(!quads.ok(), "missing bytes glyph quad packet snapshot is blocked");
+    require(quads.has_blockers(), "missing bytes glyph quad packet snapshot exposes blockers");
+    require(quads.policy.resource_blocked_count == 1U, "missing bytes glyph quad counts blocked resource packet");
+    require(quads.policy.blocked_quad_count == 1U, "missing bytes glyph quad counts blocked quad");
+    require(
+        quads.packets.front().status != render_text_renderer_glyph_quad_packet_status::quad_ready,
+        "missing bytes glyph quad preserves blocked status");
+    require(!quads.packets.front().drawable(), "missing bytes glyph quad is not drawable");
+    require(
+        !quads.packets.front().blocker_summary.empty(),
+        "missing bytes glyph quad preserves blocker summary");
+
+    const render_text_renderer_draw_payload_snapshot payloads =
+        draw_payloads_for_quads(quads);
+    require(!payloads.ok(), "missing bytes draw payload snapshot is blocked");
+    require(payloads.has_blockers(), "missing bytes draw payload snapshot exposes blockers");
+    require(payloads.policy.blocked_payload_count == 1U, "missing bytes draw payload is counted as blocked");
+    require(payloads.policy.glyph_quad_blocked_count == 1U, "missing bytes draw payload counts source glyph quad blocker");
+    require(!payloads.payloads.front().drawable(), "missing bytes draw payload is not drawable");
+    require(
+        payloads.payloads.front().status == render_text_renderer_draw_payload_status::blocked_glyph_quad,
+        "missing bytes draw payload preserves blocked glyph quad status");
+    require(
+        !payloads.payloads.front().blocker_summary.empty(),
+        "missing bytes draw payload preserves blocker summary");
 }
 
 } // namespace
@@ -794,7 +1532,10 @@ void test_missing_file_backed_freetype_payload_falls_back_and_skips()
 int main()
 {
     test_file_backed_freetype_selection_rasterizes_real_payload();
+    test_repeated_file_backed_freetype_text_reuses_resident_atlas_payload();
+    test_harfbuzz_shaped_glyph_ids_drive_freetype_atlas_residency();
     test_multiline_korean_text_reaches_frame_handoff_with_partial_upload_blocker();
+    test_repeated_hangul_text_reuses_atlas_residency_and_uploads_new_glyph();
     test_missing_file_backed_freetype_payload_falls_back_and_skips();
     return 0;
 }

@@ -3,8 +3,11 @@
 #include "assets/asset_typed_materialized_bytes.h"
 #include "assets/asset_pack_index.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -130,6 +133,272 @@ struct asset_shader_byte_pipeline_source_summary {
         return find_blocked(id);
     }
 };
+
+enum class asset_shader_payload_runtime_stage {
+    unknown,
+    vertex,
+    fragment,
+    compute,
+    geometry,
+    tessellation_control,
+    tessellation_evaluation,
+};
+
+enum class asset_shader_payload_runtime_delta_kind {
+    reused,
+    added,
+    removed,
+    replaced,
+    invalidated,
+};
+
+struct asset_shader_payload_runtime_entry {
+    std::string id;
+    asset_shader_payload_runtime_stage stage = asset_shader_payload_runtime_stage::unknown;
+    asset_shader_byte_pipeline_source_kind source_kind =
+        asset_shader_byte_pipeline_source_kind::missing_source;
+    asset_shader_byte_pipeline_blocker_kind blocker =
+        asset_shader_byte_pipeline_blocker_kind::missing_source;
+    asset_cache_key cache_key;
+    std::string source_uri;
+    std::filesystem::path materialized_path;
+    std::size_t byte_count = 0U;
+    std::size_t payload_byte_count = 0U;
+    std::string content_hash;
+    std::string cache_revision;
+    std::string materialized_byte_identity;
+    std::string runtime_identity;
+    bool ready = false;
+    std::string diagnostic;
+
+    [[nodiscard]] bool ok() const
+    {
+        return ready && blocker == asset_shader_byte_pipeline_blocker_kind::none
+            && !runtime_identity.empty();
+    }
+};
+
+struct asset_shader_payload_runtime_summary {
+    std::vector<asset_shader_payload_runtime_entry> ready;
+    std::vector<asset_shader_payload_runtime_entry> blocked;
+    std::size_t input_shader_count = 0U;
+    std::size_t requested_shader_count = 0U;
+    std::size_t vertex_stage_count = 0U;
+    std::size_t fragment_stage_count = 0U;
+    std::size_t compute_stage_count = 0U;
+    std::size_t geometry_stage_count = 0U;
+    std::size_t tessellation_control_stage_count = 0U;
+    std::size_t tessellation_evaluation_stage_count = 0U;
+    std::size_t unknown_stage_count = 0U;
+    std::size_t revisioned_count = 0U;
+    std::size_t missing_revision_count = 0U;
+
+    [[nodiscard]] bool ok() const
+    {
+        return blocked.empty();
+    }
+
+    [[nodiscard]] std::size_t ready_count() const
+    {
+        return ready.size();
+    }
+
+    [[nodiscard]] std::size_t blocked_count() const
+    {
+        return blocked.size();
+    }
+
+    [[nodiscard]] std::size_t entry_count() const
+    {
+        return ready_count() + blocked_count();
+    }
+
+    [[nodiscard]] const asset_shader_payload_runtime_entry* find_ready(
+        std::string_view id) const
+    {
+        for (const asset_shader_payload_runtime_entry& entry : ready) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_shader_payload_runtime_entry* find_blocked(
+        std::string_view id) const
+    {
+        for (const asset_shader_payload_runtime_entry& entry : blocked) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_shader_payload_runtime_entry* find_entry(
+        std::string_view id) const
+    {
+        if (const asset_shader_payload_runtime_entry* entry = find_ready(id); entry != nullptr) {
+            return entry;
+        }
+        return find_blocked(id);
+    }
+
+    [[nodiscard]] const asset_shader_payload_runtime_entry* find_runtime_identity(
+        std::string_view runtime_identity) const
+    {
+        for (const asset_shader_payload_runtime_entry& entry : ready) {
+            if (entry.runtime_identity == runtime_identity) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+};
+
+struct asset_shader_payload_runtime_diff_entry {
+    asset_shader_payload_runtime_delta_kind kind =
+        asset_shader_payload_runtime_delta_kind::reused;
+    std::string id;
+    asset_shader_payload_runtime_stage stage = asset_shader_payload_runtime_stage::unknown;
+    std::optional<asset_shader_payload_runtime_entry> before;
+    std::optional<asset_shader_payload_runtime_entry> after;
+    bool stage_changed = false;
+    bool cache_key_changed = false;
+    bool cache_revision_changed = false;
+    bool missing_revision_changed = false;
+    bool byte_count_changed = false;
+    bool payload_byte_count_changed = false;
+    bool content_hash_changed = false;
+    bool runtime_identity_changed = false;
+    bool materialized_path_changed = false;
+    bool readiness_changed = false;
+    bool blocker_changed = false;
+    bool before_missing_revision = false;
+    bool after_missing_revision = false;
+    std::string invalidated_runtime_identity;
+    std::string replacement_runtime_identity;
+    std::string diagnostic;
+
+    [[nodiscard]] bool invalidates() const
+    {
+        return kind == asset_shader_payload_runtime_delta_kind::removed
+            || kind == asset_shader_payload_runtime_delta_kind::replaced
+            || kind == asset_shader_payload_runtime_delta_kind::invalidated;
+    }
+
+    [[nodiscard]] bool has_field_delta() const
+    {
+        return stage_changed || cache_key_changed || cache_revision_changed || missing_revision_changed
+            || byte_count_changed || payload_byte_count_changed || content_hash_changed
+            || runtime_identity_changed || materialized_path_changed || readiness_changed
+            || blocker_changed;
+    }
+};
+
+struct asset_shader_payload_runtime_diff_summary {
+    std::vector<asset_shader_payload_runtime_diff_entry> reused;
+    std::vector<asset_shader_payload_runtime_diff_entry> added;
+    std::vector<asset_shader_payload_runtime_diff_entry> removed;
+    std::vector<asset_shader_payload_runtime_diff_entry> replaced;
+    std::vector<asset_shader_payload_runtime_diff_entry> invalidated;
+    std::ptrdiff_t requested_delta = 0;
+    std::ptrdiff_t ready_delta = 0;
+    std::ptrdiff_t blocked_delta = 0;
+    std::ptrdiff_t missing_revision_delta = 0;
+
+    [[nodiscard]] bool empty() const
+    {
+        return added.empty() && removed.empty() && replaced.empty() && invalidated.empty();
+    }
+
+    [[nodiscard]] std::size_t change_count() const
+    {
+        return added.size() + removed.size() + replaced.size() + invalidated.size();
+    }
+
+    [[nodiscard]] std::size_t invalidation_count() const
+    {
+        return removed.size() + replaced.size() + invalidated.size();
+    }
+
+    [[nodiscard]] const asset_shader_payload_runtime_diff_entry* find_reused(
+        std::string_view id) const
+    {
+        for (const asset_shader_payload_runtime_diff_entry& entry : reused) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_shader_payload_runtime_diff_entry* find_added(
+        std::string_view id) const
+    {
+        for (const asset_shader_payload_runtime_diff_entry& entry : added) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_shader_payload_runtime_diff_entry* find_removed(
+        std::string_view id) const
+    {
+        for (const asset_shader_payload_runtime_diff_entry& entry : removed) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_shader_payload_runtime_diff_entry* find_replaced(
+        std::string_view id) const
+    {
+        for (const asset_shader_payload_runtime_diff_entry& entry : replaced) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_shader_payload_runtime_diff_entry* find_invalidated(
+        std::string_view id) const
+    {
+        for (const asset_shader_payload_runtime_diff_entry& entry : invalidated) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+};
+
+inline std::string asset_shader_payload_runtime_stage_name(
+    asset_shader_payload_runtime_stage stage)
+{
+    switch (stage) {
+        case asset_shader_payload_runtime_stage::unknown:
+            return "unknown";
+        case asset_shader_payload_runtime_stage::vertex:
+            return "vertex";
+        case asset_shader_payload_runtime_stage::fragment:
+            return "fragment";
+        case asset_shader_payload_runtime_stage::compute:
+            return "compute";
+        case asset_shader_payload_runtime_stage::geometry:
+            return "geometry";
+        case asset_shader_payload_runtime_stage::tessellation_control:
+            return "tessellation_control";
+        case asset_shader_payload_runtime_stage::tessellation_evaluation:
+            return "tessellation_evaluation";
+    }
+    return "unknown";
+}
 
 namespace detail {
 
@@ -401,6 +670,307 @@ inline void add_shader_byte_pipeline_source_entry(
     }
 }
 
+inline std::string shader_payload_runtime_lowercase(std::string_view value)
+{
+    std::string result(value);
+    std::ranges::transform(result, result.begin(), [](char character) {
+        return static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+    });
+    return result;
+}
+
+inline bool shader_payload_runtime_has_stage_suffix(
+    std::string_view identity,
+    std::string_view suffix)
+{
+    return identity.ends_with(suffix)
+        || identity.ends_with(std::string(suffix) + ".spv");
+}
+
+inline asset_shader_payload_runtime_stage infer_shader_payload_runtime_stage(
+    std::string_view source_uri,
+    const std::filesystem::path& materialized_path)
+{
+    const std::string identity = shader_payload_runtime_lowercase(
+        source_uri.empty() ? materialized_path.generic_string() : std::string(source_uri));
+    if (shader_payload_runtime_has_stage_suffix(identity, ".vert")) {
+        return asset_shader_payload_runtime_stage::vertex;
+    }
+    if (shader_payload_runtime_has_stage_suffix(identity, ".frag")) {
+        return asset_shader_payload_runtime_stage::fragment;
+    }
+    if (shader_payload_runtime_has_stage_suffix(identity, ".comp")) {
+        return asset_shader_payload_runtime_stage::compute;
+    }
+    if (shader_payload_runtime_has_stage_suffix(identity, ".geom")) {
+        return asset_shader_payload_runtime_stage::geometry;
+    }
+    if (shader_payload_runtime_has_stage_suffix(identity, ".tesc")) {
+        return asset_shader_payload_runtime_stage::tessellation_control;
+    }
+    if (shader_payload_runtime_has_stage_suffix(identity, ".tese")) {
+        return asset_shader_payload_runtime_stage::tessellation_evaluation;
+    }
+    return asset_shader_payload_runtime_stage::unknown;
+}
+
+inline std::string shader_payload_runtime_cache_revision(
+    const asset_cache_key& cache_key)
+{
+    const asset_cache_key_classification classification = classify_asset_cache_key(cache_key);
+    return classification.cache_revision;
+}
+
+inline std::string make_shader_payload_runtime_identity(
+    asset_shader_payload_runtime_stage stage,
+    const asset_cache_key& cache_key,
+    std::string_view content_hash,
+    std::size_t payload_byte_count)
+{
+    if (cache_key.empty() && content_hash.empty() && payload_byte_count == 0U) {
+        return {};
+    }
+
+    return "shader-runtime|stage=" + asset_shader_payload_runtime_stage_name(stage)
+        + "|key=" + cache_key + "|hash=" + std::string(content_hash)
+        + "|bytes=" + std::to_string(payload_byte_count);
+}
+
+inline asset_shader_payload_runtime_entry make_shader_payload_runtime_entry(
+    const asset_shader_byte_pipeline_source_entry& source)
+{
+    asset_shader_payload_runtime_entry entry{
+        .id = source.id,
+        .stage = infer_shader_payload_runtime_stage(source.source_uri, source.materialized_path),
+        .source_kind = source.source_kind,
+        .blocker = source.blocker,
+        .cache_key = source.cache_key,
+        .source_uri = source.source_uri,
+        .materialized_path = source.materialized_path,
+        .byte_count = source.byte_count,
+        .payload_byte_count = source.payload_byte_count,
+        .content_hash = source.content_hash,
+        .cache_revision = shader_payload_runtime_cache_revision(source.cache_key),
+        .materialized_byte_identity = source.materialized_byte_identity,
+        .ready = source.ready,
+        .diagnostic = source.diagnostic,
+    };
+
+    if (entry.ready) {
+        entry.runtime_identity = make_shader_payload_runtime_identity(
+            entry.stage,
+            entry.cache_key,
+            entry.content_hash,
+            entry.payload_byte_count);
+    }
+    if (entry.diagnostic.empty()) {
+        entry.diagnostic =
+            entry.ready ? "shader payload runtime entry is ready" : "shader payload runtime entry is blocked";
+    }
+
+    return entry;
+}
+
+inline void count_shader_payload_runtime_entry(
+    asset_shader_payload_runtime_summary& summary,
+    const asset_shader_payload_runtime_entry& entry)
+{
+    switch (entry.stage) {
+        case asset_shader_payload_runtime_stage::vertex:
+            ++summary.vertex_stage_count;
+            break;
+        case asset_shader_payload_runtime_stage::fragment:
+            ++summary.fragment_stage_count;
+            break;
+        case asset_shader_payload_runtime_stage::compute:
+            ++summary.compute_stage_count;
+            break;
+        case asset_shader_payload_runtime_stage::geometry:
+            ++summary.geometry_stage_count;
+            break;
+        case asset_shader_payload_runtime_stage::tessellation_control:
+            ++summary.tessellation_control_stage_count;
+            break;
+        case asset_shader_payload_runtime_stage::tessellation_evaluation:
+            ++summary.tessellation_evaluation_stage_count;
+            break;
+        case asset_shader_payload_runtime_stage::unknown:
+            ++summary.unknown_stage_count;
+            break;
+    }
+
+    if (entry.cache_revision.empty()) {
+        ++summary.missing_revision_count;
+    } else {
+        ++summary.revisioned_count;
+    }
+}
+
+inline void add_shader_payload_runtime_entry(
+    asset_shader_payload_runtime_summary& summary,
+    asset_shader_payload_runtime_entry entry)
+{
+    count_shader_payload_runtime_entry(summary, entry);
+    if (entry.ready) {
+        summary.ready.push_back(std::move(entry));
+    } else {
+        summary.blocked.push_back(std::move(entry));
+    }
+}
+
+inline std::ptrdiff_t shader_payload_runtime_count_delta(
+    std::size_t before,
+    std::size_t after)
+{
+    return static_cast<std::ptrdiff_t>(after) - static_cast<std::ptrdiff_t>(before);
+}
+
+template <typename Callback>
+inline void for_each_shader_payload_runtime_entry(
+    const asset_shader_payload_runtime_summary& summary,
+    Callback&& callback)
+{
+    for (const asset_shader_payload_runtime_entry& entry : summary.ready) {
+        callback(entry);
+    }
+    for (const asset_shader_payload_runtime_entry& entry : summary.blocked) {
+        callback(entry);
+    }
+}
+
+inline const asset_shader_payload_runtime_entry* find_shader_payload_runtime_entry(
+    const asset_shader_payload_runtime_summary& summary,
+    std::string_view id)
+{
+    return summary.find_entry(id);
+}
+
+inline asset_shader_payload_runtime_delta_kind classify_shader_payload_runtime_delta(
+    const asset_shader_payload_runtime_entry& before,
+    const asset_shader_payload_runtime_entry& after)
+{
+    if (before.ready && after.ready) {
+        return before.runtime_identity == after.runtime_identity
+            ? asset_shader_payload_runtime_delta_kind::reused
+            : asset_shader_payload_runtime_delta_kind::replaced;
+    }
+    if (before.ready && !after.ready) {
+        return asset_shader_payload_runtime_delta_kind::invalidated;
+    }
+    if (!before.ready && after.ready) {
+        return asset_shader_payload_runtime_delta_kind::added;
+    }
+    if (before.blocker == after.blocker && before.stage == after.stage
+        && before.cache_key == after.cache_key && before.content_hash == after.content_hash) {
+        return asset_shader_payload_runtime_delta_kind::reused;
+    }
+    return asset_shader_payload_runtime_delta_kind::invalidated;
+}
+
+inline asset_shader_payload_runtime_diff_entry make_shader_payload_runtime_diff_entry(
+    asset_shader_payload_runtime_delta_kind kind,
+    const std::optional<asset_shader_payload_runtime_entry>& before,
+    const std::optional<asset_shader_payload_runtime_entry>& after)
+{
+    const asset_shader_payload_runtime_entry* before_entry =
+        before.has_value() ? &*before : nullptr;
+    const asset_shader_payload_runtime_entry* after_entry =
+        after.has_value() ? &*after : nullptr;
+    const asset_shader_payload_runtime_entry& anchor =
+        after_entry != nullptr ? *after_entry : *before_entry;
+
+    asset_shader_payload_runtime_diff_entry entry{
+        .kind = kind,
+        .id = anchor.id,
+        .stage = anchor.stage,
+        .before = before,
+        .after = after,
+        .before_missing_revision =
+            before_entry != nullptr ? before_entry->cache_revision.empty() : false,
+        .after_missing_revision =
+            after_entry != nullptr ? after_entry->cache_revision.empty() : false,
+        .diagnostic = "shader payload runtime entry reused",
+    };
+
+    if (before_entry != nullptr && after_entry != nullptr) {
+        entry.stage_changed = before_entry->stage != after_entry->stage;
+        entry.cache_key_changed = before_entry->cache_key != after_entry->cache_key;
+        entry.cache_revision_changed = before_entry->cache_revision != after_entry->cache_revision;
+        entry.missing_revision_changed = entry.before_missing_revision != entry.after_missing_revision;
+        entry.byte_count_changed = before_entry->byte_count != after_entry->byte_count;
+        entry.payload_byte_count_changed =
+            before_entry->payload_byte_count != after_entry->payload_byte_count;
+        entry.content_hash_changed = before_entry->content_hash != after_entry->content_hash;
+        entry.runtime_identity_changed =
+            before_entry->runtime_identity != after_entry->runtime_identity;
+        entry.materialized_path_changed = before_entry->materialized_path != after_entry->materialized_path;
+        entry.readiness_changed = before_entry->ready != after_entry->ready;
+        entry.blocker_changed = before_entry->blocker != after_entry->blocker;
+    } else {
+        entry.stage_changed = before_entry != nullptr || after_entry != nullptr;
+        entry.cache_key_changed = before_entry != nullptr || after_entry != nullptr;
+        entry.cache_revision_changed = before_entry != nullptr || after_entry != nullptr;
+        entry.missing_revision_changed = entry.before_missing_revision != entry.after_missing_revision;
+        entry.byte_count_changed = before_entry != nullptr || after_entry != nullptr;
+        entry.payload_byte_count_changed = before_entry != nullptr || after_entry != nullptr;
+        entry.content_hash_changed = before_entry != nullptr || after_entry != nullptr;
+        entry.runtime_identity_changed = before_entry != nullptr || after_entry != nullptr;
+        entry.materialized_path_changed = before_entry != nullptr || after_entry != nullptr;
+        entry.readiness_changed = before_entry != nullptr || after_entry != nullptr;
+        entry.blocker_changed = before_entry != nullptr || after_entry != nullptr;
+    }
+
+    if (before_entry != nullptr && !before_entry->runtime_identity.empty()) {
+        entry.invalidated_runtime_identity = before_entry->runtime_identity;
+    }
+    if (after_entry != nullptr && !after_entry->runtime_identity.empty()) {
+        entry.replacement_runtime_identity = after_entry->runtime_identity;
+    }
+
+    switch (kind) {
+        case asset_shader_payload_runtime_delta_kind::reused:
+            entry.diagnostic = "shader payload runtime entry reused";
+            break;
+        case asset_shader_payload_runtime_delta_kind::added:
+            entry.diagnostic = "shader payload runtime entry added or became ready";
+            break;
+        case asset_shader_payload_runtime_delta_kind::removed:
+            entry.diagnostic = "shader payload runtime entry removed";
+            break;
+        case asset_shader_payload_runtime_delta_kind::replaced:
+            entry.diagnostic = "shader payload runtime entry replaced by stage revision or content change";
+            break;
+        case asset_shader_payload_runtime_delta_kind::invalidated:
+            entry.diagnostic = "shader payload runtime entry invalidated by readiness or blocker change";
+            break;
+    }
+
+    return entry;
+}
+
+inline void add_shader_payload_runtime_diff_entry(
+    asset_shader_payload_runtime_diff_summary& diff,
+    asset_shader_payload_runtime_diff_entry entry)
+{
+    switch (entry.kind) {
+        case asset_shader_payload_runtime_delta_kind::reused:
+            diff.reused.push_back(std::move(entry));
+            break;
+        case asset_shader_payload_runtime_delta_kind::added:
+            diff.added.push_back(std::move(entry));
+            break;
+        case asset_shader_payload_runtime_delta_kind::removed:
+            diff.removed.push_back(std::move(entry));
+            break;
+        case asset_shader_payload_runtime_delta_kind::replaced:
+            diff.replaced.push_back(std::move(entry));
+            break;
+        case asset_shader_payload_runtime_delta_kind::invalidated:
+            diff.invalidated.push_back(std::move(entry));
+            break;
+    }
+}
+
 } // namespace detail
 
 inline asset_shader_byte_pipeline_source_summary summarize_shader_byte_pipeline_sources(
@@ -468,6 +1038,87 @@ inline asset_shader_byte_pipeline_source_summary summarize_shader_byte_pipeline_
     return summarize_shader_byte_pipeline_sources(shader_pipeline, resolver_policy, root_selection);
 }
 
+inline asset_shader_payload_runtime_summary summarize_shader_payload_runtime(
+    const asset_shader_byte_pipeline_source_summary& source_summary)
+{
+    asset_shader_payload_runtime_summary summary{
+        .input_shader_count = source_summary.input_shader_count,
+        .requested_shader_count = source_summary.requested_shader_count,
+    };
+
+    for (const asset_shader_byte_pipeline_source_entry& entry : source_summary.ready) {
+        detail::add_shader_payload_runtime_entry(
+            summary,
+            detail::make_shader_payload_runtime_entry(entry));
+    }
+    for (const asset_shader_byte_pipeline_source_entry& entry : source_summary.blocked) {
+        detail::add_shader_payload_runtime_entry(
+            summary,
+            detail::make_shader_payload_runtime_entry(entry));
+    }
+
+    return summary;
+}
+
+inline asset_shader_payload_runtime_diff_summary diff_shader_payload_runtime_summaries(
+    const asset_shader_payload_runtime_summary& before,
+    const asset_shader_payload_runtime_summary& after)
+{
+    asset_shader_payload_runtime_diff_summary diff{
+        .requested_delta = detail::shader_payload_runtime_count_delta(
+            before.requested_shader_count,
+            after.requested_shader_count),
+        .ready_delta = detail::shader_payload_runtime_count_delta(
+            before.ready_count(),
+            after.ready_count()),
+        .blocked_delta = detail::shader_payload_runtime_count_delta(
+            before.blocked_count(),
+            after.blocked_count()),
+        .missing_revision_delta = detail::shader_payload_runtime_count_delta(
+            before.missing_revision_count,
+            after.missing_revision_count),
+    };
+
+    detail::for_each_shader_payload_runtime_entry(
+        before,
+        [&](const asset_shader_payload_runtime_entry& before_entry) {
+            const asset_shader_payload_runtime_entry* after_entry =
+                detail::find_shader_payload_runtime_entry(after, before_entry.id);
+            if (after_entry == nullptr) {
+                detail::add_shader_payload_runtime_diff_entry(
+                    diff,
+                    detail::make_shader_payload_runtime_diff_entry(
+                        asset_shader_payload_runtime_delta_kind::removed,
+                        before_entry,
+                        std::nullopt));
+                return;
+            }
+
+            detail::add_shader_payload_runtime_diff_entry(
+                diff,
+                detail::make_shader_payload_runtime_diff_entry(
+                    detail::classify_shader_payload_runtime_delta(before_entry, *after_entry),
+                    before_entry,
+                    *after_entry));
+        });
+
+    detail::for_each_shader_payload_runtime_entry(
+        after,
+        [&](const asset_shader_payload_runtime_entry& after_entry) {
+            if (detail::find_shader_payload_runtime_entry(before, after_entry.id) != nullptr) {
+                return;
+            }
+            detail::add_shader_payload_runtime_diff_entry(
+                diff,
+                detail::make_shader_payload_runtime_diff_entry(
+                    asset_shader_payload_runtime_delta_kind::added,
+                    std::nullopt,
+                    after_entry));
+        });
+
+    return diff;
+}
+
 inline std::string asset_shader_byte_pipeline_source_kind_name(
     asset_shader_byte_pipeline_source_kind kind)
 {
@@ -518,6 +1169,24 @@ inline std::string asset_shader_byte_pipeline_blocker_kind_name(
             return "duplicate_id";
     }
     return "missing_source";
+}
+
+inline std::string asset_shader_payload_runtime_delta_kind_name(
+    asset_shader_payload_runtime_delta_kind kind)
+{
+    switch (kind) {
+        case asset_shader_payload_runtime_delta_kind::reused:
+            return "reused";
+        case asset_shader_payload_runtime_delta_kind::added:
+            return "added";
+        case asset_shader_payload_runtime_delta_kind::removed:
+            return "removed";
+        case asset_shader_payload_runtime_delta_kind::replaced:
+            return "replaced";
+        case asset_shader_payload_runtime_delta_kind::invalidated:
+            return "invalidated";
+    }
+    return "invalidated";
 }
 
 } // namespace quiz_vulkan::assets

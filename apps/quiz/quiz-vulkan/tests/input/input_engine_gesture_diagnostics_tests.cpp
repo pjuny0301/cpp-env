@@ -884,6 +884,122 @@ void test_pointer_capture_release_and_restart_are_deterministic_for_mouse_and_to
         52);
 }
 
+void test_gesture_arbitration_ignores_cross_pointer_stream_during_capture()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    require(engine.process_raw_event(pointer(
+                raw_platform_pointer_phase::down,
+                300,
+                0.0f,
+                0.0f,
+                raw_platform_pointer_button::none,
+                70))
+                .empty(),
+        "arbitration fixture touch down starts tracking");
+    std::vector<input_event> events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::move,
+        320,
+        12.0f,
+        0.0f,
+        raw_platform_pointer_button::none,
+        70));
+    require(events.size() == 1, "arbitration fixture touch move starts drag");
+    const gesture_event& drag_start = require_event<gesture_event>(events, 0);
+    require(drag_start.kind == gesture_kind::drag_start,
+        "arbitration fixture captured touch emits drag start");
+    require_capture_snapshot(
+        engine.routing_diagnostics().pointer_capture,
+        pointer_capture_lifecycle::captured,
+        true,
+        70,
+        1,
+        "arbitration fixture captures touch pointer");
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::down,
+        330,
+        4.0f,
+        4.0f,
+        raw_platform_pointer_button::primary,
+        1));
+    require(events.empty(), "arbitration fixture mouse down during touch capture emits no gesture");
+    const input_routing_diagnostics& ignored_diagnostics = engine.routing_diagnostics();
+    require(ignored_diagnostics.action_routes.size() == 1,
+        "arbitration fixture ignored mouse emits one route");
+    const action_route_policy_diagnostic& ignored_policy = require_policy(
+        ignored_diagnostics,
+        0,
+        action_route_policy_kind::pointer_capture_arbitration,
+        "arbitration fixture emits pointer arbitration route");
+    require(!ignored_policy.emits_input_event,
+        "arbitration fixture ignored pointer route is diagnostic-only");
+    require(ignored_policy.pointer_decision == pointer_arbitration_decision::ignored_by_capture,
+        "arbitration fixture records ignored-by-capture decision");
+    require(ignored_policy.pointer_contact == pointer_contact_kind::mouse_like,
+        "arbitration fixture records ignored mouse contact");
+    require(ignored_policy.pointer_id == 1,
+        "arbitration fixture records ignored mouse pointer id");
+    require(ignored_policy.gesture_policy.decision == gesture_policy_decision::ignored_by_capture,
+        "arbitration fixture carries ignored gesture policy");
+    require_capture_snapshot(
+        ignored_policy.pointer_capture_before,
+        pointer_capture_lifecycle::captured,
+        true,
+        70,
+        1,
+        "arbitration fixture ignored route records touch capture before");
+    require_capture_snapshot(
+        ignored_policy.pointer_capture_after,
+        pointer_capture_lifecycle::captured,
+        true,
+        70,
+        1,
+        "arbitration fixture ignored route keeps touch capture after");
+    require(ignored_diagnostics.summary.normalized_event_count == 0,
+        "arbitration fixture ignored pointer emits no normalized event");
+    require(ignored_diagnostics.summary.routes.pointer == 1,
+        "arbitration fixture summary counts pointer route only");
+    require(ignored_diagnostics.summary.routes.text == 0,
+        "arbitration fixture summary emits no text route");
+    require(ignored_diagnostics.summary.routes.ime == 0,
+        "arbitration fixture summary emits no ime route");
+    require(ignored_diagnostics.summary.routes.wheel == 0,
+        "arbitration fixture summary emits no wheel route");
+    require(!ignored_diagnostics.summary.pointer_capture_ended_cleanly,
+        "arbitration fixture summary reports capture still active");
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        350,
+        16.0f,
+        0.0f,
+        raw_platform_pointer_button::none,
+        70));
+    require(events.size() == 1, "arbitration fixture captured touch release emits drag end");
+    const gesture_event& drag_end = require_event<gesture_event>(events, 0);
+    require(drag_end.kind == gesture_kind::drag_end,
+        "arbitration fixture captured touch release ends drag");
+    const action_route_policy_diagnostic& release_policy = require_policy(
+        engine.routing_diagnostics(),
+        0,
+        action_route_policy_kind::gesture_route_snapshot,
+        "arbitration fixture release emits gesture route");
+    require(release_policy.pointer_decision == pointer_arbitration_decision::released,
+        "arbitration fixture release records released decision");
+    require_capture_snapshot(
+        release_policy.pointer_capture_after,
+        pointer_capture_lifecycle::idle,
+        false,
+        0,
+        0,
+        "arbitration fixture release clears capture");
+    require(engine.routing_diagnostics().summary.pointer_capture_ended_cleanly,
+        "arbitration fixture release summary clears capture");
+}
+
 void test_long_press_timing_and_policy_order_are_deterministic()
 {
     using namespace quiz_vulkan;
@@ -1499,6 +1615,235 @@ void test_wheel_route_preserves_active_ime_preedit_context()
         "wheel during ime summary reports active preedit remains active");
 }
 
+void test_gesture_route_replay_transcript_summarizes_pointer_streams()
+{
+    using namespace quiz_vulkan;
+    using namespace quiz_vulkan::input;
+
+    input_engine engine;
+    std::vector<input_routing_diagnostics> snapshots;
+    snapshots.push_back(engine.routing_diagnostics());
+
+    std::vector<input_event> events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::down,
+        100,
+        10.0f,
+        20.0f,
+        raw_platform_pointer_button::none,
+        71));
+    require(events.empty(), "gesture transcript touch down emits no event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::move,
+        130,
+        19.0f,
+        20.0f,
+        raw_platform_pointer_button::none,
+        71));
+    require(events.size() == 1, "gesture transcript touch drag start emits one event");
+    require(require_event<gesture_event>(events, 0).kind == gesture_kind::drag_start,
+        "gesture transcript touch move emits drag start");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::down,
+        140,
+        40.0f,
+        40.0f,
+        raw_platform_pointer_button::none,
+        72));
+    require(events.empty(), "gesture transcript ignored captured touch emits no event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::cancel,
+        160,
+        23.0f,
+        23.0f,
+        raw_platform_pointer_button::none,
+        71));
+    require(events.size() == 1, "gesture transcript touch cancel emits drag cancel");
+    require(require_event<gesture_event>(events, 0).kind == gesture_kind::drag_cancel,
+        "gesture transcript touch cancel emits drag cancel kind");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_scroll_event(scroll(
+        180,
+        20.0f,
+        30.0f,
+        0.0f,
+        -2.0f,
+        scroll_delta_unit::lines));
+    require(events.size() == 1, "gesture transcript wheel emits one event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::down,
+        300,
+        5.0f,
+        5.0f,
+        raw_platform_pointer_button::primary,
+        81));
+    require(events.empty(), "gesture transcript mouse tap down emits no event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        340,
+        6.0f,
+        6.0f,
+        raw_platform_pointer_button::primary,
+        81));
+    require(events.size() == 1, "gesture transcript mouse tap emits one event");
+    require(require_event<gesture_event>(events, 0).kind == gesture_kind::tap,
+        "gesture transcript mouse tap emits tap kind");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::down,
+        700,
+        4.0f,
+        8.0f,
+        raw_platform_pointer_button::primary,
+        82));
+    require(events.empty(), "gesture transcript swipe down emits no event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::up,
+        820,
+        84.0f,
+        18.0f,
+        raw_platform_pointer_button::primary,
+        82));
+    require(events.size() == 1, "gesture transcript swipe emits one event");
+    require(require_event<gesture_event>(events, 0).kind == gesture_kind::swipe_right,
+        "gesture transcript swipe emits right swipe");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.process_raw_event(pointer(
+        raw_platform_pointer_phase::down,
+        1000,
+        50.0f,
+        50.0f,
+        raw_platform_pointer_button::none,
+        83));
+    require(events.empty(), "gesture transcript long press down emits no event");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    events = engine.update_time(1700);
+    require(events.size() == 1, "gesture transcript update time emits long press");
+    require(require_event<gesture_event>(events, 0).kind == gesture_kind::long_press,
+        "gesture transcript update time emits long press kind");
+    snapshots.push_back(engine.routing_diagnostics());
+
+    const input_routing_gesture_route_replay_summary transcript =
+        summarize_input_routing_gesture_route_replay(snapshots);
+    require(transcript.compared_diagnostic_count == snapshots.size() - 1,
+        "gesture transcript compares every consecutive diagnostic pair");
+    require(transcript.transcript.size() == snapshots.size() - 1,
+        "gesture transcript stores every consecutive diff entry");
+    require(transcript.changed_step_count == transcript.transcript.size(),
+        "gesture transcript records every step as changed");
+    require(transcript.pointer_capture_changed,
+        "gesture transcript reports pointer capture transitions");
+    require(!transcript.emits_external_route_action,
+        "gesture transcript emits input-owned diagnostics only");
+    require(transcript.normalized_input_event_count == 6,
+        "gesture transcript counts normalized gesture and wheel events");
+    require(transcript.emitted_route_input_event_count == 6,
+        "gesture transcript counts emitted input route policies");
+    require(transcript.diagnostic_only_route_count == 6,
+        "gesture transcript counts diagnostic-only route policies");
+
+    require(transcript.counts.pointer_capture_started == 4,
+        "gesture transcript counts capture starts");
+    require(transcript.counts.pointer_capture_updated == 1,
+        "gesture transcript counts capture update to drag capture");
+    require(transcript.counts.pointer_capture_released == 3,
+        "gesture transcript counts capture releases and cancellations");
+    require(transcript.counts.pointer_capture_reset == 1,
+        "gesture transcript counts capture reset route");
+    require(transcript.counts.ignored_by_capture == 1,
+        "gesture transcript counts ignored captured pointer");
+    require(transcript.counts.mouse_arbitration == 2,
+        "gesture transcript counts mouse arbitration routes");
+    require(transcript.counts.touch_arbitration == 3,
+        "gesture transcript counts touch arbitration routes");
+    require(transcript.counts.tap == 1, "gesture transcript counts tap");
+    require(transcript.counts.long_press == 1, "gesture transcript counts long press");
+    require(transcript.counts.swipe_right == 1, "gesture transcript counts right swipe");
+    require(transcript.counts.drag_start == 1, "gesture transcript counts drag start");
+    require(transcript.counts.drag_cancel == 1, "gesture transcript counts drag cancel");
+    require(transcript.counts.wheel == 1, "gesture transcript counts wheel");
+    require(transcript.counts.gesture_canceled == 1,
+        "gesture transcript counts gesture cancellation");
+
+    const input_routing_gesture_route_replay_entry& touch_down = transcript.transcript[0];
+    require(touch_down.pointer_capture_started,
+        "gesture transcript touch down starts capture tracking");
+    require(touch_down.touch_arbitration, "gesture transcript touch down records touch arbitration");
+    require(touch_down.pointer_contact == pointer_contact_kind::touch_like,
+        "gesture transcript touch down records touch contact");
+    require(touch_down.pointer_decision == pointer_arbitration_decision::tracked,
+        "gesture transcript touch down records tracked decision");
+    require(touch_down.pointer_id == 71, "gesture transcript touch down records pointer id");
+    require(touch_down.diagnostic_only_route_count == 1,
+        "gesture transcript touch down is diagnostic-only");
+
+    const input_routing_gesture_route_replay_entry& drag_start = transcript.transcript[1];
+    require(drag_start.drag_start, "gesture transcript drag start records normalized event");
+    require(drag_start.pointer_capture_updated,
+        "gesture transcript drag start updates capture lifecycle");
+    require(drag_start.pointer_decision == pointer_arbitration_decision::captured,
+        "gesture transcript drag start records captured decision");
+    require(drag_start.emitted_route_input_event_count == 1,
+        "gesture transcript drag start emits one route event");
+
+    const input_routing_gesture_route_replay_entry& ignored = transcript.transcript[2];
+    require(ignored.ignored_by_capture, "gesture transcript records ignored captured pointer");
+    require(ignored.touch_arbitration, "gesture transcript ignored pointer is touch arbitration");
+    require(ignored.pointer_id == 72, "gesture transcript ignored pointer preserves pointer id");
+    require(ignored.diagnostic_only_route_count == 1,
+        "gesture transcript ignored pointer is diagnostic-only");
+
+    const input_routing_gesture_route_replay_entry& cancel = transcript.transcript[3];
+    require(cancel.drag_cancel, "gesture transcript cancel records drag cancel");
+    require(cancel.gesture_canceled, "gesture transcript cancel records canceled gesture");
+    require(cancel.pointer_capture_released,
+        "gesture transcript cancel releases pointer capture");
+    require(cancel.pointer_capture_reset,
+        "gesture transcript cancel records reset route");
+    require(cancel.emitted_route_input_event_count == 1,
+        "gesture transcript cancel has one emitted route");
+    require(cancel.diagnostic_only_route_count == 1,
+        "gesture transcript cancel has one reset diagnostic route");
+
+    const input_routing_gesture_route_replay_entry& wheel = transcript.transcript[4];
+    require(wheel.wheel, "gesture transcript records wheel route");
+    require(!wheel.pointer_capture_changed,
+        "gesture transcript wheel does not mutate pointer capture");
+
+    const input_routing_gesture_route_replay_entry& tap = transcript.transcript[6];
+    require(tap.tap, "gesture transcript records tap route");
+    require(tap.pointer_capture_released, "gesture transcript tap releases capture");
+    require(tap.pointer_contact == pointer_contact_kind::mouse_like,
+        "gesture transcript tap records mouse contact");
+
+    const input_routing_gesture_route_replay_entry& swipe = transcript.transcript[8];
+    require(swipe.swipe_right, "gesture transcript records right swipe route");
+    require(swipe.pointer_capture_released,
+        "gesture transcript swipe release clears pointer capture");
+    require(swipe.pointer_id == 82, "gesture transcript swipe preserves pointer id");
+
+    const input_routing_gesture_route_replay_entry& long_press = transcript.transcript[10];
+    require(long_press.long_press, "gesture transcript records long press route");
+    require(!long_press.pointer_capture_changed,
+        "gesture transcript long press leaves capture state stable");
+    require(long_press.pointer_id == 83, "gesture transcript long press preserves pointer id");
+}
+
 void test_routing_diagnostics_diff_reports_semantic_free_route_deltas()
 {
     using namespace quiz_vulkan;
@@ -1852,11 +2197,13 @@ int main()
     test_touch_drag_cancel_diagnostics_keep_pointer_id_consistent();
     test_wheel_after_touch_cancel_has_idle_capture_context();
     test_pointer_capture_release_and_restart_are_deterministic_for_mouse_and_touch();
+    test_gesture_arbitration_ignores_cross_pointer_stream_during_capture();
     test_long_press_timing_and_policy_order_are_deterministic();
     test_wheel_delta_normalization_updates_summaries_and_action_routes();
     test_focus_loss_resets_pointer_capture_without_stale_routes();
     test_drag_and_swipe_route_evidence_remain_distinguishable();
     test_wheel_route_preserves_active_ime_preedit_context();
+    test_gesture_route_replay_transcript_summarizes_pointer_streams();
     test_routing_diagnostics_diff_reports_semantic_free_route_deltas();
     test_gesture_policy_route_diff_counts_threshold_and_policy_changes();
 

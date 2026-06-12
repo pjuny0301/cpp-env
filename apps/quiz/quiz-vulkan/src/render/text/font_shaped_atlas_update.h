@@ -361,6 +361,9 @@ inline render_text_glyph_atlas_materialization_snapshot make_render_text_glyph_a
     } else if (request.has_cache_key && (request.rasterized_payload_skipped || !request.payload_upload_ready)) {
         status = render_text_glyph_atlas_materialization_status::skipped_raster_payload;
         diagnostic = "glyph atlas materialization skipped because raster payload is not upload-ready";
+    } else if (request.has_cache_key && !request.has_atlas_placement) {
+        status = render_text_glyph_atlas_materialization_status::skipped_missing_cache_key;
+        diagnostic = "glyph atlas materialization skipped because the shaped glyph has no resident atlas slot";
     } else if (request.has_cache_key && request.has_atlas_update) {
         status = render_text_glyph_atlas_materialization_status::materialized_upload_ready;
         diagnostic = "glyph atlas materialization produced an upload-ready atlas update request";
@@ -2215,6 +2218,7 @@ enum class render_text_shaped_atlas_update_trace_status {
     upload_ready_payload_queued,
     clean_atlas_page_reused,
     rasterized_payload_skipped,
+    shaped_glyph_missing_atlas_slot,
     shaped_glyph_without_cache_key,
     payload_byte_count_mismatch,
 };
@@ -2229,6 +2233,8 @@ inline std::string render_text_shaped_atlas_update_trace_status_name(
         return "clean_atlas_page_reused";
     case render_text_shaped_atlas_update_trace_status::rasterized_payload_skipped:
         return "rasterized_payload_skipped";
+    case render_text_shaped_atlas_update_trace_status::shaped_glyph_missing_atlas_slot:
+        return "shaped_glyph_missing_atlas_slot";
     case render_text_shaped_atlas_update_trace_status::shaped_glyph_without_cache_key:
         return "shaped_glyph_without_cache_key";
     case render_text_shaped_atlas_update_trace_status::payload_byte_count_mismatch:
@@ -2341,6 +2347,7 @@ struct render_text_shaped_atlas_update_trace_policy_snapshot {
     std::size_t upload_ready_payload_queued_count = 0;
     std::size_t clean_atlas_page_reused_count = 0;
     std::size_t rasterized_payload_skipped_count = 0;
+    std::size_t shaped_glyph_missing_atlas_slot_count = 0;
     std::size_t shaped_glyph_without_cache_key_count = 0;
     std::size_t payload_byte_count_mismatch_count = 0;
     std::size_t traced_shaped_glyph_count = 0;
@@ -2380,6 +2387,9 @@ inline render_text_shaped_atlas_update_trace_snapshot make_render_text_shaped_at
     } else if (request.has_cache_key && (request.rasterized_payload_skipped || !request.payload_upload_ready)) {
         status = render_text_shaped_atlas_update_trace_status::rasterized_payload_skipped;
         diagnostic = "rasterized glyph payload was skipped before atlas upload";
+    } else if (request.has_cache_key && !request.has_atlas_placement) {
+        status = render_text_shaped_atlas_update_trace_status::shaped_glyph_missing_atlas_slot;
+        diagnostic = "shaped glyph cluster has a cacheable atlas key but no resident atlas slot";
     } else if (request.has_cache_key && request.has_atlas_update) {
         status = render_text_shaped_atlas_update_trace_status::upload_ready_payload_queued;
         diagnostic = "upload-ready rasterized glyph payload was represented in a queued atlas update";
@@ -2460,6 +2470,9 @@ inline void append_render_text_shaped_atlas_update_trace(
         break;
     case render_text_shaped_atlas_update_trace_status::rasterized_payload_skipped:
         ++policy.rasterized_payload_skipped_count;
+        break;
+    case render_text_shaped_atlas_update_trace_status::shaped_glyph_missing_atlas_slot:
+        ++policy.shaped_glyph_missing_atlas_slot_count;
         break;
     case render_text_shaped_atlas_update_trace_status::shaped_glyph_without_cache_key:
         ++policy.shaped_glyph_without_cache_key_count;

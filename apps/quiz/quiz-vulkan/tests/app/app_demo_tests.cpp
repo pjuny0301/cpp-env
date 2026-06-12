@@ -189,6 +189,28 @@ int main()
         image_pipeline_snapshot.entries[0].texture.id
         == image_pipeline_snapshot.entries[1].texture.id);
 
+    render::fake_text_engine standard_text_engine;
+    render::vulkan_renderer standard_renderer(render::vulkan_renderer_options{});
+    render::normalizing_image_resolver standard_resolver;
+    render::filesystem_image_source_bytes_loader standard_loader;
+    standard_loader.set_base_directory(image_fixture.parent_path());
+    render::standard_image_texture_pipeline standard_pipeline(standard_resolver, standard_loader);
+    app_render_frame standard_image_frame = render_app_frame_with_engines(
+        image_snapshot,
+        scene::scene_rect{.x = 0.0f, .y = 0.0f, .width = 1280.0f, .height = 720.0f},
+        app_render_view_state{},
+        standard_text_engine,
+        standard_renderer,
+        &standard_pipeline,
+        &standard_resolver);
+    assert(standard_image_frame.report.screen_id == "quiz_active");
+    assert(standard_image_frame.report.image_texture_pipeline_ran);
+    assert(standard_image_frame.report.image_texture_upload_result_available);
+    assert(standard_image_frame.report.image_texture_renderer_handoff_ready);
+    assert(standard_image_frame.report.image_texture_payload_ready_count == 1);
+    assert(standard_image_frame.report.frame_summary.image_texture_payloads_consumed);
+    assert(standard_image_frame.report.frame_summary.image_texture_payloads_ready);
+
     state.dispatch(domain::make_submit_option_action(0), 200);
     app_render_report feedback_report = render_app_snapshot(state.snapshot());
     assert(feedback_report.screen_id == "quiz_feedback");

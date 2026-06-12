@@ -7178,6 +7178,45 @@ static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_call
     { call.successful() } -> std::same_as<bool>;
 });
 
+static_assert(requires(
+    render::vulkan_backend::vulkan_native_draw_packet_resource_execution_record record) {
+    { record.packet_index } -> std::same_as<std::size_t&>;
+    { record.command_index } -> std::same_as<std::size_t&>;
+    { record.category }
+        -> std::same_as<render::vulkan_backend::vulkan_command_packet_category&>;
+    { record.batch_kind } -> std::same_as<render::vulkan_backend::vulkan_batch_kind&>;
+    { record.packet_identity } -> std::same_as<std::string&>;
+    { record.pipeline_bind_required } -> std::same_as<bool&>;
+    { record.pipeline_bind_ready } -> std::same_as<bool&>;
+    { record.pipeline_bind_completed } -> std::same_as<bool&>;
+    { record.descriptor_bind_required } -> std::same_as<bool&>;
+    { record.descriptor_bind_ready } -> std::same_as<bool&>;
+    { record.descriptor_bind_completed } -> std::same_as<bool&>;
+    { record.vertex_buffer_bind_required } -> std::same_as<bool&>;
+    { record.vertex_buffer_bind_ready } -> std::same_as<bool&>;
+    { record.vertex_buffer_bind_completed } -> std::same_as<bool&>;
+    { record.draw_call_required } -> std::same_as<bool&>;
+    { record.draw_call_ready } -> std::same_as<bool&>;
+    { record.draw_call_completed } -> std::same_as<bool&>;
+    { record.vertex_count } -> std::same_as<std::size_t&>;
+    { record.instance_count } -> std::same_as<std::size_t&>;
+    { record.pipeline_bind_call }
+        -> std::same_as<render::vulkan_backend::vulkan_native_command_packet_call_evidence&>;
+    { record.descriptor_bind_call }
+        -> std::same_as<render::vulkan_backend::vulkan_native_command_packet_call_evidence&>;
+    { record.vertex_buffer_bind_call }
+        -> std::same_as<render::vulkan_backend::vulkan_native_command_packet_call_evidence&>;
+    { record.draw_call }
+        -> std::same_as<render::vulkan_backend::vulkan_native_command_packet_call_evidence&>;
+    { record.blocker_status }
+        -> std::same_as<render::vulkan_backend::vulkan_native_command_packet_execution_status&>;
+    { record.fallback_reason }
+        -> std::same_as<render::vulkan_backend::vulkan_backend_fallback_reason&>;
+    { record.fallback_blocker } -> std::same_as<std::string&>;
+    { record.completed() } -> std::same_as<bool>;
+    { record.blocked() } -> std::same_as<bool>;
+});
+
 static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_execution_result result) {
     { result.checked } -> std::same_as<bool&>;
     { result.status }
@@ -7200,6 +7239,8 @@ static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_exec
     { result.descriptor_sets_ready } -> std::same_as<bool&>;
     { result.vertex_buffer_binds_ready } -> std::same_as<bool&>;
     { result.vertex_buffer_bind_count } -> std::same_as<std::size_t&>;
+    { result.draw_packet_resource_execution_count } -> std::same_as<std::size_t&>;
+    { result.completed_draw_packet_resource_execution_count } -> std::same_as<std::size_t&>;
     { result.has_failed_packet } -> std::same_as<bool&>;
     { result.first_failed_category }
         -> std::same_as<render::vulkan_backend::vulkan_command_packet_category&>;
@@ -7215,6 +7256,9 @@ static_assert(requires(render::vulkan_backend::vulkan_native_command_packet_exec
     { result.diagnostic } -> std::same_as<std::string&>;
     { result.calls }
         -> std::same_as<std::vector<render::vulkan_backend::vulkan_native_command_packet_call_evidence>&>;
+    { result.draw_packet_resource_executions }
+        -> std::same_as<
+            std::vector<render::vulkan_backend::vulkan_native_draw_packet_resource_execution_record>&>;
     { result.completed() } -> std::same_as<bool>;
     { result.failed() } -> std::same_as<bool>;
 });

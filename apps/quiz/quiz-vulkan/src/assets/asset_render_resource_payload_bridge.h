@@ -1,9 +1,11 @@
 #pragma once
 
+#include "assets/asset_manifest_version_policy.h"
 #include "assets/asset_render_resource_address.h"
 #include "assets/asset_typed_materialized_bytes.h"
 
 #include <cstddef>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -21,6 +23,51 @@ enum class asset_render_resource_payload_bridge_status {
     duplicate_materialized_payload_id,
 };
 
+enum class asset_render_resource_materialized_cache_status {
+    ready,
+    address_rejected,
+    missing_render_resource_address,
+    missing_materialized_bytes,
+    type_mismatch,
+    cache_key_mismatch,
+    duplicate_canonical_identity,
+    duplicate_materialized_payload_id,
+};
+
+enum class asset_render_resource_materialized_cache_delta_kind {
+    reused,
+    added,
+    removed,
+    replaced,
+    invalidated,
+};
+
+enum class asset_render_resource_runtime_packet_cache_state {
+    cache_hit,
+    added,
+    replaced,
+    removed,
+    invalidated,
+    blocked,
+};
+
+enum class asset_render_resource_runtime_packet_blocker_kind {
+    none,
+    manifest_incompatible,
+    address_rejected,
+    missing_render_resource_address,
+    missing_materialized_bytes,
+    type_mismatch,
+    cache_key_mismatch,
+    duplicate_canonical_identity,
+    duplicate_materialized_payload_id,
+};
+
+struct asset_render_resource_materialized_cache_request {
+    std::string id;
+    asset_type expected_type = asset_type::generic;
+};
+
 struct asset_render_resource_payload_bridge_entry {
     asset_render_resource_payload_bridge_status status =
         asset_render_resource_payload_bridge_status::missing_materialized_bytes;
@@ -34,6 +81,359 @@ struct asset_render_resource_payload_bridge_entry {
     {
         return status == asset_render_resource_payload_bridge_status::accepted
             && selected_snapshot.has_value();
+    }
+};
+
+struct asset_render_resource_materialized_cache_entry {
+    asset_render_resource_materialized_cache_status status =
+        asset_render_resource_materialized_cache_status::missing_render_resource_address;
+    std::string id;
+    asset_type type = asset_type::generic;
+    std::string canonical_identity;
+    asset_cache_key cache_key;
+    std::string source_uri;
+    std::filesystem::path materialized_path;
+    std::size_t byte_count = 0U;
+    std::size_t payload_byte_count = 0U;
+    std::string content_hash;
+    std::string runtime_cache_key;
+    std::string related_id;
+    std::string diagnostic;
+
+    [[nodiscard]] bool ready() const
+    {
+        return status == asset_render_resource_materialized_cache_status::ready;
+    }
+};
+
+struct asset_render_resource_materialized_cache_summary {
+    std::vector<asset_render_resource_materialized_cache_entry> ready;
+    std::vector<asset_render_resource_materialized_cache_entry> blocked;
+    std::size_t requested_count = 0U;
+    std::size_t ready_count = 0U;
+    std::size_t address_rejected_count = 0U;
+    std::size_t missing_render_resource_address_count = 0U;
+    std::size_t missing_materialized_bytes_count = 0U;
+    std::size_t type_mismatch_count = 0U;
+    std::size_t cache_key_mismatch_count = 0U;
+    std::size_t duplicate_canonical_identity_count = 0U;
+    std::size_t duplicate_materialized_payload_id_count = 0U;
+
+    [[nodiscard]] bool ok() const
+    {
+        return blocked.empty();
+    }
+
+    [[nodiscard]] std::size_t entry_count() const
+    {
+        return ready.size() + blocked.size();
+    }
+
+    [[nodiscard]] std::size_t blocked_count() const
+    {
+        return blocked.size();
+    }
+
+    [[nodiscard]] const asset_render_resource_materialized_cache_entry* find_ready(
+        std::string_view id) const
+    {
+        for (const asset_render_resource_materialized_cache_entry& entry : ready) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_render_resource_materialized_cache_entry* find_blocked(
+        std::string_view id) const
+    {
+        for (const asset_render_resource_materialized_cache_entry& entry : blocked) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_render_resource_materialized_cache_entry* find_entry(
+        std::string_view id) const
+    {
+        if (const asset_render_resource_materialized_cache_entry* entry = find_ready(id);
+            entry != nullptr) {
+            return entry;
+        }
+        return find_blocked(id);
+    }
+
+    [[nodiscard]] const asset_render_resource_materialized_cache_entry* find_runtime_cache_key(
+        std::string_view runtime_cache_key) const
+    {
+        for (const asset_render_resource_materialized_cache_entry& entry : ready) {
+            if (entry.runtime_cache_key == runtime_cache_key) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+};
+
+struct asset_render_resource_materialized_cache_diff_entry {
+    asset_render_resource_materialized_cache_delta_kind kind =
+        asset_render_resource_materialized_cache_delta_kind::replaced;
+    std::string id;
+    asset_type type = asset_type::generic;
+    std::optional<asset_render_resource_materialized_cache_entry> before;
+    std::optional<asset_render_resource_materialized_cache_entry> after;
+    bool logical_identity_changed = false;
+    bool cache_key_changed = false;
+    bool content_hash_changed = false;
+    bool runtime_cache_key_changed = false;
+    bool materialized_path_changed = false;
+    bool status_changed = false;
+    std::string invalidated_runtime_cache_key;
+    std::string replacement_runtime_cache_key;
+    std::string diagnostic;
+
+    [[nodiscard]] bool invalidates() const
+    {
+        return kind == asset_render_resource_materialized_cache_delta_kind::replaced
+            || kind == asset_render_resource_materialized_cache_delta_kind::removed
+            || kind == asset_render_resource_materialized_cache_delta_kind::invalidated;
+    }
+
+    [[nodiscard]] bool has_field_delta() const
+    {
+        return logical_identity_changed || cache_key_changed || content_hash_changed
+            || runtime_cache_key_changed || materialized_path_changed || status_changed;
+    }
+};
+
+struct asset_render_resource_materialized_cache_diff_summary {
+    std::vector<asset_render_resource_materialized_cache_diff_entry> reused;
+    std::vector<asset_render_resource_materialized_cache_diff_entry> added;
+    std::vector<asset_render_resource_materialized_cache_diff_entry> removed;
+    std::vector<asset_render_resource_materialized_cache_diff_entry> replaced;
+    std::vector<asset_render_resource_materialized_cache_diff_entry> invalidated;
+    std::ptrdiff_t requested_delta = 0;
+    std::ptrdiff_t ready_delta = 0;
+    std::ptrdiff_t blocked_delta = 0;
+
+    [[nodiscard]] bool empty() const
+    {
+        return added.empty() && removed.empty() && replaced.empty() && invalidated.empty()
+            && requested_delta == 0 && ready_delta == 0 && blocked_delta == 0;
+    }
+
+    [[nodiscard]] std::size_t change_count() const
+    {
+        return added.size() + removed.size() + replaced.size() + invalidated.size();
+    }
+
+    [[nodiscard]] std::size_t invalidation_count() const
+    {
+        return removed.size() + replaced.size() + invalidated.size();
+    }
+
+    [[nodiscard]] const asset_render_resource_materialized_cache_diff_entry* find_reused(
+        std::string_view id) const
+    {
+        for (const asset_render_resource_materialized_cache_diff_entry& entry : reused) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_render_resource_materialized_cache_diff_entry* find_added(
+        std::string_view id) const
+    {
+        for (const asset_render_resource_materialized_cache_diff_entry& entry : added) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_render_resource_materialized_cache_diff_entry* find_removed(
+        std::string_view id) const
+    {
+        for (const asset_render_resource_materialized_cache_diff_entry& entry : removed) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_render_resource_materialized_cache_diff_entry* find_replaced(
+        std::string_view id) const
+    {
+        for (const asset_render_resource_materialized_cache_diff_entry& entry : replaced) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_render_resource_materialized_cache_diff_entry* find_invalidated(
+        std::string_view id) const
+    {
+        for (const asset_render_resource_materialized_cache_diff_entry& entry : invalidated) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+};
+
+struct asset_render_resource_runtime_manifest_evidence {
+    bool checked = false;
+    asset_manifest_version_compatibility_status compatibility_status =
+        asset_manifest_version_compatibility_status::accepted;
+    std::string schema_version;
+    std::string expected_schema_version;
+    std::vector<std::string> required_features;
+    std::vector<std::string> optional_features;
+    std::vector<asset_manifest_version_unsupported_feature_report> unsupported_features;
+    std::string diagnostic;
+    bool compatible_accepted = true;
+    bool strict_accepted = true;
+
+    [[nodiscard]] bool ok() const
+    {
+        return !checked || compatible_accepted;
+    }
+};
+
+struct asset_render_resource_runtime_packet_cache_entry {
+    asset_render_resource_runtime_packet_cache_state cache_state =
+        asset_render_resource_runtime_packet_cache_state::blocked;
+    asset_render_resource_runtime_packet_blocker_kind blocker =
+        asset_render_resource_runtime_packet_blocker_kind::missing_render_resource_address;
+    asset_render_resource_materialized_cache_status materialized_cache_status =
+        asset_render_resource_materialized_cache_status::missing_render_resource_address;
+    std::string id;
+    asset_type type = asset_type::generic;
+    std::string logical_id;
+    std::string canonical_identity;
+    asset_cache_key cache_key;
+    std::string cache_revision;
+    bool cache_revision_present = false;
+    std::string source_uri;
+    std::string content_hash;
+    std::string runtime_identity;
+    std::string invalidated_runtime_identity;
+    std::string replacement_runtime_identity;
+    bool materialized_bytes_available = false;
+    std::size_t materialized_byte_count = 0U;
+    std::size_t payload_byte_count = 0U;
+    bool ready = false;
+    asset_render_resource_runtime_manifest_evidence manifest;
+    std::string diagnostic;
+
+    [[nodiscard]] bool ready_for_packet() const
+    {
+        return ready && blocker == asset_render_resource_runtime_packet_blocker_kind::none
+            && !runtime_identity.empty();
+    }
+
+    [[nodiscard]] bool invalidates() const
+    {
+        return cache_state == asset_render_resource_runtime_packet_cache_state::replaced
+            || cache_state == asset_render_resource_runtime_packet_cache_state::removed
+            || cache_state == asset_render_resource_runtime_packet_cache_state::invalidated;
+    }
+};
+
+struct asset_render_resource_runtime_packet_cache_handoff_summary {
+    asset_render_resource_runtime_manifest_evidence manifest;
+    std::vector<asset_render_resource_runtime_packet_cache_entry> ready;
+    std::vector<asset_render_resource_runtime_packet_cache_entry> blocked;
+    std::vector<asset_render_resource_runtime_packet_cache_entry> invalidated;
+    std::size_t requested_count = 0U;
+    std::size_t ready_count = 0U;
+    std::size_t blocked_count = 0U;
+    std::size_t cache_hit_count = 0U;
+    std::size_t added_count = 0U;
+    std::size_t replaced_count = 0U;
+    std::size_t removed_count = 0U;
+    std::size_t invalidated_count = 0U;
+    std::size_t invalidation_count = 0U;
+    std::size_t materialized_available_count = 0U;
+    std::size_t manifest_incompatible_count = 0U;
+    std::size_t total_materialized_byte_count = 0U;
+
+    [[nodiscard]] bool ok() const
+    {
+        return manifest.ok() && blocked_count == 0U;
+    }
+
+    [[nodiscard]] std::size_t entry_count() const
+    {
+        return ready.size() + blocked.size() + invalidated.size();
+    }
+
+    [[nodiscard]] const asset_render_resource_runtime_packet_cache_entry* find_ready(
+        std::string_view id) const
+    {
+        for (const asset_render_resource_runtime_packet_cache_entry& entry : ready) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_render_resource_runtime_packet_cache_entry* find_blocked(
+        std::string_view id) const
+    {
+        for (const asset_render_resource_runtime_packet_cache_entry& entry : blocked) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_render_resource_runtime_packet_cache_entry* find_invalidated(
+        std::string_view id) const
+    {
+        for (const asset_render_resource_runtime_packet_cache_entry& entry : invalidated) {
+            if (entry.id == id) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const asset_render_resource_runtime_packet_cache_entry* find_entry(
+        std::string_view id) const
+    {
+        if (const asset_render_resource_runtime_packet_cache_entry* entry = find_ready(id);
+            entry != nullptr) {
+            return entry;
+        }
+        if (const asset_render_resource_runtime_packet_cache_entry* entry = find_blocked(id);
+            entry != nullptr) {
+            return entry;
+        }
+        return find_invalidated(id);
+    }
+
+    [[nodiscard]] const asset_render_resource_runtime_packet_cache_entry* find_runtime_identity(
+        std::string_view runtime_identity) const
+    {
+        for (const asset_render_resource_runtime_packet_cache_entry& entry : ready) {
+            if (entry.runtime_identity == runtime_identity) {
+                return &entry;
+            }
+        }
+        return nullptr;
     }
 };
 
@@ -245,6 +645,760 @@ inline asset_render_resource_payload_bridge_summary bridge_asset_render_resource
     return summary;
 }
 
+inline asset_render_resource_materialized_cache_status asset_render_resource_materialized_cache_status_from_bridge(
+    asset_render_resource_payload_bridge_status status)
+{
+    switch (status) {
+        case asset_render_resource_payload_bridge_status::accepted:
+            return asset_render_resource_materialized_cache_status::ready;
+        case asset_render_resource_payload_bridge_status::missing_materialized_bytes:
+            return asset_render_resource_materialized_cache_status::missing_materialized_bytes;
+        case asset_render_resource_payload_bridge_status::type_mismatch:
+            return asset_render_resource_materialized_cache_status::type_mismatch;
+        case asset_render_resource_payload_bridge_status::cache_key_mismatch:
+            return asset_render_resource_materialized_cache_status::cache_key_mismatch;
+        case asset_render_resource_payload_bridge_status::duplicate_canonical_identity:
+            return asset_render_resource_materialized_cache_status::duplicate_canonical_identity;
+        case asset_render_resource_payload_bridge_status::duplicate_materialized_payload_id:
+            return asset_render_resource_materialized_cache_status::duplicate_materialized_payload_id;
+    }
+    return asset_render_resource_materialized_cache_status::missing_materialized_bytes;
+}
+
+inline const asset_render_resource_address_diagnostic* find_asset_render_resource_address_diagnostic(
+    const asset_render_resource_address_summary& addresses,
+    std::string_view id)
+{
+    for (const asset_render_resource_address_diagnostic& diagnostic : addresses.diagnostics) {
+        if (diagnostic.id == id) {
+            return &diagnostic;
+        }
+    }
+    return nullptr;
+}
+
+inline std::string make_asset_render_resource_materialized_cache_key(
+    const asset_render_resource_address_entry& address,
+    const asset_materialized_byte_payload_snapshot& payload)
+{
+    std::string key = "render-resource|";
+    key.append(asset_type_token(address.type));
+    key.push_back('|');
+    key.append(address.canonical_identity);
+    key.push_back('|');
+    key.append(payload.cache_key);
+    key.append("|hash=");
+    key.append(payload.content_hash);
+    return key;
+}
+
+inline void count_asset_render_resource_materialized_cache_entry(
+    asset_render_resource_materialized_cache_summary& summary,
+    const asset_render_resource_materialized_cache_entry& entry)
+{
+    switch (entry.status) {
+        case asset_render_resource_materialized_cache_status::ready:
+            ++summary.ready_count;
+            break;
+        case asset_render_resource_materialized_cache_status::address_rejected:
+            ++summary.address_rejected_count;
+            break;
+        case asset_render_resource_materialized_cache_status::missing_render_resource_address:
+            ++summary.missing_render_resource_address_count;
+            break;
+        case asset_render_resource_materialized_cache_status::missing_materialized_bytes:
+            ++summary.missing_materialized_bytes_count;
+            break;
+        case asset_render_resource_materialized_cache_status::type_mismatch:
+            ++summary.type_mismatch_count;
+            break;
+        case asset_render_resource_materialized_cache_status::cache_key_mismatch:
+            ++summary.cache_key_mismatch_count;
+            break;
+        case asset_render_resource_materialized_cache_status::duplicate_canonical_identity:
+            ++summary.duplicate_canonical_identity_count;
+            break;
+        case asset_render_resource_materialized_cache_status::duplicate_materialized_payload_id:
+            ++summary.duplicate_materialized_payload_id_count;
+            break;
+    }
+}
+
+inline void add_asset_render_resource_materialized_cache_entry(
+    asset_render_resource_materialized_cache_summary& summary,
+    asset_render_resource_materialized_cache_entry entry)
+{
+    count_asset_render_resource_materialized_cache_entry(summary, entry);
+    if (entry.ready()) {
+        summary.ready.push_back(std::move(entry));
+    } else {
+        summary.blocked.push_back(std::move(entry));
+    }
+}
+
+inline asset_render_resource_materialized_cache_entry make_asset_render_resource_materialized_cache_entry(
+    const asset_render_resource_payload_bridge_entry& bridge_entry)
+{
+    asset_render_resource_materialized_cache_entry entry{
+        .status = asset_render_resource_materialized_cache_status_from_bridge(bridge_entry.status),
+        .id = bridge_entry.address.id,
+        .type = bridge_entry.address.type,
+        .canonical_identity = bridge_entry.address.canonical_identity,
+        .cache_key = bridge_entry.address.cache_key,
+        .source_uri = bridge_entry.address.source_uri,
+        .related_id = bridge_entry.related_id,
+        .diagnostic = bridge_entry.diagnostic,
+    };
+
+    if (bridge_entry.selected_snapshot.has_value()) {
+        const asset_materialized_byte_payload_snapshot& payload = *bridge_entry.selected_snapshot;
+        entry.cache_key = payload.cache_key;
+        entry.source_uri = payload.source_uri;
+        entry.materialized_path = payload.materialized_path;
+        entry.byte_count = payload.byte_count;
+        entry.payload_byte_count = payload.payload_byte_count;
+        entry.content_hash = payload.content_hash;
+        entry.runtime_cache_key = make_asset_render_resource_materialized_cache_key(
+            bridge_entry.address,
+            payload);
+    }
+
+    return entry;
+}
+
+inline asset_render_resource_materialized_cache_entry make_asset_render_resource_materialized_cache_entry(
+    const asset_render_resource_address_diagnostic& diagnostic)
+{
+    return asset_render_resource_materialized_cache_entry{
+        .status = asset_render_resource_materialized_cache_status::address_rejected,
+        .id = diagnostic.id,
+        .type = diagnostic.type,
+        .cache_key = diagnostic.cache_key,
+        .source_uri = diagnostic.source_uri,
+        .related_id = diagnostic.related_id,
+        .diagnostic = diagnostic.diagnostic,
+    };
+}
+
+inline asset_render_resource_materialized_cache_entry make_asset_render_resource_materialized_cache_missing_entry(
+    const asset_render_resource_materialized_cache_request& request)
+{
+    return asset_render_resource_materialized_cache_entry{
+        .status = asset_render_resource_materialized_cache_status::missing_render_resource_address,
+        .id = request.id,
+        .type = request.expected_type,
+        .diagnostic = "render resource address was not found",
+    };
+}
+
+inline asset_render_resource_materialized_cache_entry make_asset_render_resource_materialized_cache_type_mismatch_entry(
+    const asset_render_resource_materialized_cache_request& request,
+    const asset_render_resource_address_entry& address)
+{
+    return asset_render_resource_materialized_cache_entry{
+        .status = asset_render_resource_materialized_cache_status::type_mismatch,
+        .id = address.id,
+        .type = address.type,
+        .canonical_identity = address.canonical_identity,
+        .cache_key = address.cache_key,
+        .source_uri = address.source_uri,
+        .diagnostic = "render resource address type does not match the cache request",
+    };
+}
+
+inline asset_render_resource_materialized_cache_summary make_asset_render_resource_materialized_cache_summary(
+    const asset_render_resource_address_summary& addresses,
+    const asset_materialized_byte_payload_bundle& bundle)
+{
+    const asset_render_resource_payload_bridge_summary bridge =
+        bridge_asset_render_resource_addresses_to_payloads(addresses, bundle);
+    asset_render_resource_materialized_cache_summary summary{
+        .requested_count = addresses.entries.size() + addresses.diagnostics.size(),
+    };
+
+    for (const asset_render_resource_payload_bridge_entry& entry : bridge.accepted) {
+        add_asset_render_resource_materialized_cache_entry(
+            summary,
+            make_asset_render_resource_materialized_cache_entry(entry));
+    }
+    for (const asset_render_resource_payload_bridge_entry& entry : bridge.blocked) {
+        add_asset_render_resource_materialized_cache_entry(
+            summary,
+            make_asset_render_resource_materialized_cache_entry(entry));
+    }
+    for (const asset_render_resource_address_diagnostic& diagnostic : addresses.diagnostics) {
+        add_asset_render_resource_materialized_cache_entry(
+            summary,
+            make_asset_render_resource_materialized_cache_entry(diagnostic));
+    }
+
+    return summary;
+}
+
+inline asset_render_resource_materialized_cache_summary make_asset_render_resource_materialized_cache_summary(
+    const asset_render_resource_address_summary& addresses,
+    const asset_materialized_byte_payload_bundle& bundle,
+    const std::vector<asset_render_resource_materialized_cache_request>& requests)
+{
+    const asset_render_resource_payload_bridge_summary bridge =
+        bridge_asset_render_resource_addresses_to_payloads(addresses, bundle);
+    asset_render_resource_materialized_cache_summary summary{
+        .requested_count = requests.size(),
+    };
+
+    for (const asset_render_resource_materialized_cache_request& request : requests) {
+        if (const asset_render_resource_payload_bridge_entry* bridge_entry = bridge.find_entry(request.id);
+            bridge_entry != nullptr) {
+            if (request.expected_type != asset_type::generic
+                && bridge_entry->address.type != request.expected_type) {
+                add_asset_render_resource_materialized_cache_entry(
+                    summary,
+                    make_asset_render_resource_materialized_cache_type_mismatch_entry(
+                        request,
+                        bridge_entry->address));
+            } else {
+                add_asset_render_resource_materialized_cache_entry(
+                    summary,
+                    make_asset_render_resource_materialized_cache_entry(*bridge_entry));
+            }
+            continue;
+        }
+
+        if (const asset_render_resource_address_diagnostic* diagnostic =
+                find_asset_render_resource_address_diagnostic(addresses, request.id);
+            diagnostic != nullptr) {
+            add_asset_render_resource_materialized_cache_entry(
+                summary,
+                make_asset_render_resource_materialized_cache_entry(*diagnostic));
+            continue;
+        }
+
+        add_asset_render_resource_materialized_cache_entry(
+            summary,
+            make_asset_render_resource_materialized_cache_missing_entry(request));
+    }
+
+    return summary;
+}
+
+inline std::ptrdiff_t asset_render_resource_materialized_cache_count_delta(
+    std::size_t before,
+    std::size_t after)
+{
+    return static_cast<std::ptrdiff_t>(after) - static_cast<std::ptrdiff_t>(before);
+}
+
+template <typename Visitor>
+inline void for_each_asset_render_resource_materialized_cache_entry(
+    const asset_render_resource_materialized_cache_summary& summary,
+    Visitor&& visitor)
+{
+    for (const asset_render_resource_materialized_cache_entry& entry : summary.ready) {
+        visitor(entry);
+    }
+    for (const asset_render_resource_materialized_cache_entry& entry : summary.blocked) {
+        visitor(entry);
+    }
+}
+
+inline const asset_render_resource_materialized_cache_entry* find_asset_render_resource_materialized_cache_entry(
+    const asset_render_resource_materialized_cache_summary& summary,
+    std::string_view id)
+{
+    return summary.find_entry(id);
+}
+
+inline bool asset_render_resource_materialized_cache_logical_identity_changed(
+    const asset_render_resource_materialized_cache_entry& before,
+    const asset_render_resource_materialized_cache_entry& after)
+{
+    return before.id != after.id || before.type != after.type
+        || before.canonical_identity != after.canonical_identity
+        || before.source_uri != after.source_uri;
+}
+
+inline asset_render_resource_materialized_cache_diff_entry make_asset_render_resource_materialized_cache_diff_entry(
+    asset_render_resource_materialized_cache_delta_kind kind,
+    const std::optional<asset_render_resource_materialized_cache_entry>& before,
+    const std::optional<asset_render_resource_materialized_cache_entry>& after)
+{
+    const asset_render_resource_materialized_cache_entry* before_entry =
+        before.has_value() ? &*before : nullptr;
+    const asset_render_resource_materialized_cache_entry* after_entry =
+        after.has_value() ? &*after : nullptr;
+    const asset_render_resource_materialized_cache_entry& anchor =
+        after_entry != nullptr ? *after_entry : *before_entry;
+
+    asset_render_resource_materialized_cache_diff_entry entry{
+        .kind = kind,
+        .id = anchor.id,
+        .type = anchor.type,
+        .before = before,
+        .after = after,
+    };
+
+    if (before_entry != nullptr && after_entry != nullptr) {
+        entry.logical_identity_changed =
+            asset_render_resource_materialized_cache_logical_identity_changed(*before_entry, *after_entry);
+        entry.cache_key_changed = before_entry->cache_key != after_entry->cache_key;
+        entry.content_hash_changed = before_entry->content_hash != after_entry->content_hash;
+        entry.runtime_cache_key_changed = before_entry->runtime_cache_key != after_entry->runtime_cache_key;
+        entry.materialized_path_changed = before_entry->materialized_path != after_entry->materialized_path;
+        entry.status_changed = before_entry->status != after_entry->status;
+    }
+
+    if (before_entry != nullptr) {
+        entry.invalidated_runtime_cache_key = before_entry->runtime_cache_key;
+    }
+    if (after_entry != nullptr) {
+        entry.replacement_runtime_cache_key = after_entry->runtime_cache_key;
+    }
+
+    switch (kind) {
+        case asset_render_resource_materialized_cache_delta_kind::reused:
+            entry.diagnostic = "render resource materialized cache entry reused";
+            break;
+        case asset_render_resource_materialized_cache_delta_kind::added:
+            entry.diagnostic = "render resource materialized cache entry added";
+            break;
+        case asset_render_resource_materialized_cache_delta_kind::removed:
+            entry.diagnostic = "render resource materialized cache entry removed and invalidated";
+            break;
+        case asset_render_resource_materialized_cache_delta_kind::replaced:
+            entry.diagnostic = "render resource materialized cache entry replaced by revision or content change";
+            break;
+        case asset_render_resource_materialized_cache_delta_kind::invalidated:
+            entry.diagnostic = "render resource materialized cache entry invalidated by blocked replacement";
+            break;
+    }
+
+    return entry;
+}
+
+inline asset_render_resource_materialized_cache_delta_kind classify_asset_render_resource_materialized_cache_delta(
+    const asset_render_resource_materialized_cache_entry& before,
+    const asset_render_resource_materialized_cache_entry& after)
+{
+    if (before.ready() && after.ready() && before.runtime_cache_key == after.runtime_cache_key) {
+        return asset_render_resource_materialized_cache_delta_kind::reused;
+    }
+    if (before.ready() && after.ready()) {
+        return asset_render_resource_materialized_cache_delta_kind::replaced;
+    }
+    if (before.ready() && !after.ready()) {
+        return asset_render_resource_materialized_cache_delta_kind::invalidated;
+    }
+    if (!before.ready() && after.ready()) {
+        return asset_render_resource_materialized_cache_delta_kind::added;
+    }
+    if (before.status == after.status && before.diagnostic == after.diagnostic) {
+        return asset_render_resource_materialized_cache_delta_kind::reused;
+    }
+    return asset_render_resource_materialized_cache_delta_kind::invalidated;
+}
+
+inline void add_asset_render_resource_materialized_cache_diff_entry(
+    asset_render_resource_materialized_cache_diff_summary& diff,
+    asset_render_resource_materialized_cache_diff_entry entry)
+{
+    switch (entry.kind) {
+        case asset_render_resource_materialized_cache_delta_kind::reused:
+            diff.reused.push_back(std::move(entry));
+            break;
+        case asset_render_resource_materialized_cache_delta_kind::added:
+            diff.added.push_back(std::move(entry));
+            break;
+        case asset_render_resource_materialized_cache_delta_kind::removed:
+            diff.removed.push_back(std::move(entry));
+            break;
+        case asset_render_resource_materialized_cache_delta_kind::replaced:
+            diff.replaced.push_back(std::move(entry));
+            break;
+        case asset_render_resource_materialized_cache_delta_kind::invalidated:
+            diff.invalidated.push_back(std::move(entry));
+            break;
+    }
+}
+
+inline asset_render_resource_materialized_cache_diff_summary diff_asset_render_resource_materialized_cache_summaries(
+    const asset_render_resource_materialized_cache_summary& before,
+    const asset_render_resource_materialized_cache_summary& after)
+{
+    asset_render_resource_materialized_cache_diff_summary diff{
+        .requested_delta = asset_render_resource_materialized_cache_count_delta(
+            before.requested_count,
+            after.requested_count),
+        .ready_delta = asset_render_resource_materialized_cache_count_delta(
+            before.ready_count,
+            after.ready_count),
+        .blocked_delta = asset_render_resource_materialized_cache_count_delta(
+            before.blocked_count(),
+            after.blocked_count()),
+    };
+
+    for_each_asset_render_resource_materialized_cache_entry(
+        before,
+        [&](const asset_render_resource_materialized_cache_entry& before_entry) {
+            const asset_render_resource_materialized_cache_entry* after_entry =
+                find_asset_render_resource_materialized_cache_entry(after, before_entry.id);
+            if (after_entry == nullptr) {
+                add_asset_render_resource_materialized_cache_diff_entry(
+                    diff,
+                    make_asset_render_resource_materialized_cache_diff_entry(
+                        asset_render_resource_materialized_cache_delta_kind::removed,
+                        before_entry,
+                        std::nullopt));
+                return;
+            }
+
+            add_asset_render_resource_materialized_cache_diff_entry(
+                diff,
+                make_asset_render_resource_materialized_cache_diff_entry(
+                    classify_asset_render_resource_materialized_cache_delta(before_entry, *after_entry),
+                    before_entry,
+                    *after_entry));
+        });
+
+    for_each_asset_render_resource_materialized_cache_entry(
+        after,
+        [&](const asset_render_resource_materialized_cache_entry& after_entry) {
+            if (find_asset_render_resource_materialized_cache_entry(before, after_entry.id) != nullptr) {
+                return;
+            }
+            add_asset_render_resource_materialized_cache_diff_entry(
+                diff,
+                make_asset_render_resource_materialized_cache_diff_entry(
+                    asset_render_resource_materialized_cache_delta_kind::added,
+                    std::nullopt,
+                    after_entry));
+        });
+
+    return diff;
+}
+
+inline asset_render_resource_runtime_manifest_evidence make_asset_render_resource_runtime_manifest_evidence()
+{
+    return asset_render_resource_runtime_manifest_evidence{};
+}
+
+inline asset_render_resource_runtime_manifest_evidence make_asset_render_resource_runtime_manifest_evidence(
+    const asset_manifest_version_policy_summary& policy)
+{
+    return asset_render_resource_runtime_manifest_evidence{
+        .checked = true,
+        .compatibility_status = policy.compatibility_status,
+        .schema_version = policy.schema_version,
+        .expected_schema_version = policy.expected_schema_version,
+        .required_features = policy.required_features,
+        .optional_features = policy.optional_features,
+        .unsupported_features = policy.unsupported_features,
+        .diagnostic = policy.diagnostic,
+        .compatible_accepted = policy.compatible_accepted,
+        .strict_accepted = policy.strict_accepted,
+    };
+}
+
+inline asset_render_resource_runtime_packet_blocker_kind asset_render_resource_runtime_packet_blocker_from_cache_status(
+    asset_render_resource_materialized_cache_status status)
+{
+    switch (status) {
+        case asset_render_resource_materialized_cache_status::ready:
+            return asset_render_resource_runtime_packet_blocker_kind::none;
+        case asset_render_resource_materialized_cache_status::address_rejected:
+            return asset_render_resource_runtime_packet_blocker_kind::address_rejected;
+        case asset_render_resource_materialized_cache_status::missing_render_resource_address:
+            return asset_render_resource_runtime_packet_blocker_kind::missing_render_resource_address;
+        case asset_render_resource_materialized_cache_status::missing_materialized_bytes:
+            return asset_render_resource_runtime_packet_blocker_kind::missing_materialized_bytes;
+        case asset_render_resource_materialized_cache_status::type_mismatch:
+            return asset_render_resource_runtime_packet_blocker_kind::type_mismatch;
+        case asset_render_resource_materialized_cache_status::cache_key_mismatch:
+            return asset_render_resource_runtime_packet_blocker_kind::cache_key_mismatch;
+        case asset_render_resource_materialized_cache_status::duplicate_canonical_identity:
+            return asset_render_resource_runtime_packet_blocker_kind::duplicate_canonical_identity;
+        case asset_render_resource_materialized_cache_status::duplicate_materialized_payload_id:
+            return asset_render_resource_runtime_packet_blocker_kind::duplicate_materialized_payload_id;
+    }
+    return asset_render_resource_runtime_packet_blocker_kind::missing_render_resource_address;
+}
+
+inline asset_render_resource_runtime_packet_cache_state asset_render_resource_runtime_packet_cache_state_from_delta(
+    asset_render_resource_materialized_cache_delta_kind kind)
+{
+    switch (kind) {
+        case asset_render_resource_materialized_cache_delta_kind::reused:
+            return asset_render_resource_runtime_packet_cache_state::cache_hit;
+        case asset_render_resource_materialized_cache_delta_kind::added:
+            return asset_render_resource_runtime_packet_cache_state::added;
+        case asset_render_resource_materialized_cache_delta_kind::removed:
+            return asset_render_resource_runtime_packet_cache_state::removed;
+        case asset_render_resource_materialized_cache_delta_kind::replaced:
+            return asset_render_resource_runtime_packet_cache_state::replaced;
+        case asset_render_resource_materialized_cache_delta_kind::invalidated:
+            return asset_render_resource_runtime_packet_cache_state::invalidated;
+    }
+    return asset_render_resource_runtime_packet_cache_state::blocked;
+}
+
+inline std::string asset_render_resource_runtime_packet_cache_revision(
+    const asset_cache_key& cache_key)
+{
+    return classify_asset_cache_key(cache_key).cache_revision;
+}
+
+inline asset_render_resource_runtime_packet_cache_entry make_asset_render_resource_runtime_packet_cache_entry(
+    const asset_render_resource_materialized_cache_entry& cache_entry,
+    asset_render_resource_runtime_packet_cache_state cache_state,
+    asset_render_resource_runtime_manifest_evidence manifest,
+    std::string invalidated_runtime_identity = {},
+    std::string replacement_runtime_identity = {})
+{
+    const std::string cache_revision =
+        asset_render_resource_runtime_packet_cache_revision(cache_entry.cache_key);
+    const bool manifest_ok = manifest.ok();
+    const bool cache_entry_ready = cache_entry.ready();
+    const bool packet_ready_state =
+        cache_state != asset_render_resource_runtime_packet_cache_state::removed
+        && cache_state != asset_render_resource_runtime_packet_cache_state::invalidated;
+    std::string diagnostic = manifest_ok ? cache_entry.diagnostic : manifest.diagnostic;
+
+    asset_render_resource_runtime_packet_cache_entry entry{
+        .cache_state = cache_state,
+        .blocker = manifest_ok
+            ? asset_render_resource_runtime_packet_blocker_from_cache_status(cache_entry.status)
+            : asset_render_resource_runtime_packet_blocker_kind::manifest_incompatible,
+        .materialized_cache_status = cache_entry.status,
+        .id = cache_entry.id,
+        .type = cache_entry.type,
+        .logical_id = cache_entry.id,
+        .canonical_identity = cache_entry.canonical_identity,
+        .cache_key = cache_entry.cache_key,
+        .cache_revision = cache_revision,
+        .cache_revision_present = !cache_revision.empty(),
+        .source_uri = cache_entry.source_uri,
+        .content_hash = cache_entry.content_hash,
+        .runtime_identity = cache_entry.runtime_cache_key,
+        .invalidated_runtime_identity = std::move(invalidated_runtime_identity),
+        .replacement_runtime_identity = replacement_runtime_identity.empty()
+            ? cache_entry.runtime_cache_key
+            : std::move(replacement_runtime_identity),
+        .materialized_bytes_available = cache_entry_ready,
+        .materialized_byte_count = cache_entry.byte_count,
+        .payload_byte_count = cache_entry.payload_byte_count,
+        .ready = manifest_ok && cache_entry_ready && packet_ready_state,
+        .manifest = std::move(manifest),
+        .diagnostic = std::move(diagnostic),
+    };
+
+    if (entry.cache_state == asset_render_resource_runtime_packet_cache_state::cache_hit
+        && !cache_entry_ready) {
+        entry.cache_state = asset_render_resource_runtime_packet_cache_state::blocked;
+    }
+    if (entry.diagnostic.empty()) {
+        entry.diagnostic = entry.ready ? "render resource runtime packet cache entry ready"
+                                       : "render resource runtime packet cache entry blocked";
+    }
+
+    return entry;
+}
+
+inline void count_asset_render_resource_runtime_packet_cache_entry(
+    asset_render_resource_runtime_packet_cache_handoff_summary& summary,
+    const asset_render_resource_runtime_packet_cache_entry& entry)
+{
+    switch (entry.cache_state) {
+        case asset_render_resource_runtime_packet_cache_state::cache_hit:
+            ++summary.cache_hit_count;
+            break;
+        case asset_render_resource_runtime_packet_cache_state::added:
+            ++summary.added_count;
+            break;
+        case asset_render_resource_runtime_packet_cache_state::replaced:
+            ++summary.replaced_count;
+            break;
+        case asset_render_resource_runtime_packet_cache_state::removed:
+            ++summary.removed_count;
+            break;
+        case asset_render_resource_runtime_packet_cache_state::invalidated:
+            ++summary.invalidated_count;
+            break;
+        case asset_render_resource_runtime_packet_cache_state::blocked:
+            break;
+    }
+
+    if (entry.invalidates()) {
+        ++summary.invalidation_count;
+    }
+    if (entry.materialized_bytes_available) {
+        ++summary.materialized_available_count;
+        summary.total_materialized_byte_count += entry.materialized_byte_count;
+    }
+    if (entry.blocker == asset_render_resource_runtime_packet_blocker_kind::manifest_incompatible) {
+        ++summary.manifest_incompatible_count;
+    }
+}
+
+inline void add_asset_render_resource_runtime_packet_cache_entry(
+    asset_render_resource_runtime_packet_cache_handoff_summary& summary,
+    asset_render_resource_runtime_packet_cache_entry entry)
+{
+    count_asset_render_resource_runtime_packet_cache_entry(summary, entry);
+    if (entry.ready_for_packet()) {
+        ++summary.ready_count;
+        summary.ready.push_back(std::move(entry));
+    } else {
+        ++summary.blocked_count;
+        if (entry.cache_state == asset_render_resource_runtime_packet_cache_state::removed
+            || entry.cache_state == asset_render_resource_runtime_packet_cache_state::invalidated) {
+            summary.invalidated.push_back(std::move(entry));
+        } else {
+            summary.blocked.push_back(std::move(entry));
+        }
+    }
+}
+
+inline const asset_render_resource_materialized_cache_diff_entry* find_asset_render_resource_materialized_cache_diff_entry(
+    const asset_render_resource_materialized_cache_diff_summary& diff,
+    std::string_view id)
+{
+    if (const asset_render_resource_materialized_cache_diff_entry* entry = diff.find_reused(id);
+        entry != nullptr) {
+        return entry;
+    }
+    if (const asset_render_resource_materialized_cache_diff_entry* entry = diff.find_added(id);
+        entry != nullptr) {
+        return entry;
+    }
+    if (const asset_render_resource_materialized_cache_diff_entry* entry = diff.find_replaced(id);
+        entry != nullptr) {
+        return entry;
+    }
+    if (const asset_render_resource_materialized_cache_diff_entry* entry = diff.find_invalidated(id);
+        entry != nullptr) {
+        return entry;
+    }
+    return nullptr;
+}
+
+inline asset_render_resource_runtime_packet_cache_handoff_summary make_asset_render_resource_runtime_packet_cache_handoff_summary(
+    const asset_render_resource_materialized_cache_summary& cache,
+    asset_render_resource_runtime_manifest_evidence manifest)
+{
+    asset_render_resource_runtime_packet_cache_handoff_summary summary{
+        .manifest = manifest,
+        .requested_count = cache.requested_count,
+    };
+
+    for_each_asset_render_resource_materialized_cache_entry(
+        cache,
+        [&](const asset_render_resource_materialized_cache_entry& cache_entry) {
+            add_asset_render_resource_runtime_packet_cache_entry(
+                summary,
+                make_asset_render_resource_runtime_packet_cache_entry(
+                    cache_entry,
+                    cache_entry.ready()
+                        ? asset_render_resource_runtime_packet_cache_state::cache_hit
+                        : asset_render_resource_runtime_packet_cache_state::blocked,
+                    manifest));
+        });
+
+    return summary;
+}
+
+inline asset_render_resource_runtime_packet_cache_handoff_summary make_asset_render_resource_runtime_packet_cache_handoff_summary(
+    const asset_render_resource_materialized_cache_summary& cache)
+{
+    return make_asset_render_resource_runtime_packet_cache_handoff_summary(
+        cache,
+        make_asset_render_resource_runtime_manifest_evidence());
+}
+
+inline asset_render_resource_runtime_packet_cache_handoff_summary make_asset_render_resource_runtime_packet_cache_handoff_summary(
+    const asset_render_resource_materialized_cache_summary& cache,
+    const asset_manifest_version_policy_summary& manifest_policy)
+{
+    return make_asset_render_resource_runtime_packet_cache_handoff_summary(
+        cache,
+        make_asset_render_resource_runtime_manifest_evidence(manifest_policy));
+}
+
+inline asset_render_resource_runtime_packet_cache_handoff_summary make_asset_render_resource_runtime_packet_cache_handoff_summary(
+    const asset_render_resource_materialized_cache_summary& cache,
+    const asset_render_resource_materialized_cache_diff_summary& diff,
+    asset_render_resource_runtime_manifest_evidence manifest)
+{
+    asset_render_resource_runtime_packet_cache_handoff_summary summary{
+        .manifest = manifest,
+        .requested_count = cache.requested_count,
+    };
+
+    for_each_asset_render_resource_materialized_cache_entry(
+        cache,
+        [&](const asset_render_resource_materialized_cache_entry& cache_entry) {
+            asset_render_resource_runtime_packet_cache_state cache_state =
+                cache_entry.ready() ? asset_render_resource_runtime_packet_cache_state::cache_hit
+                                    : asset_render_resource_runtime_packet_cache_state::blocked;
+            std::string invalidated_runtime_identity;
+            std::string replacement_runtime_identity;
+
+            if (const asset_render_resource_materialized_cache_diff_entry* diff_entry =
+                    find_asset_render_resource_materialized_cache_diff_entry(diff, cache_entry.id);
+                diff_entry != nullptr) {
+                cache_state =
+                    asset_render_resource_runtime_packet_cache_state_from_delta(diff_entry->kind);
+                invalidated_runtime_identity = diff_entry->invalidated_runtime_cache_key;
+                replacement_runtime_identity = diff_entry->replacement_runtime_cache_key;
+            }
+
+            add_asset_render_resource_runtime_packet_cache_entry(
+                summary,
+                make_asset_render_resource_runtime_packet_cache_entry(
+                    cache_entry,
+                    cache_state,
+                    manifest,
+                    std::move(invalidated_runtime_identity),
+                    std::move(replacement_runtime_identity)));
+        });
+
+    for (const asset_render_resource_materialized_cache_diff_entry& removed : diff.removed) {
+        if (!removed.before.has_value()) {
+            continue;
+        }
+
+        add_asset_render_resource_runtime_packet_cache_entry(
+            summary,
+            make_asset_render_resource_runtime_packet_cache_entry(
+                *removed.before,
+                asset_render_resource_runtime_packet_cache_state::removed,
+                manifest,
+                removed.invalidated_runtime_cache_key,
+                {}));
+    }
+
+    return summary;
+}
+
+inline asset_render_resource_runtime_packet_cache_handoff_summary make_asset_render_resource_runtime_packet_cache_handoff_summary(
+    const asset_render_resource_materialized_cache_summary& cache,
+    const asset_render_resource_materialized_cache_diff_summary& diff)
+{
+    return make_asset_render_resource_runtime_packet_cache_handoff_summary(
+        cache,
+        diff,
+        make_asset_render_resource_runtime_manifest_evidence());
+}
+
+inline asset_render_resource_runtime_packet_cache_handoff_summary make_asset_render_resource_runtime_packet_cache_handoff_summary(
+    const asset_render_resource_materialized_cache_summary& cache,
+    const asset_render_resource_materialized_cache_diff_summary& diff,
+    const asset_manifest_version_policy_summary& manifest_policy)
+{
+    return make_asset_render_resource_runtime_packet_cache_handoff_summary(
+        cache,
+        diff,
+        make_asset_render_resource_runtime_manifest_evidence(manifest_policy));
+}
+
 inline std::string asset_render_resource_payload_bridge_status_name(
     asset_render_resource_payload_bridge_status status)
 {
@@ -263,6 +1417,94 @@ inline std::string asset_render_resource_payload_bridge_status_name(
             return "duplicate_materialized_payload_id";
     }
     return "missing_materialized_bytes";
+}
+
+inline std::string asset_render_resource_materialized_cache_status_name(
+    asset_render_resource_materialized_cache_status status)
+{
+    switch (status) {
+        case asset_render_resource_materialized_cache_status::ready:
+            return "ready";
+        case asset_render_resource_materialized_cache_status::address_rejected:
+            return "address_rejected";
+        case asset_render_resource_materialized_cache_status::missing_render_resource_address:
+            return "missing_render_resource_address";
+        case asset_render_resource_materialized_cache_status::missing_materialized_bytes:
+            return "missing_materialized_bytes";
+        case asset_render_resource_materialized_cache_status::type_mismatch:
+            return "type_mismatch";
+        case asset_render_resource_materialized_cache_status::cache_key_mismatch:
+            return "cache_key_mismatch";
+        case asset_render_resource_materialized_cache_status::duplicate_canonical_identity:
+            return "duplicate_canonical_identity";
+        case asset_render_resource_materialized_cache_status::duplicate_materialized_payload_id:
+            return "duplicate_materialized_payload_id";
+    }
+    return "missing_render_resource_address";
+}
+
+inline std::string asset_render_resource_materialized_cache_delta_kind_name(
+    asset_render_resource_materialized_cache_delta_kind kind)
+{
+    switch (kind) {
+        case asset_render_resource_materialized_cache_delta_kind::reused:
+            return "reused";
+        case asset_render_resource_materialized_cache_delta_kind::added:
+            return "added";
+        case asset_render_resource_materialized_cache_delta_kind::removed:
+            return "removed";
+        case asset_render_resource_materialized_cache_delta_kind::replaced:
+            return "replaced";
+        case asset_render_resource_materialized_cache_delta_kind::invalidated:
+            return "invalidated";
+    }
+    return "invalidated";
+}
+
+inline std::string asset_render_resource_runtime_packet_cache_state_name(
+    asset_render_resource_runtime_packet_cache_state state)
+{
+    switch (state) {
+        case asset_render_resource_runtime_packet_cache_state::cache_hit:
+            return "cache_hit";
+        case asset_render_resource_runtime_packet_cache_state::added:
+            return "added";
+        case asset_render_resource_runtime_packet_cache_state::replaced:
+            return "replaced";
+        case asset_render_resource_runtime_packet_cache_state::removed:
+            return "removed";
+        case asset_render_resource_runtime_packet_cache_state::invalidated:
+            return "invalidated";
+        case asset_render_resource_runtime_packet_cache_state::blocked:
+            return "blocked";
+    }
+    return "blocked";
+}
+
+inline std::string asset_render_resource_runtime_packet_blocker_kind_name(
+    asset_render_resource_runtime_packet_blocker_kind kind)
+{
+    switch (kind) {
+        case asset_render_resource_runtime_packet_blocker_kind::none:
+            return "none";
+        case asset_render_resource_runtime_packet_blocker_kind::manifest_incompatible:
+            return "manifest_incompatible";
+        case asset_render_resource_runtime_packet_blocker_kind::address_rejected:
+            return "address_rejected";
+        case asset_render_resource_runtime_packet_blocker_kind::missing_render_resource_address:
+            return "missing_render_resource_address";
+        case asset_render_resource_runtime_packet_blocker_kind::missing_materialized_bytes:
+            return "missing_materialized_bytes";
+        case asset_render_resource_runtime_packet_blocker_kind::type_mismatch:
+            return "type_mismatch";
+        case asset_render_resource_runtime_packet_blocker_kind::cache_key_mismatch:
+            return "cache_key_mismatch";
+        case asset_render_resource_runtime_packet_blocker_kind::duplicate_canonical_identity:
+            return "duplicate_canonical_identity";
+        case asset_render_resource_runtime_packet_blocker_kind::duplicate_materialized_payload_id:
+            return "duplicate_materialized_payload_id";
+    }
+    return "missing_render_resource_address";
 }
 
 } // namespace quiz_vulkan::assets

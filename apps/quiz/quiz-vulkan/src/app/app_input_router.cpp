@@ -1,6 +1,8 @@
 #include "app/app_input_router.h"
 
 #include "app/app_action_router.h"
+#include "app/app_command_registry.h"
+#include "app/app_quiz_scene_semantics.h"
 #include "core/layout/input_hit_test.h"
 
 #include <type_traits>
@@ -86,6 +88,53 @@ app_input_route_result route_action_result(
     };
 }
 
+app_input_route_result route_command_result(
+    const scene::scene_command& command,
+    std::optional<std::string_view> submitted_text,
+    bool clear_text_after_action)
+{
+    const app_command_route_result routed_action = route_scene_command(command, submitted_text);
+    if (!routed_action.ok() || !routed_action.action.has_value()) {
+        return route_error(routed_action.error);
+    }
+
+    return app_input_route_result{
+        .handled = true,
+        .needs_render = true,
+        .clear_text_after_action = clear_text_after_action,
+        .action = routed_action.action,
+        .error = {},
+    };
+}
+
+const scene::scene_event_handler* find_event_handler(
+    const std::vector<scene::scene_event_handler>& handlers,
+    scene::scene_action_trigger trigger)
+{
+    for (const scene::scene_event_handler& handler : handlers) {
+        if (handler.trigger == trigger && !handler.commands.empty()) {
+            return &handler;
+        }
+    }
+    return nullptr;
+}
+
+bool submits_text_answer(const scene::scene_event_handler& handler)
+{
+    return !handler.commands.empty() && handler.commands.front().name == "submit_text_answer";
+}
+
+app_input_route_result route_event_handler_result(
+    const scene::scene_event_handler& handler,
+    std::optional<std::string_view> submitted_text,
+    bool clear_text_after_action)
+{
+    if (handler.commands.empty()) {
+        return {};
+    }
+    return route_command_result(handler.commands.front(), submitted_text, clear_text_after_action);
+}
+
 std::optional<scene::scene_action_binding> text_submit_action(const scene::placed_scene& placed_scene)
 {
     for (auto region = placed_scene.input_regions.rbegin(); region != placed_scene.input_regions.rend(); ++region) {
@@ -97,57 +146,31 @@ std::optional<scene::scene_action_binding> text_submit_action(const scene::place
     return std::nullopt;
 }
 
-std::optional<scene::scene_action_binding> first_enabled_action(
+const scene::scene_event_handler* first_enabled_event_handler(
     const scene::placed_scene& placed_scene,
-    std::string_view action_type)
+    scene::scene_action_trigger trigger)
 {
     for (auto region = placed_scene.input_regions.rbegin(); region != placed_scene.input_regions.rend(); ++region) {
-        if (!region->enabled || std::string_view{region->action.action_type} != action_type) {
+        if (!region->enabled) {
             continue;
         }
-        return region->action;
+        if (const scene::scene_event_handler* handler = find_event_handler(region->event_handlers, trigger)) {
+            return handler;
+        }
     }
-    return std::nullopt;
+    return nullptr;
 }
 
-scene::scene_action_binding app_gesture_action(std::string action_type)
-{
-    scene::scene_action_binding binding;
-    binding.action_type = std::move(action_type);
-    return binding;
-}
-
-scene::scene_action_binding swipe_right_action(const scene::placed_scene& placed_scene)
-{
-    if (const std::optional<scene::scene_action_binding> continue_action =
-            first_enabled_action(placed_scene, "continue_after_feedback")) {
-        return *continue_action;
-    }
-
-    if (const std::optional<scene::scene_action_binding> skip_action =
-            first_enabled_action(placed_scene, "skip_question")) {
-        return *skip_action;
-    }
-
-    return app_gesture_action("skip_question");
-}
-
-std::optional<scene::scene_action_binding> non_tap_gesture_action(
-    input::gesture_kind kind,
-    const scene::placed_scene& placed_scene)
+std::optional<scene::scene_action_trigger> trigger_for_non_tap_gesture(input::gesture_kind kind)
 {
     if (kind == input::gesture_kind::swipe_left) {
-        return app_gesture_action("previous_question");
+        return scene::scene_action_trigger::swipe_left;
     }
     if (kind == input::gesture_kind::swipe_right) {
-        return swipe_right_action(placed_scene);
+        return scene::scene_action_trigger::swipe_right;
     }
     if (kind == input::gesture_kind::long_press) {
-        if (const std::optional<scene::scene_action_binding> unknown_action =
-                first_enabled_action(placed_scene, "mark_question_unknown")) {
-            return unknown_action;
-        }
-        return app_gesture_action("mark_question_unknown");
+        return scene::scene_action_trigger::long_press;
     }
 
     return std::nullopt;
@@ -168,19 +191,30 @@ app_input_route_result route_gesture(
             return {};
         }
 
-        const bool submits_text = region->action.action_type == "submit_text_answer";
+        const scene::scene_event_handler* press_handler =
+            find_event_handler(region->event_handlers, scene::scene_action_trigger::press);
+        const bool submits_text = press_handler != nullptr
+            ? submits_text_answer(*press_handler)
+            : region->action.action_type == "submit_text_answer";
         const std::optional<std::string_view> submitted_text =
             submits_text ? std::optional<std::string_view>{committed_text} : std::nullopt;
+        if (press_handler != nullptr) {
+            return route_event_handler_result(*press_handler, submitted_text, submits_text);
+        }
         return route_action_result(region->action, submitted_text, submits_text);
     }
 
-    const std::optional<scene::scene_action_binding> binding =
-        non_tap_gesture_action(event.kind, placed_scene);
-    if (!binding.has_value()) {
+    const std::optional<scene::scene_action_trigger> trigger = trigger_for_non_tap_gesture(event.kind);
+    if (!trigger.has_value()) {
         return {};
     }
 
-    return route_action_result(*binding, std::nullopt, false);
+    const scene::scene_event_handler* handler = first_enabled_event_handler(placed_scene, *trigger);
+    if (handler == nullptr) {
+        return {};
+    }
+
+    return route_event_handler_result(*handler, std::nullopt, false);
 }
 
 app_input_route_result route_text_event(
@@ -292,7 +326,7 @@ std::vector<raw_platform_input_event> normalize_platform_input_event(
 std::optional<std::string> keyboard_input_target(const scene::placed_scene& placed_scene)
 {
     for (const scene::placed_scene_node& node : placed_scene.nodes) {
-        if (node.visible && node.input_enabled && node.semantics.quiz.accepts_keyboard_input) {
+        if (node.visible && node.input_enabled && presentation::accepts_keyboard_input(node.semantics)) {
             return node.id;
         }
     }

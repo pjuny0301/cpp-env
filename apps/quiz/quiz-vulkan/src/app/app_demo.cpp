@@ -86,8 +86,8 @@ public:
         }
 
         for (const auto& [node_id, node] : context.current_scene->nodes()) {
-            if (node.semantics.role != scene::scene_node_role::quiz_answer_input
-                || !node.semantics.quiz.accepts_keyboard_input) {
+            if (!presentation::has_semantic_role(node.semantics, presentation::quiz_answer_input_role)
+                || !presentation::accepts_keyboard_input(node.semantics)) {
                 continue;
             }
 

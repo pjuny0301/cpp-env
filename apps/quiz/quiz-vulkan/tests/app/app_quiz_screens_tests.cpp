@@ -1,12 +1,14 @@
 #include "core/layout/layout_placer.h"
 #include "core/domain/app_snapshot.hpp"
 #include "app/app_quiz_screens.h"
+#include "app/app_scene_script.h"
 
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -21,6 +23,17 @@ void require(bool condition, const char* message)
 bool near(float actual, float expected)
 {
     return std::fabs(actual - expected) < 0.001f;
+}
+
+void require_same_rect(
+    const quiz_vulkan::scene::scene_rect& actual,
+    const quiz_vulkan::scene::scene_rect& expected,
+    const char* message)
+{
+    require(near(actual.x, expected.x), message);
+    require(near(actual.y, expected.y), message);
+    require(near(actual.width, expected.width), message);
+    require(near(actual.height, expected.height), message);
 }
 
 class fixed_text_metrics final : public quiz_vulkan::scene::text_metrics_interface {
@@ -173,6 +186,31 @@ void apply_patch_to_scene(
     require(result.applied(), "screen patch applies");
 }
 
+using screen_builder = void (*)(
+    const quiz_vulkan::domain::app_snapshot&,
+    quiz_vulkan::scene::scene_layout_edit_data&);
+
+quiz_vulkan::scene::scene_layout_data build_direct_screen_data(
+    const char* name,
+    const quiz_vulkan::domain::app_snapshot& snapshot,
+    screen_builder builder)
+{
+    quiz_vulkan::scene::scene_layout_edit_data edit_data(name);
+    builder(snapshot, edit_data);
+    quiz_vulkan::scene::scene_layout_data data(name);
+    apply_patch_to_scene(edit_data.finish_patch(), data);
+    return data;
+}
+
+quiz_vulkan::scene::scene_layout_data build_patch_screen_data(
+    const char* name,
+    const quiz_vulkan::scene::scene_layout_patch& patch)
+{
+    quiz_vulkan::scene::scene_layout_data data(name);
+    apply_patch_to_scene(patch, data);
+    return data;
+}
+
 void require_within_visible_bottom(
     const quiz_vulkan::scene::placed_scene& placed,
     const char* node_id,
@@ -199,12 +237,51 @@ void require_start_quiz_action(
 void require_node_role(
     const quiz_vulkan::scene::scene_layout_data& data,
     const char* node_id,
-    quiz_vulkan::scene::scene_node_role role,
+    std::string_view role,
     const char* message)
 {
     const quiz_vulkan::scene::scene_node_data* node = data.find_node(node_id);
     require(node != nullptr, message);
     require(node->semantics.role == role, message);
+}
+
+void require_same_placed_render(
+    const quiz_vulkan::scene::placed_scene& actual,
+    const quiz_vulkan::scene::placed_scene& expected,
+    const char* message)
+{
+    require_same_rect(actual.usable_bounds, expected.usable_bounds, message);
+    require(actual.nodes.size() == expected.nodes.size(), message);
+    require(actual.input_regions.size() == expected.input_regions.size(), message);
+
+    for (std::size_t index = 0; index < actual.nodes.size(); ++index) {
+        const quiz_vulkan::scene::placed_scene_node& actual_node = actual.nodes[index];
+        const quiz_vulkan::scene::placed_scene_node& expected_node = expected.nodes[index];
+        require(actual_node.id == expected_node.id, message);
+        require(actual_node.parent_id == expected_node.parent_id, message);
+        require(actual_node.kind == expected_node.kind, message);
+        require(actual_node.input_enabled == expected_node.input_enabled, message);
+        require(actual_node.visible == expected_node.visible, message);
+        require(actual_node.semantics.role == expected_node.semantics.role, message);
+        require_same_rect(actual_node.bounds, expected_node.bounds, message);
+        require_same_rect(actual_node.content_bounds, expected_node.content_bounds, message);
+        require(actual_node.text_runs.size() == expected_node.text_runs.size(), message);
+        for (std::size_t text_index = 0; text_index < actual_node.text_runs.size(); ++text_index) {
+            require(actual_node.text_runs[text_index].text == expected_node.text_runs[text_index].text, message);
+            require(actual_node.text_runs[text_index].style_token == expected_node.text_runs[text_index].style_token, message);
+        }
+    }
+
+    for (std::size_t index = 0; index < actual.input_regions.size(); ++index) {
+        const quiz_vulkan::scene::scene_input_region& actual_region = actual.input_regions[index];
+        const quiz_vulkan::scene::scene_input_region& expected_region = expected.input_regions[index];
+        require(actual_region.node_id == expected_region.node_id, message);
+        require(actual_region.enabled == expected_region.enabled, message);
+        require(actual_region.action.action_type == expected_region.action.action_type, message);
+        require(actual_region.action.payload == expected_region.action.payload, message);
+        require(actual_region.event_handlers.size() == expected_region.event_handlers.size(), message);
+        require_same_rect(actual_region.bounds, expected_region.bounds, message);
+    }
 }
 
 } // namespace
@@ -245,6 +322,39 @@ int main()
     require(deck_button->action_binding.action_type == "select_deck", "deck button selects deck");
     require(deck_button->action_binding.payload == "deck1", "deck button payload contains deck id");
 
+    fixed_text_metrics deck_list_metrics;
+    const scene::scene_rect deck_list_viewport{0.0f, 0.0f, 360.0f, 640.0f};
+    const scene::scene_layout_data direct_deck_list_data =
+        build_direct_screen_data("direct_deck_list", deck_list_snapshot, presentation::build_deck_list_screen);
+    const scene::scene_layout_data scripted_deck_list_data =
+        build_patch_screen_data("scripted_deck_list", presentation::make_deck_list_screen_patch(deck_list_snapshot));
+    require_same_placed_render(
+        scene::layout_placer().place(scripted_deck_list_data, deck_list_viewport, deck_list_metrics),
+        scene::layout_placer().place(direct_deck_list_data, deck_list_viewport, deck_list_metrics),
+        "scripted deck list render equals direct builder");
+
+    const domain::app_snapshot deck_view_snapshot = domain::make_app_snapshot(
+        decks,
+        std::optional<std::string>{"deck1"},
+        std::nullopt,
+        nullptr,
+        learning);
+    scene::scene_layout_data deck_view_data("test_deck_view");
+    apply_patch_to_scene(presentation::make_quiz_screen_patch(deck_view_snapshot), deck_view_data);
+    require(deck_view_data.route_state().screen_id == "deck_view", "deck view route selected");
+    require(deck_view_data.contains_node("deck_view_day_day1"), "deck view day action exists");
+    require(deck_view_data.has_focus(), "deck view has focus");
+    require(deck_view_data.focus_id() == "deck_view_day_day1", "deck view focuses first day");
+
+    const scene::scene_layout_data direct_deck_view_data =
+        build_direct_screen_data("direct_deck_view", deck_view_snapshot, presentation::build_deck_view_screen);
+    const scene::scene_layout_data scripted_deck_view_data =
+        build_patch_screen_data("scripted_deck_view", presentation::make_deck_view_screen_patch(deck_view_snapshot));
+    require_same_placed_render(
+        scene::layout_placer().place(scripted_deck_view_data, deck_list_viewport, deck_list_metrics),
+        scene::layout_placer().place(direct_deck_view_data, deck_list_viewport, deck_list_metrics),
+        "scripted deck view render equals direct builder");
+
     const domain::app_snapshot day_intro_snapshot = make_snapshot(decks);
     scene::scene_layout_data day_intro_data("test_day_intro");
     apply_patch_to_scene(presentation::make_quiz_screen_patch(day_intro_snapshot), day_intro_data);
@@ -255,6 +365,31 @@ int main()
     require(!day_intro_data.contains_node("day_intro_start_known"), "day intro known action is hidden without known questions");
     require(!day_intro_data.contains_node("day_intro_start_wrong_note"), "day intro wrong-note action is hidden without wrong notes");
     require_start_quiz_action(day_intro_data, "day_intro_start_normal", "normal", "day intro normal action starts normal quiz");
+
+    const presentation::app_scene_script_parse_result day_intro_script =
+        presentation::parse_app_scene_script_json(presentation::day_intro_screen_script_json);
+    require(day_intro_script.ok(), "day intro scene script parses");
+    const presentation::app_scene_script_compile_result day_intro_compiled =
+        presentation::compile_quiz_screen_script(*day_intro_script.document, day_intro_snapshot);
+    require(day_intro_compiled.ok(), "day intro scene script compiles");
+    scene::scene_layout_data scripted_day_intro_data("test_scripted_day_intro");
+    apply_patch_to_scene(*day_intro_compiled.patch, scripted_day_intro_data);
+    require(scripted_day_intro_data.route_state().screen_id == "day_intro", "scripted day intro route selected");
+
+    const scene::scene_layout_data direct_day_intro_data =
+        build_direct_screen_data("direct_day_intro", day_intro_snapshot, presentation::build_day_intro_screen);
+    const scene::scene_layout_data scripted_day_intro_patch_data =
+        build_patch_screen_data("scripted_day_intro_patch", presentation::make_day_intro_screen_patch(day_intro_snapshot));
+
+    fixed_text_metrics day_intro_metrics;
+    const scene::scene_rect day_intro_viewport{0.0f, 0.0f, 360.0f, 640.0f};
+    const scene::placed_scene direct_day_intro_render = scene::layout_placer().place(direct_day_intro_data, day_intro_viewport, day_intro_metrics);
+    const scene::placed_scene scripted_day_intro_render = scene::layout_placer().place(scripted_day_intro_data, day_intro_viewport, day_intro_metrics);
+    require_same_placed_render(scripted_day_intro_render, direct_day_intro_render, "scripted day intro render equals direct builder");
+    require_same_placed_render(
+        scene::layout_placer().place(scripted_day_intro_patch_data, day_intro_viewport, day_intro_metrics),
+        direct_day_intro_render,
+        "scripted day intro node DSL render equals direct builder");
 
     std::vector<domain::deck> learning_decks;
     learning_decks.push_back(make_learning_groups_deck());
@@ -272,7 +407,7 @@ int main()
     require(learning_day_intro_data.route_state().metadata.at("wrong_note_count") == "1", "wrong-note count metadata emitted");
     require(learning_day_intro_data.contains_node("day_intro_start_known"), "known mode action exists when known questions exist");
     require(learning_day_intro_data.contains_node("day_intro_start_wrong_note"), "wrong-note mode action exists when wrong notes exist");
-    require_node_role(learning_day_intro_data, "day_intro_modes", scene::scene_node_role::quiz_controls, "day intro mode actions are tagged as controls");
+    require_node_role(learning_day_intro_data, "day_intro_modes", presentation::quiz_controls_role, "day intro mode actions are tagged as controls");
     require_start_quiz_action(learning_day_intro_data, "day_intro_start_normal", "normal", "learning day intro normal action starts normal quiz");
     require_start_quiz_action(learning_day_intro_data, "day_intro_start_known", "known", "known action starts known quiz");
     require_start_quiz_action(learning_day_intro_data, "day_intro_start_wrong_note", "wrong_note", "wrong-note action starts wrong-note quiz");
@@ -294,6 +429,15 @@ int main()
     require(first_option->has_action_binding, "active first option action exists");
     require(first_option->action_binding.action_type == "submit_option", "active first option submits option");
 
+    const scene::scene_layout_data direct_active_data =
+        build_direct_screen_data("direct_active", active_snapshot, presentation::build_quiz_active_screen);
+    const scene::scene_layout_data scripted_active_data =
+        build_patch_screen_data("scripted_active", presentation::make_quiz_active_screen_patch(active_snapshot));
+    require_same_placed_render(
+        scene::layout_placer().place(scripted_active_data, day_intro_viewport, day_intro_metrics),
+        scene::layout_placer().place(direct_active_data, day_intro_viewport, day_intro_metrics),
+        "scripted active quiz render equals direct builder");
+
     std::vector<domain::deck> blank_decks;
     blank_decks.push_back(make_blank_input_deck());
     domain::quiz_session blank_session = make_active_session(blank_decks.front());
@@ -313,12 +457,21 @@ int main()
     const scene::scene_node_data* answer_dock = blank_data.find_node("quiz_active_answer_dock");
     require(answer_dock != nullptr, "blank input answer dock exists");
     require(answer_dock->layout_rule.anchor_to_keyboard, "blank input answer dock anchors to keyboard");
-    require(answer_dock->semantics.role == scene::scene_node_role::quiz_answer_dock, "blank input answer dock is tagged");
+    require(answer_dock->semantics.role == presentation::quiz_answer_dock_role, "blank input answer dock is tagged");
 
     const scene::scene_node_data* text_answer = blank_data.find_node("quiz_active_text_answer");
     require(text_answer != nullptr, "blank input text answer exists");
-    require(text_answer->semantics.role == scene::scene_node_role::quiz_answer_input, "blank input answer is tagged");
-    require(text_answer->semantics.quiz.accepts_keyboard_input, "blank input answer accepts keyboard input");
+    require(text_answer->semantics.role == presentation::quiz_answer_input_role, "blank input answer is tagged");
+    require(presentation::accepts_keyboard_input(text_answer->semantics), "blank input answer accepts keyboard input");
+
+    const scene::scene_layout_data direct_blank_data =
+        build_direct_screen_data("direct_blank", blank_snapshot, presentation::build_quiz_active_screen);
+    const scene::scene_layout_data scripted_blank_data =
+        build_patch_screen_data("scripted_blank", presentation::make_quiz_active_screen_patch(blank_snapshot));
+    require_same_placed_render(
+        scene::layout_placer().place(scripted_blank_data, day_intro_viewport, day_intro_metrics),
+        scene::layout_placer().place(direct_blank_data, day_intro_viewport, day_intro_metrics),
+        "scripted blank input quiz render equals direct builder");
 
     fixed_text_metrics metrics;
     scene::scene_layout_environment keyboard_environment;
@@ -364,6 +517,15 @@ int main()
     require(!feedback_option->input_enabled, "feedback option is disabled");
     require(!feedback_option->has_action_binding, "feedback option cannot submit again");
 
+    const scene::scene_layout_data direct_feedback_data =
+        build_direct_screen_data("direct_feedback", feedback_snapshot, presentation::build_quiz_feedback_screen);
+    const scene::scene_layout_data scripted_feedback_data =
+        build_patch_screen_data("scripted_feedback", presentation::make_quiz_feedback_screen_patch(feedback_snapshot));
+    require_same_placed_render(
+        scene::layout_placer().place(scripted_feedback_data, day_intro_viewport, day_intro_metrics),
+        scene::layout_placer().place(direct_feedback_data, day_intro_viewport, day_intro_metrics),
+        "scripted feedback render equals direct builder");
+
     domain::continue_after_feedback(feedback_session);
     const domain::app_snapshot results_snapshot = make_snapshot(decks, &feedback_session);
     scene::scene_layout_data results_data("test_results");
@@ -386,10 +548,19 @@ int main()
     require(learning_results_data.route_state().screen_id == "quiz_results", "learning results route selected");
     require(learning_results_data.route_state().metadata.at("known_count") == "1", "results known count metadata emitted");
     require(learning_results_data.route_state().metadata.at("wrong_note_count") == "1", "results wrong-note count metadata emitted");
-    require_node_role(learning_results_data, "quiz_results_actions", scene::scene_node_role::quiz_controls, "results mode actions are tagged as controls");
+    require_node_role(learning_results_data, "quiz_results_actions", presentation::quiz_controls_role, "results mode actions are tagged as controls");
     require_start_quiz_action(learning_results_data, "quiz_results_start_normal", "normal", "results normal action starts normal quiz");
     require_start_quiz_action(learning_results_data, "quiz_results_start_known", "known", "results known action starts known quiz");
     require_start_quiz_action(learning_results_data, "quiz_results_start_wrong_note", "wrong_note", "results wrong-note action starts wrong-note quiz");
+
+    const scene::scene_layout_data direct_results_data =
+        build_direct_screen_data("direct_results", learning_results_snapshot, presentation::build_quiz_results_screen);
+    const scene::scene_layout_data scripted_results_data =
+        build_patch_screen_data("scripted_results", presentation::make_quiz_results_screen_patch(learning_results_snapshot));
+    require_same_placed_render(
+        scene::layout_placer().place(scripted_results_data, day_intro_viewport, day_intro_metrics),
+        scene::layout_placer().place(direct_results_data, day_intro_viewport, day_intro_metrics),
+        "scripted quiz results render equals direct builder");
 
     const domain::app_snapshot settings_snapshot = make_snapshot(
         decks,
@@ -403,6 +574,15 @@ int main()
     require(settings_data.contains_node("settings_entry_source_uri"), "settings source entry exists");
     require(settings_data.contains_node("settings_close"), "settings close action exists");
 
+    const scene::scene_layout_data direct_settings_data =
+        build_direct_screen_data("direct_settings", settings_snapshot, presentation::build_settings_screen);
+    const scene::scene_layout_data scripted_settings_data =
+        build_patch_screen_data("scripted_settings", presentation::make_settings_screen_patch(settings_snapshot));
+    require_same_placed_render(
+        scene::layout_placer().place(scripted_settings_data, day_intro_viewport, day_intro_metrics),
+        scene::layout_placer().place(direct_settings_data, day_intro_viewport, day_intro_metrics),
+        "scripted settings render equals direct builder");
+
     const domain::app_snapshot error_snapshot = make_snapshot(
         decks,
         nullptr,
@@ -415,6 +595,15 @@ int main()
     require(error_data.route_state().metadata.at("layout_contract") == "error_recovery", "error layout contract emitted");
     require(error_data.contains_node("error_error_banner"), "error banner exists");
     require(error_data.contains_node("error_deck_deck1"), "error recovery deck action exists");
+
+    const scene::scene_layout_data direct_error_data =
+        build_direct_screen_data("direct_error", error_snapshot, presentation::build_error_screen);
+    const scene::scene_layout_data scripted_error_data =
+        build_patch_screen_data("scripted_error", presentation::make_error_screen_patch(error_snapshot));
+    require_same_placed_render(
+        scene::layout_placer().place(scripted_error_data, day_intro_viewport, day_intro_metrics),
+        scene::layout_placer().place(direct_error_data, day_intro_viewport, day_intro_metrics),
+        "scripted error render equals direct builder");
 
     return 0;
 }

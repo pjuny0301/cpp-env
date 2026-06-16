@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -38,15 +39,48 @@ std::string rect_to_string(const quiz_vulkan::scene::scene_rect& rect)
     return stream.str();
 }
 
+std::string semantic_string(
+    const quiz_vulkan::scene::scene_node_semantics& semantics,
+    std::string_view key,
+    std::string fallback)
+{
+    const std::string* value = semantics.string_property(key);
+    return value == nullptr ? std::move(fallback) : *value;
+}
+
+void set_semantic_string(
+    quiz_vulkan::scene::scene_node_semantics& semantics,
+    std::string key,
+    std::string value)
+{
+    semantics.set_property(std::move(key), quiz_vulkan::scene::scene_value(std::move(value)));
+}
+
+void set_semantic_index(
+    quiz_vulkan::scene::scene_node_semantics& semantics,
+    std::string key,
+    std::size_t value)
+{
+    semantics.set_property(std::move(key), quiz_vulkan::scene::scene_value(value));
+}
+
+void set_semantic_bool(
+    quiz_vulkan::scene::scene_node_semantics& semantics,
+    std::string key,
+    bool value)
+{
+    semantics.set_property(std::move(key), quiz_vulkan::scene::scene_value(value));
+}
+
 std::string node_snapshot_line(const quiz_vulkan::scene::placed_scene_node& node)
 {
     std::ostringstream stream;
     stream << node.id
            << "|rect=" << rect_to_string(node.bounds)
-           << "|role=" << quiz_vulkan::scene::to_string(node.semantics.role)
-           << "|stage=" << quiz_vulkan::scene::to_string(node.semantics.quiz.stage)
-           << "|feedback=" << quiz_vulkan::scene::to_string(node.semantics.quiz.feedback)
-           << "|option=" << quiz_vulkan::scene::to_string(node.semantics.quiz.option_state)
+           << "|role=" << node.semantics.role
+           << "|stage=" << semantic_string(node.semantics, "flow.stage", "none")
+           << "|feedback=" << semantic_string(node.semantics, "feedback.state", "none")
+           << "|option=" << semantic_string(node.semantics, "choice.state", "idle")
            << "|input=" << (node.input_enabled ? "enabled" : "disabled");
     return stream.str();
 }
@@ -118,9 +152,43 @@ int main()
     assert(near(placed_button->bounds.y, 34.0f));
     assert(near(placed_button->bounds.width, 100.0f));
     assert(near(placed_button->bounds.height, 30.0f));
+    assert(placed_button->has_event_handlers);
+    assert(placed_button->event_handlers.size() == 1);
+    assert(placed_button->event_handlers.front().commands.size() == 1);
+    assert(placed_button->event_handlers.front().commands.front().name == "tap");
+    assert(placed_button->event_handlers.front().legacy_binding.action_type == "tap");
     assert(placed.input_regions.size() == 1);
     assert(placed.input_regions.front().node_id == "button");
     assert(near(placed.input_regions.front().bounds.height, 30.0f));
+    assert(placed.input_regions.front().event_handlers.size() == 1);
+    assert(placed.input_regions.front().event_handlers.front().commands.front().name == "tap");
+
+    quiz_vulkan::scene::scene_layout_data typed_scene("typed");
+    quiz_vulkan::scene::scene_node_data typed_button;
+    typed_button.id = "typed_button";
+    typed_button.kind = quiz_vulkan::scene::scene_node_kind::input;
+    typed_button.layout_rule.has_height = true;
+    typed_button.layout_rule.height = 32.0f;
+    assert(typed_scene.append_node("", typed_button));
+    assert(typed_scene.bind_event_handler(
+        "typed_button",
+        quiz_vulkan::scene::make_scene_event_handler(
+            quiz_vulkan::scene::scene_action_trigger::press,
+            {quiz_vulkan::scene::make_scene_command(
+                "submit_option",
+                {{"option_index", quiz_vulkan::scene::scene_value(1)}})})));
+    const quiz_vulkan::scene::placed_scene typed_placed = quiz_vulkan::scene::layout_placer().place(
+        typed_scene,
+        {0.0f, 0.0f, 120.0f, 100.0f},
+        metrics);
+    const quiz_vulkan::scene::placed_scene_node* placed_typed_button = typed_placed.find_node("typed_button");
+    assert(placed_typed_button != nullptr);
+    assert(!placed_typed_button->has_action_binding);
+    assert(placed_typed_button->has_event_handlers);
+    assert(typed_placed.input_regions.size() == 1);
+    assert(typed_placed.input_regions.front().action.empty());
+    assert(typed_placed.input_regions.front().event_handlers.size() == 1);
+    assert(typed_placed.input_regions.front().event_handlers.front().commands.front().name == "submit_option");
 
     quiz_vulkan::scene::scene_node_data badge;
     badge.id = "badge";
@@ -155,7 +223,7 @@ int main()
     assert(quiz_scene.set_bounds_rule(quiz_scene.root_node_id(), quiz_root_rule));
 
     quiz_vulkan::scene::scene_node_semantics root_semantics;
-    root_semantics.role = quiz_vulkan::scene::scene_node_role::app_shell;
+    root_semantics.role = "app_shell";
     assert(quiz_scene.set_semantics(quiz_scene.root_node_id(), root_semantics));
 
     quiz_vulkan::scene::scene_node_data stage;
@@ -165,9 +233,9 @@ int main()
     stage.layout_rule.has_height = true;
     stage.layout_rule.height = 156.0f;
     stage.layout_rule.gap = 8.0f;
-    stage.semantics.role = quiz_vulkan::scene::scene_node_role::quiz_question_stage;
-    stage.semantics.quiz.stage = quiz_vulkan::scene::scene_quiz_stage::feedback;
-    stage.semantics.quiz.question_length = quiz_vulkan::scene::scene_question_length_class::long_question;
+    stage.semantics.role = "content_stage";
+    set_semantic_string(stage.semantics, "flow.stage", "feedback");
+    set_semantic_string(stage.semantics, "content.length", "long");
     assert(quiz_scene.append_node("", stage));
 
     quiz_vulkan::scene::scene_node_data prompt;
@@ -175,9 +243,9 @@ int main()
     prompt.kind = quiz_vulkan::scene::scene_node_kind::text;
     prompt.layout_rule.horizontal_alignment = quiz_vulkan::scene::scene_alignment::start;
     prompt.text_runs.push_back({"A retained prompt", "prompt"});
-    prompt.semantics.role = quiz_vulkan::scene::scene_node_role::quiz_question_prompt;
-    prompt.semantics.quiz.stage = quiz_vulkan::scene::scene_quiz_stage::feedback;
-    prompt.semantics.quiz.question_length = quiz_vulkan::scene::scene_question_length_class::long_question;
+    prompt.semantics.role = "prompt";
+    set_semantic_string(prompt.semantics, "flow.stage", "feedback");
+    set_semantic_string(prompt.semantics, "content.length", "long");
     assert(quiz_scene.append_node("question_stage", prompt));
 
     quiz_vulkan::scene::scene_node_data feedback;
@@ -187,9 +255,9 @@ int main()
     feedback.layout_rule.height = 40.0f;
     feedback.text_runs.push_back({"Incorrect", "feedback"});
     feedback.input_enabled = false;
-    feedback.semantics.role = quiz_vulkan::scene::scene_node_role::quiz_feedback;
-    feedback.semantics.quiz.stage = quiz_vulkan::scene::scene_quiz_stage::feedback;
-    feedback.semantics.quiz.feedback = quiz_vulkan::scene::scene_quiz_feedback_state::incorrect;
+    feedback.semantics.role = "feedback";
+    set_semantic_string(feedback.semantics, "flow.stage", "feedback");
+    set_semantic_string(feedback.semantics, "feedback.state", "incorrect");
     assert(quiz_scene.append_node("", feedback));
 
     quiz_vulkan::scene::scene_node_data option_group;
@@ -200,8 +268,8 @@ int main()
     option_group.layout_rule.height = 96.0f;
     option_group.layout_rule.gap = 8.0f;
     option_group.input_enabled = false;
-    option_group.semantics.role = quiz_vulkan::scene::scene_node_role::quiz_option_group;
-    option_group.semantics.quiz.stage = quiz_vulkan::scene::scene_quiz_stage::feedback;
+    option_group.semantics.role = "choice_group";
+    set_semantic_string(option_group.semantics, "flow.stage", "feedback");
     assert(quiz_scene.append_node("", option_group));
 
     quiz_vulkan::scene::scene_node_data option_a;
@@ -211,12 +279,12 @@ int main()
     option_a.layout_rule.height = 44.0f;
     option_a.text_runs.push_back({"Seoul", "option_correct"});
     option_a.input_enabled = false;
-    option_a.semantics.role = quiz_vulkan::scene::scene_node_role::quiz_option;
-    option_a.semantics.quiz.stage = quiz_vulkan::scene::scene_quiz_stage::feedback;
-    option_a.semantics.quiz.option_state = quiz_vulkan::scene::scene_quiz_option_state::correct;
-    option_a.semantics.quiz.feedback = quiz_vulkan::scene::scene_quiz_feedback_state::incorrect;
-    option_a.semantics.quiz.option_index = 0;
-    option_a.semantics.quiz.reveal_correctness = true;
+    option_a.semantics.role = "choice";
+    set_semantic_string(option_a.semantics, "flow.stage", "feedback");
+    set_semantic_string(option_a.semantics, "choice.state", "correct");
+    set_semantic_string(option_a.semantics, "feedback.state", "incorrect");
+    set_semantic_index(option_a.semantics, "choice.index", 0);
+    set_semantic_bool(option_a.semantics, "choice.reveal_correctness", true);
     assert(quiz_scene.append_node("option_group", option_a));
 
     quiz_vulkan::scene::scene_node_data option_b;
@@ -226,12 +294,12 @@ int main()
     option_b.layout_rule.height = 44.0f;
     option_b.text_runs.push_back({"Busan", "option_incorrect"});
     option_b.input_enabled = false;
-    option_b.semantics.role = quiz_vulkan::scene::scene_node_role::quiz_option;
-    option_b.semantics.quiz.stage = quiz_vulkan::scene::scene_quiz_stage::feedback;
-    option_b.semantics.quiz.option_state = quiz_vulkan::scene::scene_quiz_option_state::incorrect;
-    option_b.semantics.quiz.feedback = quiz_vulkan::scene::scene_quiz_feedback_state::incorrect;
-    option_b.semantics.quiz.option_index = 1;
-    option_b.semantics.quiz.reveal_correctness = true;
+    option_b.semantics.role = "choice";
+    set_semantic_string(option_b.semantics, "flow.stage", "feedback");
+    set_semantic_string(option_b.semantics, "choice.state", "incorrect");
+    set_semantic_string(option_b.semantics, "feedback.state", "incorrect");
+    set_semantic_index(option_b.semantics, "choice.index", 1);
+    set_semantic_bool(option_b.semantics, "choice.reveal_correctness", true);
     assert(quiz_scene.append_node("option_group", option_b));
 
     quiz_vulkan::scene::scene_node_data answer_dock;
@@ -243,9 +311,9 @@ int main()
     answer_dock.text_runs.push_back({"Continue", "button"});
     answer_dock.action_binding = quiz_vulkan::scene::scene_action_binding{quiz_vulkan::scene::scene_action_trigger::press, "continue_after_feedback", ""};
     answer_dock.has_action_binding = true;
-    answer_dock.semantics.role = quiz_vulkan::scene::scene_node_role::quiz_answer_dock;
-    answer_dock.semantics.quiz.stage = quiz_vulkan::scene::scene_quiz_stage::feedback;
-    answer_dock.semantics.quiz.feedback = quiz_vulkan::scene::scene_quiz_feedback_state::incorrect;
+    answer_dock.semantics.role = "input_dock";
+    set_semantic_string(answer_dock.semantics, "flow.stage", "feedback");
+    set_semantic_string(answer_dock.semantics, "feedback.state", "incorrect");
     assert(quiz_scene.append_node("", answer_dock));
 
     quiz_vulkan::scene::scene_layout_environment keyboard_environment;
@@ -264,7 +332,7 @@ int main()
     assert(near(quiz_placed.find_node("root")->bounds.height, 396.0f));
     assert(quiz_placed.input_regions.size() == 1);
     assert(quiz_placed.input_regions.front().node_id == "answer_dock");
-    assert(quiz_placed.input_regions.front().semantics.role == quiz_vulkan::scene::scene_node_role::quiz_answer_dock);
+    assert(quiz_placed.input_regions.front().semantics.role == "input_dock");
 
     const std::string snapshot = selected_layout_snapshot(
         quiz_placed,
@@ -272,13 +340,13 @@ int main()
     const std::string expected_snapshot =
         "usable=0.0,24.0,360.0,396.0\n"
         "root|rect=0.0,24.0,360.0,396.0|role=app_shell|stage=none|feedback=none|option=idle|input=enabled\n"
-        "question_stage|rect=16.0,40.0,328.0,156.0|role=quiz_question_stage|stage=feedback|feedback=none|option=idle|input=enabled\n"
-        "question_prompt|rect=16.0,40.0,136.0,18.0|role=quiz_question_prompt|stage=feedback|feedback=none|option=idle|input=enabled\n"
-        "feedback_banner|rect=16.0,204.0,328.0,40.0|role=quiz_feedback|stage=feedback|feedback=incorrect|option=idle|input=disabled\n"
-        "option_group|rect=16.0,252.0,328.0,96.0|role=quiz_option_group|stage=feedback|feedback=none|option=idle|input=disabled\n"
-        "option_a|rect=16.0,252.0,328.0,44.0|role=quiz_option|stage=feedback|feedback=incorrect|option=correct|input=disabled\n"
-        "option_b|rect=16.0,304.0,328.0,44.0|role=quiz_option|stage=feedback|feedback=incorrect|option=incorrect|input=disabled\n"
-        "answer_dock|rect=16.0,356.0,328.0,48.0|role=quiz_answer_dock|stage=feedback|feedback=incorrect|option=idle|input=enabled\n";
+        "question_stage|rect=16.0,40.0,328.0,156.0|role=content_stage|stage=feedback|feedback=none|option=idle|input=enabled\n"
+        "question_prompt|rect=16.0,40.0,136.0,18.0|role=prompt|stage=feedback|feedback=none|option=idle|input=enabled\n"
+        "feedback_banner|rect=16.0,204.0,328.0,40.0|role=feedback|stage=feedback|feedback=incorrect|option=idle|input=disabled\n"
+        "option_group|rect=16.0,252.0,328.0,96.0|role=choice_group|stage=feedback|feedback=none|option=idle|input=disabled\n"
+        "option_a|rect=16.0,252.0,328.0,44.0|role=choice|stage=feedback|feedback=incorrect|option=correct|input=disabled\n"
+        "option_b|rect=16.0,304.0,328.0,44.0|role=choice|stage=feedback|feedback=incorrect|option=incorrect|input=disabled\n"
+        "answer_dock|rect=16.0,356.0,328.0,48.0|role=input_dock|stage=feedback|feedback=incorrect|option=idle|input=enabled\n";
     assert(snapshot == expected_snapshot);
 
     return 0;

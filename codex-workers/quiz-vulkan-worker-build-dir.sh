@@ -5,11 +5,14 @@ usage() {
   cat >&2 <<'USAGE'
 usage: quiz-vulkan-worker-build-dir.sh [worktree] [preset]
 
-Prints the Windows-style quiz-vulkan build directory for a worker worktree.
+Prints the quiz-vulkan build directory for a worker worktree.
 
 Defaults:
   worktree: current directory
   preset:   windows-mingw-ascii
+
+Environment:
+  QUIZ_CODEX_PATH_STYLE  auto, windows, or posix. Default: auto.
 USAGE
 }
 
@@ -47,8 +50,27 @@ case "${preset}" in
     ;;
 esac
 
-if command -v wslpath >/dev/null 2>&1; then
-  wslpath -m "${build_dir}"
-else
-  printf '%s\n' "${build_dir}"
+path_style="${QUIZ_CODEX_PATH_STYLE:-auto}"
+if [[ "${path_style}" == "auto" ]]; then
+  case "${preset}" in
+    windows-*) path_style="windows" ;;
+    *) path_style="posix" ;;
+  esac
 fi
+
+case "${path_style}" in
+  windows)
+    if command -v wslpath >/dev/null 2>&1; then
+      wslpath -m "${build_dir}"
+    else
+      printf '%s\n' "${build_dir}"
+    fi
+    ;;
+  posix)
+    printf '%s\n' "${build_dir}"
+    ;;
+  *)
+    echo "unsupported QUIZ_CODEX_PATH_STYLE: ${path_style}" >&2
+    exit 1
+    ;;
+esac

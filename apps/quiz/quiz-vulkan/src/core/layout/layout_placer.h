@@ -406,14 +406,22 @@ private:
         placed.has_image = node.has_image;
         placed.action_binding = node.action_binding;
         placed.has_action_binding = node.has_action_binding;
+        placed.event_handlers = node.event_handlers;
+        placed.has_event_handlers = node.has_event_handlers;
         placed.semantics = node.semantics;
         placed.depth = depth;
         placed.visible = node.visible;
         placed.input_enabled = node.input_enabled;
         output.nodes.push_back(std::move(placed));
 
-        if (node.has_action_binding && !node.action_binding.empty()) {
-            output.input_regions.push_back(scene_input_region{node.id, bounds, node.action_binding, node.input_enabled, node.semantics});
+        if ((node.has_action_binding && !node.action_binding.empty()) || node.has_event_handlers) {
+            output.input_regions.push_back(scene_input_region{
+                node.id,
+                bounds,
+                node.action_binding,
+                node.input_enabled,
+                node.semantics,
+                node.event_handlers});
         }
 
         place_children(data, node, content_bounds, environment, text_metrics, output, depth);

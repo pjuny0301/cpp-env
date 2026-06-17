@@ -21,6 +21,8 @@ struct placed_scene_node {
     bool has_image = false;
     scene_action_binding action_binding;
     bool has_action_binding = false;
+    std::vector<scene_event_handler> event_handlers;
+    bool has_event_handlers = false;
     scene_node_semantics semantics;
     std::size_t depth = 0;
     bool visible = true;

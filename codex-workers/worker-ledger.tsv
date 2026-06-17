@@ -1,0 +1,4 @@
+session	prompt_id	role	worktree	branch	base_sha	status	current_task	blocker	last_heartbeat_utc
+track-b-current	WORK_ORDER_72H-B	track-b	/mnt/c/Users/박준용/Desktop/goal/worktrees/track-b-workflow	codex/track-b-workflow-20260608T1912Z	547ad1a516b506f8cc21ca8eeef834c2e215843f	active	B1-B7	none	2026-06-08T19:15:39Z
+track-b-current	WORK_ORDER_72H-B	track-b	/mnt/c/Users/박준용/Desktop/goal/worktrees/track-b-workflow	codex/track-b-workflow-20260608T1912Z	547ad1a516b506f8cc21ca8eeef834c2e215843f	active	B6 full verify-worker pass	none	2026-06-08T19:33:31Z
+track-b-current	WORK_ORDER_72H-B	track-b	/mnt/c/Users/박준용/Desktop/goal/worktrees/track-b-workflow	codex/track-b-workflow-20260608T1912Z	547ad1a516b506f8cc21ca8eeef834c2e215843f	done	B1-B7 complete	none	2026-06-08T19:50:00Z

@@ -44,6 +44,8 @@ static_assert(requires(scene::placed_scene_node node) {
     { node.has_image } -> std::same_as<bool&>;
     { node.action_binding } -> std::same_as<scene::scene_action_binding&>;
     { node.has_action_binding } -> std::same_as<bool&>;
+    { node.event_handlers } -> std::same_as<std::vector<scene::scene_event_handler>&>;
+    { node.has_event_handlers } -> std::same_as<bool&>;
     { node.semantics } -> std::same_as<scene::scene_node_semantics&>;
     { node.depth } -> std::same_as<std::size_t&>;
     { node.visible } -> std::same_as<bool&>;
@@ -59,6 +61,13 @@ static_assert(requires(
     { placed.nodes } -> std::same_as<std::vector<scene::placed_scene_node>&>;
     { placed.input_regions } -> std::same_as<std::vector<scene::scene_input_region>&>;
     { const_placed.find_node(node_id) } -> std::same_as<const scene::placed_scene_node*>;
+});
+
+static_assert(requires(scene::scene_input_region input_region) {
+    { input_region.action } -> std::same_as<scene::scene_action_binding&>;
+    { input_region.enabled } -> std::same_as<bool&>;
+    { input_region.semantics } -> std::same_as<scene::scene_node_semantics&>;
+    { input_region.event_handlers } -> std::same_as<std::vector<scene::scene_event_handler>&>;
 });
 
 } // namespace

@@ -1,8 +1,10 @@
 #include "app/app_action_router.h"
+#include "app/app_command_registry.h"
 
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -29,6 +31,13 @@ quiz_vulkan::scene::scene_action_binding action(std::string action_type, std::st
     return binding;
 }
 
+quiz_vulkan::scene::scene_command command(
+    std::string name,
+    quiz_vulkan::scene::scene_command_args args = {})
+{
+    return quiz_vulkan::scene::make_scene_command(std::move(name), std::move(args));
+}
+
 bool contains(std::string_view value, std::string_view needle)
 {
     return value.find(needle) != std::string_view::npos;
@@ -42,6 +51,90 @@ const Payload* payload_if(const quiz_vulkan::app_action_route_result& result)
     }
 
     return std::get_if<Payload>(&result.action->payload);
+}
+
+template <typename Payload>
+const Payload* command_payload_if(const quiz_vulkan::app_command_route_result& result)
+{
+    if (!result.action.has_value()) {
+        return nullptr;
+    }
+
+    return std::get_if<Payload>(&result.action->payload);
+}
+
+void require_same_action_type(
+    const quiz_vulkan::app_action_route_result& legacy,
+    const quiz_vulkan::app_command_route_result& typed,
+    const char* message)
+{
+    require(legacy.ok(), message);
+    require(typed.ok(), message);
+    require(legacy.action.has_value(), message);
+    require(typed.action.has_value(), message);
+    require(quiz_vulkan::domain::type_of(*legacy.action) == quiz_vulkan::domain::type_of(*typed.action), message);
+}
+
+void require_same_action_payload(
+    const quiz_vulkan::domain::app_action& legacy,
+    const quiz_vulkan::domain::app_action& typed,
+    const char* message)
+{
+    using namespace quiz_vulkan;
+
+    require(domain::type_of(legacy) == domain::type_of(typed), message);
+
+    if (const auto* payload = std::get_if<domain::load_source_action>(&legacy.payload)) {
+        const auto* typed_payload = std::get_if<domain::load_source_action>(&typed.payload);
+        require(typed_payload != nullptr, message);
+        require(payload->source_uri == typed_payload->source_uri, message);
+        return;
+    }
+    if (const auto* payload = std::get_if<domain::select_deck_action>(&legacy.payload)) {
+        const auto* typed_payload = std::get_if<domain::select_deck_action>(&typed.payload);
+        require(typed_payload != nullptr, message);
+        require(payload->deck_id == typed_payload->deck_id, message);
+        return;
+    }
+    if (const auto* payload = std::get_if<domain::select_day_action>(&legacy.payload)) {
+        const auto* typed_payload = std::get_if<domain::select_day_action>(&typed.payload);
+        require(typed_payload != nullptr, message);
+        require(payload->day_id == typed_payload->day_id, message);
+        return;
+    }
+    if (const auto* payload = std::get_if<domain::start_quiz_action>(&legacy.payload)) {
+        const auto* typed_payload = std::get_if<domain::start_quiz_action>(&typed.payload);
+        require(typed_payload != nullptr, message);
+        require(payload->mode == typed_payload->mode, message);
+        require(payload->random_seed == typed_payload->random_seed, message);
+        require(payload->shuffle == typed_payload->shuffle, message);
+        return;
+    }
+    if (const auto* payload = std::get_if<domain::submit_option_action>(&legacy.payload)) {
+        const auto* typed_payload = std::get_if<domain::submit_option_action>(&typed.payload);
+        require(typed_payload != nullptr, message);
+        require(payload->option_index == typed_payload->option_index, message);
+        return;
+    }
+    if (const auto* payload = std::get_if<domain::submit_text_answer_action>(&legacy.payload)) {
+        const auto* typed_payload = std::get_if<domain::submit_text_answer_action>(&typed.payload);
+        require(typed_payload != nullptr, message);
+        require(payload->answer_text == typed_payload->answer_text, message);
+        return;
+    }
+    if (const auto* payload = std::get_if<domain::submit_multiselect_action>(&legacy.payload)) {
+        const auto* typed_payload = std::get_if<domain::submit_multiselect_action>(&typed.payload);
+        require(typed_payload != nullptr, message);
+        require(payload->option_indexes == typed_payload->option_indexes, message);
+        return;
+    }
+    if (const auto* payload = std::get_if<domain::update_setting_action>(&legacy.payload)) {
+        const auto* typed_payload = std::get_if<domain::update_setting_action>(&typed.payload);
+        require(typed_payload != nullptr, message);
+        require(payload->name == typed_payload->name, message);
+        require(payload->value == typed_payload->value, message);
+        return;
+    }
 }
 
 void test_identity_actions()
@@ -115,6 +208,106 @@ void test_submit_option()
     app_action_route_result text = route_scene_action(action("submit_option", "abc"));
     require(!text.ok(), "text submit_option fails");
     require(contains(text.error, "submit_option"), "text submit_option names action in error");
+}
+
+void test_typed_command_equivalence()
+{
+    using namespace quiz_vulkan;
+
+    app_action_route_result legacy_start = route_scene_action(action("start_quiz", "wrong"));
+    app_command_route_result typed_start = route_scene_command(
+        command("start_quiz", {{"mode", scene::scene_value("wrong")}}));
+    require_same_action_type(legacy_start, typed_start, "start_quiz typed route matches legacy type");
+    const auto* legacy_start_payload = payload_if<domain::start_quiz_action>(legacy_start);
+    const auto* typed_start_payload = command_payload_if<domain::start_quiz_action>(typed_start);
+    require(legacy_start_payload != nullptr, "legacy start_quiz payload exists");
+    require(typed_start_payload != nullptr, "typed start_quiz payload exists");
+    require(legacy_start_payload->mode == typed_start_payload->mode, "typed start_quiz mode equals legacy route");
+
+    app_action_route_result legacy_option = route_scene_action(action("submit_option", "2"));
+    app_command_route_result typed_option = route_scene_command(
+        command("submit_option", {{"option_index", scene::scene_value(2)}}));
+    require_same_action_type(legacy_option, typed_option, "submit_option typed route matches legacy type");
+    const auto* legacy_option_payload = payload_if<domain::submit_option_action>(legacy_option);
+    const auto* typed_option_payload = command_payload_if<domain::submit_option_action>(typed_option);
+    require(legacy_option_payload != nullptr, "legacy submit_option payload exists");
+    require(typed_option_payload != nullptr, "typed submit_option payload exists");
+    require(legacy_option_payload->option_index == typed_option_payload->option_index, "typed option index equals legacy route");
+
+    app_action_route_result legacy_continue = route_scene_action(action("continue_after_feedback"));
+    app_command_route_result typed_continue = route_scene_command(command("continue_after_feedback"));
+    require_same_action_type(legacy_continue, typed_continue, "continue typed route matches legacy type");
+
+    const scene::scene_event_handler wrapped_handler = scene::make_scene_event_handler(action("start_quiz", "normal"));
+    require(wrapped_handler.commands.size() == 1, "legacy wrapper exposes one command");
+    app_command_route_result wrapped_command = route_scene_command(wrapped_handler.commands.front());
+    app_action_route_result wrapped_legacy = route_scene_action(action("start_quiz", "normal"));
+    require_same_action_type(wrapped_legacy, wrapped_command, "legacy wrapper command routes like action binding");
+    const auto* wrapped_legacy_payload = payload_if<domain::start_quiz_action>(wrapped_legacy);
+    const auto* wrapped_command_payload = command_payload_if<domain::start_quiz_action>(wrapped_command);
+    require(wrapped_legacy_payload != nullptr, "legacy wrapper action payload exists");
+    require(wrapped_command_payload != nullptr, "legacy wrapper command payload exists");
+    require(wrapped_legacy_payload->mode == wrapped_command_payload->mode, "legacy wrapper payload equals command payload");
+
+    struct equivalence_case {
+        const char* action_type;
+        const char* payload;
+        std::optional<std::string_view> submitted_text;
+    };
+
+    const std::vector<equivalence_case> cases = {
+        {"load_source", "file://deck.json", std::nullopt},
+        {"select_deck", "deck1", std::nullopt},
+        {"select_day", "day1", std::nullopt},
+        {"start_quiz", "due", std::nullopt},
+        {"submit_option", "1", std::nullopt},
+        {"submit_text_answer", "question_id_is_not_answer_text", std::string_view{"Seoul"}},
+        {"submit_multiselect", "0, 2", std::nullopt},
+        {"skip_question", "", std::nullopt},
+        {"mark_question_known", "", std::nullopt},
+        {"mark_question_unknown", "", std::nullopt},
+        {"previous_question", "", std::nullopt},
+        {"continue_after_feedback", "", std::nullopt},
+        {"update_setting", "ui_screen=settings", std::nullopt},
+    };
+
+    for (const equivalence_case& test_case : cases) {
+        const scene::scene_action_binding legacy_binding = action(test_case.action_type, test_case.payload);
+        const app_action_route_result legacy = route_scene_action(legacy_binding, test_case.submitted_text);
+        require(legacy.ok(), "legacy route in full equivalence matrix succeeds");
+
+        const scene::scene_event_handler typed_handler = scene::make_scene_event_handler(legacy_binding);
+        require(typed_handler.commands.size() == 1, "legacy binding wrapper emits one typed command");
+        const app_command_route_result typed = route_scene_command(typed_handler.commands.front(), test_case.submitted_text);
+        require(typed.ok(), "typed route in full equivalence matrix succeeds");
+        require(legacy.action.has_value(), "legacy matrix action exists");
+        require(typed.action.has_value(), "typed matrix action exists");
+        require_same_action_payload(*legacy.action, *typed.action, "legacy and typed command payloads are identical");
+    }
+
+    const app_command_route_result typed_setting = route_scene_command(
+        command("update_setting", {{"name", scene::scene_value("ui_screen")}, {"value", scene::scene_value("settings")}}));
+    require(typed_setting.ok(), "typed update_setting explicit args route");
+    const auto* typed_setting_payload = command_payload_if<domain::update_setting_action>(typed_setting);
+    require(typed_setting_payload != nullptr, "typed update_setting payload exists");
+    require(typed_setting_payload->name == "ui_screen", "typed update_setting name preserved");
+    require(typed_setting_payload->value == "settings", "typed update_setting value preserved");
+
+    const app_command_route_result typed_text = route_scene_command(
+        command("submit_text_answer", {{"answer_text", scene::scene_value("typed answer")}}));
+    require(typed_text.ok(), "typed submit_text_answer explicit answer routes");
+    const auto* typed_text_payload = command_payload_if<domain::submit_text_answer_action>(typed_text);
+    require(typed_text_payload != nullptr, "typed submit_text_answer payload exists");
+    require(typed_text_payload->answer_text == "typed answer", "typed submit_text_answer answer preserved");
+
+    const app_command_validation_result unknown_arg = validate_scene_command(
+        command("start_quiz", {{"mode", scene::scene_value("normal")}, {"surprise", scene::scene_value("no")}}));
+    require(!unknown_arg.ok(), "typed command rejects non-allowlisted args");
+    require(contains(unknown_arg.error, "Unsupported argument"), "unknown arg validation reports allowlist failure");
+
+    const app_command_validation_result unknown_command = validate_scene_command(command("delete_everything"));
+    require(!unknown_command.ok(), "typed command rejects non-allowlisted command names");
+    require(contains(unknown_command.error, "Unsupported scene command"), "unknown command validation reports unsupported command");
 }
 
 void test_submit_text_answer()
@@ -200,6 +393,7 @@ int main()
     test_identity_actions();
     test_start_quiz_modes();
     test_submit_option();
+    test_typed_command_equivalence();
     test_submit_text_answer();
     test_submit_multiselect();
     test_no_payload_actions();

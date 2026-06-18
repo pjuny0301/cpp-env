@@ -2,6 +2,7 @@
 
 #include <concepts>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,7 @@ concept SceneLayoutDataInterface = requires(
     scene::scene_layout_rule bounds_rule,
     scene::scene_image_ref image,
     scene::scene_action_binding action,
+    scene::scene_event_handler event_handler,
     scene::scene_node_semantics semantics,
     scene::scene_route_state route_state,
     scene::scene_animation_state animation_state,
@@ -46,6 +48,7 @@ concept SceneLayoutDataInterface = requires(
     { data.set_bounds_rule(node_id, bounds_rule, error) } -> std::same_as<bool>;
     { data.set_image(node_id, image, error) } -> std::same_as<bool>;
     { data.bind_action(node_id, action, error) } -> std::same_as<bool>;
+    { data.bind_event_handler(node_id, event_handler, error) } -> std::same_as<bool>;
     { data.set_semantics(node_id, semantics, error) } -> std::same_as<bool>;
     { data.set_focus(node_id, error) } -> std::same_as<bool>;
     { data.set_route(route_state) } -> std::same_as<bool>;
@@ -63,6 +66,7 @@ concept SceneLayoutEditDataInterface = requires(
     scene::scene_layout_rule bounds_rule,
     scene::scene_image_ref image,
     scene::scene_action_binding action,
+    scene::scene_event_handler event_handler,
     scene::scene_node_semantics semantics,
     scene::scene_route_state route_state,
     scene::scene_animation_state animation_state,
@@ -77,6 +81,7 @@ concept SceneLayoutEditDataInterface = requires(
     { edit_data.set_bounds_rule(node_id, bounds_rule) } -> std::same_as<scene::scene_layout_edit_data&>;
     { edit_data.set_image(node_id, image) } -> std::same_as<scene::scene_layout_edit_data&>;
     { edit_data.bind_action(node_id, action) } -> std::same_as<scene::scene_layout_edit_data&>;
+    { edit_data.bind_event_handler(node_id, event_handler) } -> std::same_as<scene::scene_layout_edit_data&>;
     { edit_data.set_semantics(node_id, semantics) } -> std::same_as<scene::scene_layout_edit_data&>;
     { edit_data.set_focus(node_id) } -> std::same_as<scene::scene_layout_edit_data&>;
     { edit_data.clear_focus() } -> std::same_as<scene::scene_layout_edit_data&>;
@@ -96,6 +101,7 @@ concept SceneLayoutPatchInterface = requires(
     scene::scene_layout_rule bounds_rule,
     scene::scene_image_ref image,
     scene::scene_action_binding action,
+    scene::scene_event_handler event_handler,
     scene::scene_node_semantics semantics,
     scene::scene_route_state route_state,
     scene::scene_animation_state animation_state,
@@ -107,6 +113,7 @@ concept SceneLayoutPatchInterface = requires(
     { patch.set_bounds_rule(node_id, bounds_rule) } -> std::same_as<scene::scene_layout_patch&>;
     { patch.set_image(node_id, image) } -> std::same_as<scene::scene_layout_patch&>;
     { patch.bind_action(node_id, action) } -> std::same_as<scene::scene_layout_patch&>;
+    { patch.bind_event_handler(node_id, event_handler) } -> std::same_as<scene::scene_layout_patch&>;
     { patch.set_semantics(node_id, semantics) } -> std::same_as<scene::scene_layout_patch&>;
     { patch.set_focus(node_id) } -> std::same_as<scene::scene_layout_patch&>;
     { patch.set_route(route_state) } -> std::same_as<scene::scene_layout_patch&>;
@@ -132,9 +139,47 @@ static_assert(requires(scene::scene_layout_patch_operation operation) {
     { operation.bounds_rule } -> std::same_as<scene::scene_layout_rule&>;
     { operation.image } -> std::same_as<scene::scene_image_ref&>;
     { operation.action } -> std::same_as<scene::scene_action_binding&>;
+    { operation.event_handler } -> std::same_as<scene::scene_event_handler&>;
     { operation.semantics } -> std::same_as<scene::scene_node_semantics&>;
     { operation.route_state } -> std::same_as<scene::scene_route_state&>;
     { operation.animation_state } -> std::same_as<scene::scene_animation_state&>;
+});
+
+static_assert(requires(
+    scene::scene_value value,
+    const scene::scene_value const_value,
+    scene::scene_command command,
+    const scene::scene_command const_command,
+    scene::scene_event_handler handler,
+    const scene::scene_event_handler const_handler) {
+    { value.value } -> std::same_as<scene::scene_value::value_type&>;
+    { const_value.empty() } -> std::same_as<bool>;
+    { const_value.string_if() } -> std::same_as<const std::string*>;
+    { const_value.bool_if() } -> std::same_as<const bool*>;
+    { const_value.int_if() } -> std::same_as<const std::int64_t*>;
+    { const_value.double_if() } -> std::same_as<const double*>;
+    { command.name } -> std::same_as<std::string&>;
+    { command.args } -> std::same_as<scene::scene_command_args&>;
+    { const_command.empty() } -> std::same_as<bool>;
+    { const_command.find_arg("key") } -> std::same_as<const scene::scene_value*>;
+    { handler.trigger } -> std::same_as<scene::scene_action_trigger&>;
+    { handler.commands } -> std::same_as<std::vector<scene::scene_command>&>;
+    { handler.condition } -> std::same_as<std::optional<scene::scene_event_condition>&>;
+    { handler.legacy_binding } -> std::same_as<scene::scene_action_binding&>;
+    { const_handler.empty() } -> std::same_as<bool>;
+    { scene::make_scene_command("command") } -> std::same_as<scene::scene_command>;
+    { scene::to_string(scene::scene_action_trigger::submit) } -> std::same_as<const char*>;
+});
+
+static_assert(requires(scene::scene_node_data node, scene::scene_input_region input_region) {
+    { node.action_binding } -> std::same_as<scene::scene_action_binding&>;
+    { node.has_action_binding } -> std::same_as<bool&>;
+    { node.event_handlers } -> std::same_as<std::vector<scene::scene_event_handler>&>;
+    { node.has_event_handlers } -> std::same_as<bool&>;
+    { input_region.action } -> std::same_as<scene::scene_action_binding&>;
+    { input_region.enabled } -> std::same_as<bool&>;
+    { input_region.semantics } -> std::same_as<scene::scene_node_semantics&>;
+    { input_region.event_handlers } -> std::same_as<std::vector<scene::scene_event_handler>&>;
 });
 
 static_assert(requires(

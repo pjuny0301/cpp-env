@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/app_scene_script.h"
 #include "core/domain/app_snapshot.hpp"
 #include "core/scene/scene_modifier.h"
 
@@ -345,6 +346,26 @@ inline scene::scene_action_binding change_action(std::string action_type, std::s
     return action;
 }
 
+inline scene::scene_command command_from_action(scene::scene_action_binding action)
+{
+    scene::scene_command command;
+    command.name = std::move(action.action_type);
+    if (!action.payload.empty()) {
+        command.args.emplace("payload", scene::scene_value(std::move(action.payload)));
+    }
+    return command;
+}
+
+inline scene::scene_event_handler gesture_action(
+    scene::scene_action_trigger trigger,
+    std::string action_type,
+    std::string payload = {})
+{
+    return scene::make_scene_event_handler(
+        trigger,
+        {command_from_action(press_action(std::move(action_type), std::move(payload)))});
+}
+
 inline scene::scene_quiz_stage quiz_stage_for_screen(quiz_screen_kind screen)
 {
     return screen == quiz_screen_kind::quiz_feedback
@@ -436,7 +457,21 @@ inline void append_button(
         style(std::move(style_token), "#29445a", "#ffffff", 6.0f));
     button.text_runs.push_back({std::move(label), button.style.token});
     edit_data.append_node(to_string_copy(parent_id), std::move(button));
+    const std::string action_type = action.action_type;
     edit_data.bind_action(action_node_id, std::move(action));
+    if (action_type == "continue_after_feedback") {
+        edit_data.bind_event_handler(
+            action_node_id,
+            gesture_action(scene::scene_action_trigger::swipe_right, "continue_after_feedback"));
+    } else if (action_type == "skip_question") {
+        edit_data.bind_event_handler(
+            action_node_id,
+            gesture_action(scene::scene_action_trigger::swipe_right, "skip_question"));
+    } else if (action_type == "mark_question_unknown") {
+        edit_data.bind_event_handler(
+            action_node_id,
+            gesture_action(scene::scene_action_trigger::long_press, "mark_question_unknown"));
+    }
 }
 
 inline void append_pill(
@@ -608,6 +643,10 @@ inline void append_screen_shell(
     root.layout_rule.avoid_keyboard = true;
     root.layout_rule.clip_children = true;
     root.semantics.role = scene::scene_node_role::app_shell;
+    root.event_handlers.push_back(gesture_action(scene::scene_action_trigger::swipe_left, "previous_question"));
+    root.event_handlers.push_back(gesture_action(scene::scene_action_trigger::swipe_right, "skip_question"));
+    root.event_handlers.push_back(gesture_action(scene::scene_action_trigger::long_press, "mark_question_unknown"));
+    root.has_event_handlers = true;
     edit_data.append_node("", std::move(root));
 }
 
@@ -1393,6 +1432,394 @@ inline void build_error_screen(const domain::app_snapshot& snapshot, scene::scen
     edit_data.set_focus("error_deck_" + detail::safe_id(snapshot.decks.front().id, "0"));
 }
 
+inline app_scene_script_command_template script_command_from_action(const scene::scene_action_binding& action)
+{
+    app_scene_script_command_template command;
+    command.name = action.action_type;
+    if (!action.payload.empty()) {
+        command.args.emplace("payload", action.payload);
+    }
+    return command;
+}
+
+inline app_scene_script_event_handler_template script_event_from_action(const scene::scene_action_binding& action)
+{
+    app_scene_script_event_handler_template event;
+    event.trigger = action.trigger;
+    event.commands.push_back(script_command_from_action(action));
+    event.legacy_binding = action;
+    return event;
+}
+
+inline app_scene_script_event_handler_template script_gesture_event(
+    scene::scene_action_trigger trigger,
+    std::string action_type,
+    std::string payload = {})
+{
+    scene::scene_action_binding action;
+    action.trigger = trigger;
+    action.action_type = std::move(action_type);
+    action.payload = std::move(payload);
+
+    app_scene_script_event_handler_template event;
+    event.trigger = trigger;
+    event.commands.push_back(script_command_from_action(action));
+    return event;
+}
+
+inline app_scene_script_node script_node_from_scene_node(scene::scene_node_data node, std::string parent_id)
+{
+    app_scene_script_node script_node;
+    script_node.id = std::move(node.id);
+    script_node.parent_id = std::move(parent_id);
+    script_node.kind = node.kind;
+    script_node.debug_name = std::move(node.debug_name);
+    script_node.layout_rule = node.layout_rule;
+    script_node.style = std::move(node.style);
+    script_node.text_runs = std::move(node.text_runs);
+    script_node.semantics = std::move(node.semantics);
+    script_node.visible = node.visible;
+    script_node.input_enabled = node.input_enabled;
+    return script_node;
+}
+
+inline void append_script_node(app_scene_script_document& document, std::string parent_id, scene::scene_node_data node)
+{
+    document.nodes.push_back(script_node_from_scene_node(std::move(node), std::move(parent_id)));
+}
+
+inline void append_script_screen_shell(
+    app_scene_script_document& document,
+    quiz_screen_kind screen,
+    const domain::app_snapshot& snapshot)
+{
+    document.route_state = describe_quiz_screen(screen, snapshot).route;
+
+    scene::scene_node_data root = detail::node(
+        detail::to_string_copy(detail::quiz_screens_root_id),
+        scene::scene_node_kind::container,
+        "quiz screens root",
+        detail::vertical_rule(14.0f, {24.0f, 24.0f, 24.0f, 24.0f}),
+        detail::style("screen", "#101820", "#f6f7f9"));
+    root.layout_rule.respect_safe_area = true;
+    root.layout_rule.avoid_keyboard = true;
+    root.layout_rule.clip_children = true;
+    root.semantics.role = scene::scene_node_role::app_shell;
+
+    app_scene_script_node root_node = script_node_from_scene_node(std::move(root), "");
+    root_node.events.push_back(script_gesture_event(scene::scene_action_trigger::swipe_left, "previous_question"));
+    root_node.events.push_back(script_gesture_event(scene::scene_action_trigger::swipe_right, "skip_question"));
+    root_node.events.push_back(script_gesture_event(scene::scene_action_trigger::long_press, "mark_question_unknown"));
+    document.nodes.push_back(std::move(root_node));
+}
+
+inline void append_script_text(
+    app_scene_script_document& document,
+    std::string parent_id,
+    std::string id,
+    std::string text,
+    std::string style_token = "body",
+    std::string foreground = "#f6f7f9")
+{
+    scene::scene_node_data text_node = detail::node(
+        std::move(id),
+        scene::scene_node_kind::text,
+        "text",
+        {},
+        detail::style(std::move(style_token), {}, std::move(foreground)));
+    text_node.layout_rule.horizontal_alignment = scene::scene_alignment::start;
+    text_node.text_runs.push_back({std::move(text), text_node.style.token});
+    append_script_node(document, std::move(parent_id), std::move(text_node));
+}
+
+inline void append_script_section(
+    app_scene_script_document& document,
+    std::string parent_id,
+    std::string id,
+    float gap = 8.0f)
+{
+    scene::scene_node_data section = detail::node(
+        std::move(id),
+        scene::scene_node_kind::container,
+        "section",
+        detail::vertical_rule(gap),
+        detail::style("section"));
+    append_script_node(document, std::move(parent_id), std::move(section));
+}
+
+inline void append_script_button(
+    app_scene_script_document& document,
+    std::string parent_id,
+    std::string id,
+    std::string label,
+    scene::scene_action_binding action,
+    std::string style_token = "button")
+{
+    scene::scene_node_data button = detail::node(
+        std::move(id),
+        scene::scene_node_kind::input,
+        "button",
+        detail::fixed_height_rule(44.0f, {12.0f, 10.0f, 12.0f, 10.0f}),
+        detail::style(std::move(style_token), "#29445a", "#ffffff", 6.0f));
+    button.text_runs.push_back({std::move(label), button.style.token});
+
+    app_scene_script_node script_node = script_node_from_scene_node(std::move(button), std::move(parent_id));
+    const std::string action_type = action.action_type;
+    script_node.events.push_back(script_event_from_action(std::move(action)));
+    if (action_type == "continue_after_feedback") {
+        script_node.events.push_back(script_gesture_event(scene::scene_action_trigger::swipe_right, "continue_after_feedback"));
+    } else if (action_type == "skip_question") {
+        script_node.events.push_back(script_gesture_event(scene::scene_action_trigger::swipe_right, "skip_question"));
+    } else if (action_type == "mark_question_unknown") {
+        script_node.events.push_back(script_gesture_event(scene::scene_action_trigger::long_press, "mark_question_unknown"));
+    }
+    document.nodes.push_back(std::move(script_node));
+}
+
+inline void append_script_pill(
+    app_scene_script_document& document,
+    std::string parent_id,
+    std::string id,
+    std::string label,
+    std::string style_token)
+{
+    scene::scene_node_data pill = detail::node(
+        std::move(id),
+        scene::scene_node_kind::text,
+        "pill",
+        detail::fixed_height_rule(32.0f, {10.0f, 7.0f, 10.0f, 7.0f}),
+        detail::style(std::move(style_token), "#1f2f3d", "#edf4f8", 6.0f));
+    pill.text_runs.push_back({std::move(label), pill.style.token});
+    append_script_node(document, std::move(parent_id), std::move(pill));
+}
+
+inline void append_script_header(
+    app_scene_script_document& document,
+    std::string parent_id,
+    std::string prefix,
+    std::string title,
+    std::string subtitle = {})
+{
+    const std::string section_id = prefix + "_header";
+    append_script_section(document, std::move(parent_id), section_id, 4.0f);
+    append_script_text(document, section_id, prefix + "_title", std::move(title), "heading", "#ffffff");
+    if (!subtitle.empty()) {
+        append_script_text(document, section_id, prefix + "_subtitle", std::move(subtitle), "muted", "#aeb9c2");
+    }
+}
+
+inline void append_script_empty_state(
+    app_scene_script_document& document,
+    std::string parent_id,
+    std::string prefix,
+    std::string message)
+{
+    append_script_text(document, std::move(parent_id), prefix + "_empty_state", std::move(message), "muted", "#aeb9c2");
+}
+
+inline void append_script_learning_summary(
+    app_scene_script_document& document,
+    std::string parent_id,
+    std::string prefix,
+    const domain::learning_summary& summary)
+{
+    const std::string row_id = prefix + "_learning_summary";
+    scene::scene_node_data row = detail::node(
+        row_id,
+        scene::scene_node_kind::container,
+        "learning summary",
+        detail::horizontal_rule(8.0f),
+        detail::style("summary_row"));
+    append_script_node(document, std::move(parent_id), std::move(row));
+
+    append_script_pill(document, row_id, prefix + "_learning_count", "Learning " + std::to_string(summary.learning_count), "learning_pill");
+    append_script_pill(document, row_id, prefix + "_known_count", "Known " + std::to_string(summary.known_count), "known_pill");
+    append_script_pill(document, row_id, prefix + "_unknown_count", "Unknown " + std::to_string(summary.unknown_count), "unknown_pill");
+    append_script_pill(document, row_id, prefix + "_wrong_note_count", "Wrong note " + std::to_string(summary.wrong_note_count), "wrong_note_pill");
+}
+
+inline void append_script_start_mode_button(
+    app_scene_script_document& document,
+    std::string parent_id,
+    std::string prefix,
+    domain::quiz_mode mode,
+    std::string label)
+{
+    const std::string mode_name = detail::quiz_mode_name(mode);
+    append_script_button(
+        document,
+        std::move(parent_id),
+        prefix + "_start_" + mode_name,
+        std::move(label),
+        detail::press_action("start_quiz", mode_name),
+        "button");
+}
+
+inline void append_script_learning_mode_buttons(
+    app_scene_script_document& document,
+    std::string parent_id,
+    std::string prefix,
+    const domain::learning_summary& summary)
+{
+    if (summary.known_count > 0) {
+        append_script_start_mode_button(document, parent_id, prefix, domain::quiz_mode::known, "Known questions");
+    }
+    if (summary.wrong_note_count > 0) {
+        append_script_start_mode_button(document, std::move(parent_id), std::move(prefix), domain::quiz_mode::wrong_note, "Wrong notes");
+    }
+}
+
+inline app_scene_script_document make_quiz_results_screen_script_document(const domain::app_snapshot& snapshot)
+{
+    app_scene_script_document document;
+    document.schema_version = app_scene_script_node_dsl_schema_version;
+    document.template_id = "builtin:quiz.quiz_results.v1";
+    document.screen = "quiz_results";
+    append_script_screen_shell(document, quiz_screen_kind::quiz_results, snapshot);
+
+    const std::string completed_count = snapshot.active_session.has_value()
+        ? std::to_string(snapshot.active_session->question_count)
+        : std::string("0");
+    append_script_header(
+        document,
+        detail::to_string_copy(detail::quiz_screens_root_id),
+        "quiz_results",
+        "Quiz results",
+        "Completed " + completed_count + " questions");
+    append_script_learning_summary(document, detail::to_string_copy(detail::quiz_screens_root_id), "quiz_results", snapshot.learning);
+
+    append_script_section(document, detail::to_string_copy(detail::quiz_screens_root_id), "quiz_results_actions", 8.0f);
+    scene::scene_node_semantics semantics;
+    semantics.role = scene::scene_node_role::quiz_controls;
+    semantics.label = "Quiz modes";
+    document.nodes.back().semantics = std::move(semantics);
+    append_script_start_mode_button(document, "quiz_results_actions", "quiz_results", domain::quiz_mode::normal, "Restart due questions");
+    append_script_learning_mode_buttons(document, "quiz_results_actions", "quiz_results", snapshot.learning);
+    document.focus_id = "quiz_results_start_normal";
+    return document;
+}
+
+inline app_scene_script_document make_settings_screen_script_document(const domain::app_snapshot& snapshot)
+{
+    app_scene_script_document document;
+    document.schema_version = app_scene_script_node_dsl_schema_version;
+    document.template_id = "builtin:quiz.settings.v1";
+    document.screen = "settings";
+    append_script_screen_shell(document, quiz_screen_kind::settings, snapshot);
+
+    append_script_header(
+        document,
+        detail::to_string_copy(detail::quiz_screens_root_id),
+        "settings",
+        "Settings",
+        std::to_string(snapshot.settings.size()) + " entries");
+    append_script_learning_summary(document, detail::to_string_copy(detail::quiz_screens_root_id), "settings", snapshot.learning);
+    append_script_section(document, detail::to_string_copy(detail::quiz_screens_root_id), "settings_entries", 6.0f);
+    append_script_text(document, "settings_entries", "settings_entries_label", "App settings", "section_label", "#d8e1e7");
+
+    if (snapshot.settings.empty()) {
+        append_script_empty_state(document, "settings_entries", "settings_entries", "No settings configured");
+    } else {
+        std::vector<std::pair<std::string, std::string>> entries;
+        entries.reserve(snapshot.settings.size());
+        for (const auto& [key, value] : snapshot.settings) {
+            entries.push_back({key, value});
+        }
+        std::sort(entries.begin(), entries.end(), [](const auto& lhs, const auto& rhs) {
+            return lhs.first < rhs.first;
+        });
+
+        std::size_t index = 0;
+        for (const auto& [key, value] : entries) {
+            append_script_text(
+                document,
+                "settings_entries",
+                "settings_entry_" + detail::safe_id(key, std::to_string(index)),
+                key + " = " + value,
+                "setting_value",
+                "#d8e1e7");
+            ++index;
+        }
+    }
+
+    append_script_button(
+        document,
+        detail::to_string_copy(detail::quiz_screens_root_id),
+        "settings_close",
+        "Back to decks",
+        detail::press_action("update_setting", "ui_screen=deck_list"),
+        "secondary_button");
+    document.focus_id = "settings_close";
+    return document;
+}
+
+inline app_scene_script_document make_error_screen_script_document(const domain::app_snapshot& snapshot)
+{
+    app_scene_script_document document;
+    document.schema_version = app_scene_script_node_dsl_schema_version;
+    document.template_id = "builtin:quiz.error.v1";
+    document.screen = "error";
+    append_script_screen_shell(document, quiz_screen_kind::error, snapshot);
+
+    append_script_header(
+        document,
+        detail::to_string_copy(detail::quiz_screens_root_id),
+        "error",
+        "Error",
+        snapshot.error_message.value_or("Unknown error"));
+
+    if (snapshot.error_message.has_value()) {
+        scene::scene_node_data banner = detail::node(
+            "error_error_banner",
+            scene::scene_node_kind::text,
+            "error banner",
+            detail::fixed_height_rule(42.0f, {12.0f, 10.0f, 12.0f, 10.0f}),
+            detail::style("error", "#553135", "#ffffff", 6.0f));
+        banner.text_runs.push_back({"Error: " + *snapshot.error_message, "error"});
+        append_script_node(document, detail::to_string_copy(detail::quiz_screens_root_id), std::move(banner));
+    }
+
+    append_script_section(document, detail::to_string_copy(detail::quiz_screens_root_id), "error_recovery", 8.0f);
+    append_script_text(document, "error_recovery", "error_recovery_label", "Recovery", "section_label", "#d8e1e7");
+
+    if (snapshot.decks.empty()) {
+        append_script_empty_state(document, "error_recovery", "error_recovery", "Load a source before starting");
+        return document;
+    }
+
+    for (std::size_t index = 0; index < snapshot.decks.size(); ++index) {
+        const domain::deck& deck = snapshot.decks[index];
+        const std::string deck_id = "error_deck_" + detail::safe_id(deck.id, std::to_string(index));
+        append_script_button(
+            document,
+            "error_recovery",
+            deck_id,
+            "Open " + deck.title,
+            detail::press_action("select_deck", deck.id),
+            "deck_button");
+    }
+
+    document.focus_id = "error_deck_" + detail::safe_id(snapshot.decks.front().id, "0");
+    return document;
+}
+
+inline app_scene_script_compile_result compile_quiz_screen_script(
+    const app_scene_script_document& document,
+    const domain::app_snapshot& snapshot)
+{
+    if (document.schema_version == app_scene_script_template_schema_version
+        && document.template_id == "builtin:quiz.day_intro.v1"
+        && document.screen == "day_intro") {
+        app_scene_script_compile_result result;
+        scene::scene_layout_edit_data edit_data("day_intro_screen_script");
+        build_day_intro_screen(snapshot, edit_data);
+        result.patch = edit_data.finish_patch();
+        return result;
+    }
+
+    return compile_app_scene_script(document, snapshot);
+}
+
 inline void build_quiz_screen(const domain::app_snapshot& snapshot, scene::scene_layout_edit_data& edit_data)
 {
     switch (screen_kind_for_snapshot(snapshot)) {
@@ -1465,30 +1892,93 @@ inline scene::scene_layout_patch make_quiz_feedback_screen_patch(const domain::a
 
 inline scene::scene_layout_patch make_quiz_results_screen_patch(const domain::app_snapshot& snapshot)
 {
-    scene::scene_layout_edit_data edit_data("quiz_results_screen");
-    build_quiz_results_screen(snapshot, edit_data);
-    return edit_data.finish_patch();
+    const app_scene_script_compile_result compiled =
+        compile_quiz_screen_script(make_quiz_results_screen_script_document(snapshot), snapshot);
+    return std::move(*compiled.patch);
 }
 
 inline scene::scene_layout_patch make_settings_screen_patch(const domain::app_snapshot& snapshot)
 {
-    scene::scene_layout_edit_data edit_data("settings_screen");
-    build_settings_screen(snapshot, edit_data);
-    return edit_data.finish_patch();
+    const app_scene_script_compile_result compiled =
+        compile_quiz_screen_script(make_settings_screen_script_document(snapshot), snapshot);
+    return std::move(*compiled.patch);
 }
 
 inline scene::scene_layout_patch make_error_screen_patch(const domain::app_snapshot& snapshot)
 {
-    scene::scene_layout_edit_data edit_data("error_screen");
-    build_error_screen(snapshot, edit_data);
-    return edit_data.finish_patch();
+    const app_scene_script_compile_result compiled =
+        compile_quiz_screen_script(make_error_screen_script_document(snapshot), snapshot);
+    return std::move(*compiled.patch);
 }
 
 inline scene::scene_layout_patch make_quiz_screen_patch(const domain::app_snapshot& snapshot)
 {
-    scene::scene_layout_edit_data edit_data("quiz_screen");
-    build_quiz_screen(snapshot, edit_data);
-    return edit_data.finish_patch();
+    switch (screen_kind_for_snapshot(snapshot)) {
+        case quiz_screen_kind::deck_list:
+            return make_deck_list_screen_patch(snapshot);
+        case quiz_screen_kind::deck_view:
+            return make_deck_view_screen_patch(snapshot);
+        case quiz_screen_kind::day_intro:
+            return make_day_intro_screen_patch(snapshot);
+        case quiz_screen_kind::quiz_active:
+            return make_quiz_active_screen_patch(snapshot);
+        case quiz_screen_kind::quiz_feedback:
+            return make_quiz_feedback_screen_patch(snapshot);
+        case quiz_screen_kind::quiz_results:
+            return make_quiz_results_screen_patch(snapshot);
+        case quiz_screen_kind::settings:
+            return make_settings_screen_patch(snapshot);
+        case quiz_screen_kind::error:
+            return make_error_screen_patch(snapshot);
+    }
+
+    return make_deck_list_screen_patch(snapshot);
+}
+
+inline void append_patch_to_edit_data(
+    const scene::scene_layout_patch& patch,
+    scene::scene_layout_edit_data& edit_data)
+{
+    for (const scene::scene_layout_patch_operation& operation : patch.operations()) {
+        switch (operation.type) {
+            case scene::scene_layout_patch_operation_type::append_node:
+                edit_data.append_node(operation.parent_id, operation.node, operation.child_index);
+                break;
+            case scene::scene_layout_patch_operation_type::remove_node:
+                edit_data.remove_node(operation.node_id);
+                break;
+            case scene::scene_layout_patch_operation_type::set_text:
+                edit_data.set_text(operation.node_id, operation.text_runs);
+                break;
+            case scene::scene_layout_patch_operation_type::set_style:
+                edit_data.set_style(operation.node_id, operation.style);
+                break;
+            case scene::scene_layout_patch_operation_type::set_bounds_rule:
+                edit_data.set_bounds_rule(operation.node_id, operation.bounds_rule);
+                break;
+            case scene::scene_layout_patch_operation_type::set_image:
+                edit_data.set_image(operation.node_id, operation.image);
+                break;
+            case scene::scene_layout_patch_operation_type::bind_action:
+                edit_data.bind_action(operation.node_id, operation.action);
+                break;
+            case scene::scene_layout_patch_operation_type::bind_event_handler:
+                edit_data.bind_event_handler(operation.node_id, operation.event_handler);
+                break;
+            case scene::scene_layout_patch_operation_type::set_semantics:
+                edit_data.set_semantics(operation.node_id, operation.semantics);
+                break;
+            case scene::scene_layout_patch_operation_type::set_focus:
+                edit_data.set_focus(operation.node_id);
+                break;
+            case scene::scene_layout_patch_operation_type::set_route:
+                edit_data.set_route(operation.route_state);
+                break;
+            case scene::scene_layout_patch_operation_type::start_transition:
+                edit_data.start_transition(operation.animation_state);
+                break;
+        }
+    }
 }
 
 class quiz_screen_scene_modifier : public scene::scene_modifier {
@@ -1542,13 +2032,13 @@ public:
                 build_quiz_feedback_screen(snapshot_, edit_data);
                 return;
             case quiz_screen_kind::quiz_results:
-                build_quiz_results_screen(snapshot_, edit_data);
+                append_patch_to_edit_data(make_quiz_results_screen_patch(snapshot_), edit_data);
                 return;
             case quiz_screen_kind::settings:
-                build_settings_screen(snapshot_, edit_data);
+                append_patch_to_edit_data(make_settings_screen_patch(snapshot_), edit_data);
                 return;
             case quiz_screen_kind::error:
-                build_error_screen(snapshot_, edit_data);
+                append_patch_to_edit_data(make_error_screen_patch(snapshot_), edit_data);
                 return;
         }
     }
@@ -1581,7 +2071,7 @@ public:
             edit_data.remove_node(detail::to_string_copy(detail::quiz_screens_root_id));
         }
 
-        build_quiz_screen(snapshot_, edit_data);
+        append_patch_to_edit_data(make_quiz_screen_patch(snapshot_), edit_data);
     }
 
 private:

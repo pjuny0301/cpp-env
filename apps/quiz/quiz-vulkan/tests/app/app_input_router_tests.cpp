@@ -35,17 +35,33 @@ quiz_vulkan::scene::scene_action_binding action(std::string action_type, std::st
     return binding;
 }
 
+quiz_vulkan::scene::scene_event_handler handler(
+    quiz_vulkan::scene::scene_action_trigger trigger,
+    std::string action_type,
+    std::string payload = {})
+{
+    quiz_vulkan::scene::scene_command command;
+    command.name = std::move(action_type);
+    if (!payload.empty()) {
+        command.args.emplace("payload", quiz_vulkan::scene::scene_value(std::move(payload)));
+    }
+    return quiz_vulkan::scene::make_scene_event_handler(trigger, {std::move(command)});
+}
+
 quiz_vulkan::scene::scene_input_region region(
     std::string node_id,
     quiz_vulkan::scene::scene_rect bounds,
-    quiz_vulkan::scene::scene_action_binding binding)
+    quiz_vulkan::scene::scene_action_binding binding,
+    std::vector<quiz_vulkan::scene::scene_event_handler> event_handlers = {})
 {
-    return quiz_vulkan::scene::scene_input_region{
+    quiz_vulkan::scene::scene_input_region input_region{
         .node_id = std::move(node_id),
         .bounds = bounds,
         .action = std::move(binding),
         .enabled = true,
     };
+    input_region.event_handlers = std::move(event_handlers);
+    return input_region;
 }
 
 quiz_vulkan::scene::placed_scene scene_with_button()
@@ -55,6 +71,21 @@ quiz_vulkan::scene::placed_scene scene_with_button()
         "option_2",
         {10.0f, 20.0f, 80.0f, 40.0f},
         action("submit_option", "2")));
+    return placed;
+}
+
+quiz_vulkan::scene::placed_scene scene_with_gesture_defaults()
+{
+    quiz_vulkan::scene::placed_scene placed;
+    placed.input_regions.push_back(region(
+        "root",
+        {0.0f, 0.0f, 320.0f, 480.0f},
+        {},
+        {
+            handler(quiz_vulkan::scene::scene_action_trigger::swipe_left, "previous_question"),
+            handler(quiz_vulkan::scene::scene_action_trigger::swipe_right, "skip_question"),
+            handler(quiz_vulkan::scene::scene_action_trigger::long_press, "mark_question_unknown"),
+        }));
     return placed;
 }
 
@@ -238,7 +269,8 @@ void test_pointer_hold_update_time_routes_long_press()
     require(long_press != nullptr, "held pointer produces gesture payload");
     require(long_press->kind == input::gesture_kind::long_press, "held pointer produces long press");
 
-    const app_input_route_result result = route_normalized_input_event(held_events.front(), {}, {});
+    const app_input_route_result result =
+        route_normalized_input_event(held_events.front(), scene_with_gesture_defaults(), {});
     require(result.ok(), "held long press route succeeds");
     require(payload_if<domain::mark_question_unknown_action>(result) != nullptr,
         "held long press routes mark unknown");
@@ -342,7 +374,7 @@ void test_swipe_left_routes_previous_question()
     using namespace quiz_vulkan;
 
     const app_input_route_result result =
-        route_normalized_input_event(input::input_event{gesture(input::gesture_kind::swipe_left)}, {}, {});
+        route_normalized_input_event(input::input_event{gesture(input::gesture_kind::swipe_left)}, scene_with_gesture_defaults(), {});
     require(result.ok(), "swipe left route succeeds");
     require(result.handled, "swipe left is handled");
     require(result.needs_render, "swipe left requests render");
@@ -356,9 +388,15 @@ void test_swipe_right_prefers_scene_continue_then_skip()
 
     scene::placed_scene feedback_scene;
     feedback_scene.input_regions.push_back(region(
+        "root",
+        {0.0f, 0.0f, 320.0f, 480.0f},
+        {},
+        {handler(scene::scene_action_trigger::swipe_right, "skip_question")}));
+    feedback_scene.input_regions.push_back(region(
         "continue",
         {0.0f, 0.0f, 80.0f, 40.0f},
-        action("continue_after_feedback")));
+        action("continue_after_feedback"),
+        {handler(scene::scene_action_trigger::swipe_right, "continue_after_feedback")}));
     const app_input_route_result continue_result =
         route_normalized_input_event(input::input_event{gesture(input::gesture_kind::swipe_right)}, feedback_scene, {});
     require(continue_result.ok(), "swipe right continue route succeeds");
@@ -367,9 +405,15 @@ void test_swipe_right_prefers_scene_continue_then_skip()
 
     scene::placed_scene active_scene;
     active_scene.input_regions.push_back(region(
+        "root",
+        {0.0f, 0.0f, 320.0f, 480.0f},
+        {},
+        {handler(scene::scene_action_trigger::swipe_right, "skip_question")}));
+    active_scene.input_regions.push_back(region(
         "skip",
         {0.0f, 0.0f, 80.0f, 40.0f},
-        action("skip_question")));
+        action("skip_question"),
+        {handler(scene::scene_action_trigger::swipe_right, "skip_question")}));
     const app_input_route_result skip_result =
         route_normalized_input_event(input::input_event{gesture(input::gesture_kind::swipe_right)}, active_scene, {});
     require(skip_result.ok(), "swipe right skip route succeeds");
@@ -382,7 +426,7 @@ void test_long_press_routes_mark_unknown()
     using namespace quiz_vulkan;
 
     const app_input_route_result result =
-        route_normalized_input_event(input::input_event{gesture(input::gesture_kind::long_press)}, {}, {});
+        route_normalized_input_event(input::input_event{gesture(input::gesture_kind::long_press)}, scene_with_gesture_defaults(), {});
     require(result.ok(), "long press route succeeds");
     require(result.handled, "long press is handled");
     require(result.needs_render, "long press requests render");

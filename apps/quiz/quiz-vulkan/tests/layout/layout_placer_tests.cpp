@@ -118,9 +118,43 @@ int main()
     assert(near(placed_button->bounds.y, 34.0f));
     assert(near(placed_button->bounds.width, 100.0f));
     assert(near(placed_button->bounds.height, 30.0f));
+    assert(placed_button->has_event_handlers);
+    assert(placed_button->event_handlers.size() == 1);
+    assert(placed_button->event_handlers.front().commands.size() == 1);
+    assert(placed_button->event_handlers.front().commands.front().name == "tap");
+    assert(placed_button->event_handlers.front().legacy_binding.action_type == "tap");
     assert(placed.input_regions.size() == 1);
     assert(placed.input_regions.front().node_id == "button");
     assert(near(placed.input_regions.front().bounds.height, 30.0f));
+    assert(placed.input_regions.front().event_handlers.size() == 1);
+    assert(placed.input_regions.front().event_handlers.front().commands.front().name == "tap");
+
+    quiz_vulkan::scene::scene_layout_data typed_scene("typed");
+    quiz_vulkan::scene::scene_node_data typed_button;
+    typed_button.id = "typed_button";
+    typed_button.kind = quiz_vulkan::scene::scene_node_kind::input;
+    typed_button.layout_rule.has_height = true;
+    typed_button.layout_rule.height = 32.0f;
+    assert(typed_scene.append_node("", typed_button));
+    assert(typed_scene.bind_event_handler(
+        "typed_button",
+        quiz_vulkan::scene::make_scene_event_handler(
+            quiz_vulkan::scene::scene_action_trigger::press,
+            {quiz_vulkan::scene::make_scene_command(
+                "submit_option",
+                {{"option_index", quiz_vulkan::scene::scene_value(1)}})})));
+    const quiz_vulkan::scene::placed_scene typed_placed = quiz_vulkan::scene::layout_placer().place(
+        typed_scene,
+        {0.0f, 0.0f, 120.0f, 100.0f},
+        metrics);
+    const quiz_vulkan::scene::placed_scene_node* placed_typed_button = typed_placed.find_node("typed_button");
+    assert(placed_typed_button != nullptr);
+    assert(!placed_typed_button->has_action_binding);
+    assert(placed_typed_button->has_event_handlers);
+    assert(typed_placed.input_regions.size() == 1);
+    assert(typed_placed.input_regions.front().action.empty());
+    assert(typed_placed.input_regions.front().event_handlers.size() == 1);
+    assert(typed_placed.input_regions.front().event_handlers.front().commands.front().name == "submit_option");
 
     quiz_vulkan::scene::scene_node_data badge;
     badge.id = "badge";

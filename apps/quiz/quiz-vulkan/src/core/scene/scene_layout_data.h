@@ -2,10 +2,14 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <map>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace quiz_vulkan::scene {
@@ -179,7 +183,33 @@ enum class scene_action_trigger {
     press,
     focus,
     change,
+    swipe_left,
+    swipe_right,
+    long_press,
+    submit,
 };
+
+inline const char* to_string(scene_action_trigger trigger)
+{
+    switch (trigger) {
+        case scene_action_trigger::press:
+            return "press";
+        case scene_action_trigger::focus:
+            return "focus";
+        case scene_action_trigger::change:
+            return "change";
+        case scene_action_trigger::swipe_left:
+            return "swipe_left";
+        case scene_action_trigger::swipe_right:
+            return "swipe_right";
+        case scene_action_trigger::long_press:
+            return "long_press";
+        case scene_action_trigger::submit:
+            return "submit";
+    }
+
+    return "press";
+}
 
 struct scene_action_binding {
     scene_action_trigger trigger = scene_action_trigger::press;
@@ -191,6 +221,144 @@ struct scene_action_binding {
         return action_type.empty() && payload.empty();
     }
 };
+
+struct scene_value {
+    using value_type = std::variant<std::monostate, bool, std::int64_t, double, std::string>;
+
+    value_type value;
+
+    scene_value() = default;
+
+    scene_value(bool bool_value)
+        : value(bool_value)
+    {
+    }
+
+    scene_value(int int_value)
+        : value(static_cast<std::int64_t>(int_value))
+    {
+    }
+
+    scene_value(std::int64_t int_value)
+        : value(int_value)
+    {
+    }
+
+    scene_value(std::size_t size_value)
+        : value(static_cast<std::int64_t>(size_value))
+    {
+    }
+
+    scene_value(double double_value)
+        : value(double_value)
+    {
+    }
+
+    scene_value(const char* string_value)
+        : value(std::string(string_value == nullptr ? "" : string_value))
+    {
+    }
+
+    scene_value(std::string string_value)
+        : value(std::move(string_value))
+    {
+    }
+
+    bool empty() const
+    {
+        return std::holds_alternative<std::monostate>(value);
+    }
+
+    const std::string* string_if() const
+    {
+        return std::get_if<std::string>(&value);
+    }
+
+    const bool* bool_if() const
+    {
+        return std::get_if<bool>(&value);
+    }
+
+    const std::int64_t* int_if() const
+    {
+        return std::get_if<std::int64_t>(&value);
+    }
+
+    const double* double_if() const
+    {
+        return std::get_if<double>(&value);
+    }
+};
+
+using scene_command_args = std::map<std::string, scene_value>;
+
+struct scene_command {
+    std::string name;
+    scene_command_args args;
+
+    bool empty() const
+    {
+        return name.empty() && args.empty();
+    }
+
+    const scene_value* find_arg(std::string_view key) const
+    {
+        const auto found = args.find(std::string(key));
+        return found == args.end() ? nullptr : &found->second;
+    }
+};
+
+using scene_event_condition = std::string;
+
+struct scene_event_handler {
+    scene_action_trigger trigger = scene_action_trigger::press;
+    std::vector<scene_command> commands;
+    std::optional<scene_event_condition> condition;
+    scene_action_binding legacy_binding;
+
+    bool empty() const
+    {
+        return commands.empty() && legacy_binding.empty();
+    }
+};
+
+inline scene_command make_scene_command(std::string name, scene_command_args args = {})
+{
+    scene_command command;
+    command.name = std::move(name);
+    command.args = std::move(args);
+    return command;
+}
+
+inline scene_event_handler make_scene_event_handler(
+    scene_action_trigger trigger,
+    std::vector<scene_command> commands,
+    std::string condition = {})
+{
+    scene_event_handler handler;
+    handler.trigger = trigger;
+    handler.commands = std::move(commands);
+    if (!condition.empty()) {
+        handler.condition = std::move(condition);
+    }
+    return handler;
+}
+
+inline scene_event_handler make_scene_event_handler(scene_action_binding binding)
+{
+    scene_event_handler handler;
+    handler.trigger = binding.trigger;
+    if (!binding.empty()) {
+        scene_command command;
+        command.name = binding.action_type;
+        if (!binding.payload.empty()) {
+            command.args.emplace("payload", scene_value(binding.payload));
+        }
+        handler.commands.push_back(command);
+    }
+    handler.legacy_binding = std::move(binding);
+    return handler;
+}
 
 enum class scene_node_role {
     generic,
@@ -371,6 +539,7 @@ struct scene_input_region {
     scene_action_binding action;
     bool enabled = true;
     scene_node_semantics semantics;
+    std::vector<scene_event_handler> event_handlers;
 };
 
 struct scene_animation_state {
@@ -398,6 +567,8 @@ struct scene_node_data {
     bool has_image = false;
     scene_action_binding action_binding;
     bool has_action_binding = false;
+    std::vector<scene_event_handler> event_handlers;
+    bool has_event_handlers = false;
     scene_node_semantics semantics;
     std::vector<scene_node_id> children;
     bool visible = true;
@@ -523,6 +694,11 @@ public:
 
         node.parent_id = resolved_parent_id;
         node.children.clear();
+        node.has_action_binding = !node.action_binding.empty();
+        if (node.has_action_binding && node.event_handlers.empty()) {
+            node.event_handlers.push_back(make_scene_event_handler(node.action_binding));
+        }
+        node.has_event_handlers = !node.event_handlers.empty();
         const scene_node_id node_id = node.id;
         nodes_.emplace(node_id, std::move(node));
 
@@ -631,6 +807,33 @@ public:
 
         node->action_binding = std::move(action);
         node->has_action_binding = !node->action_binding.empty();
+        node->event_handlers.clear();
+        if (node->has_action_binding) {
+            node->event_handlers.push_back(make_scene_event_handler(node->action_binding));
+        }
+        node->has_event_handlers = !node->event_handlers.empty();
+        return true;
+    }
+
+    bool bind_event_handler(const scene_node_id& id, scene_event_handler handler, std::string* error = nullptr)
+    {
+        auto* node = find_node(id);
+        if (node == nullptr) {
+            set_error(error, "node does not exist: " + id);
+            return false;
+        }
+
+        if (handler.empty()) {
+            set_error(error, "event handler must contain a command or legacy binding");
+            return false;
+        }
+
+        if (!handler.legacy_binding.empty()) {
+            node->action_binding = handler.legacy_binding;
+            node->has_action_binding = true;
+        }
+        node->event_handlers.push_back(std::move(handler));
+        node->has_event_handlers = true;
         return true;
     }
 

@@ -1,0 +1,1382 @@
+#include "app/app_scene_scenario.h"
+
+#include <cassert>
+#include <cstddef>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace {
+
+void require(bool condition, const char* message)
+{
+    assert((condition) && message);
+}
+
+class fixed_text_metrics final : public quiz_vulkan::scene::text_metrics_interface {
+public:
+    quiz_vulkan::scene::scene_size measure_text(
+        const std::vector<quiz_vulkan::scene::scene_text_run>& text_runs,
+        const quiz_vulkan::scene::scene_style&,
+        float) const override
+    {
+        std::size_t character_count = 0;
+        for (const quiz_vulkan::scene::scene_text_run& run : text_runs) {
+            character_count += run.text.size();
+        }
+        return quiz_vulkan::scene::scene_size{static_cast<float>(character_count * 8), 18.0f};
+    }
+};
+
+quiz_vulkan::domain::deck make_test_deck()
+{
+    using namespace quiz_vulkan::domain;
+
+    question quiz_question;
+    quiz_question.id = "q1";
+    quiz_question.prompt = "Capital of Korea?";
+    quiz_question.type = question_type::answer;
+    quiz_question.options.push_back(option{"Seoul", true});
+    quiz_question.options.push_back(option{"Busan", false});
+
+    day quiz_day;
+    quiz_day.id = "day1";
+    quiz_day.title = "Day 1";
+    quiz_day.questions.push_back(std::move(quiz_question));
+
+    deck quiz_deck;
+    quiz_deck.id = "deck1";
+    quiz_deck.title = "Geography";
+    quiz_deck.days.push_back(std::move(quiz_day));
+    return quiz_deck;
+}
+
+quiz_vulkan::domain::deck make_two_question_deck()
+{
+    using namespace quiz_vulkan::domain;
+
+    question first_question;
+    first_question.id = "q1";
+    first_question.prompt = "Capital of Korea?";
+    first_question.type = question_type::answer;
+    first_question.options.push_back(option{"Seoul", true});
+    first_question.options.push_back(option{"Busan", false});
+
+    question second_question;
+    second_question.id = "q2";
+    second_question.prompt = "Capital of Japan?";
+    second_question.type = question_type::answer;
+    second_question.options.push_back(option{"Tokyo", true});
+    second_question.options.push_back(option{"Osaka", false});
+
+    day quiz_day;
+    quiz_day.id = "day1";
+    quiz_day.title = "Day 1";
+    quiz_day.questions.push_back(std::move(first_question));
+    quiz_day.questions.push_back(std::move(second_question));
+
+    deck quiz_deck;
+    quiz_deck.id = "deck1";
+    quiz_deck.title = "Geography";
+    quiz_deck.days.push_back(std::move(quiz_day));
+    return quiz_deck;
+}
+
+quiz_vulkan::domain::deck make_blank_text_deck()
+{
+    using namespace quiz_vulkan::domain;
+
+    question quiz_question;
+    quiz_question.id = "q_blank";
+    quiz_question.prompt = "Capital of Korea is ____.";
+    quiz_question.type = question_type::blank;
+    quiz_question.accepted_answers.push_back("Seoul");
+
+    day quiz_day;
+    quiz_day.id = "day1";
+    quiz_day.title = "Day 1";
+    quiz_day.questions.push_back(std::move(quiz_question));
+
+    deck quiz_deck;
+    quiz_deck.id = "deck1";
+    quiz_deck.title = "Geography";
+    quiz_deck.days.push_back(std::move(quiz_day));
+    return quiz_deck;
+}
+
+quiz_vulkan::domain::deck make_multiselect_deck()
+{
+    using namespace quiz_vulkan::domain;
+
+    question quiz_question;
+    quiz_question.id = "q_multi";
+    quiz_question.prompt = "Select the capital of Korea.";
+    quiz_question.type = question_type::multiselect;
+    quiz_question.options.push_back(option{"Seoul", true});
+    quiz_question.options.push_back(option{"Busan", false});
+
+    day quiz_day;
+    quiz_day.id = "day1";
+    quiz_day.title = "Day 1";
+    quiz_day.questions.push_back(std::move(quiz_question));
+
+    deck quiz_deck;
+    quiz_deck.id = "deck1";
+    quiz_deck.title = "Geography";
+    quiz_deck.days.push_back(std::move(quiz_day));
+    return quiz_deck;
+}
+
+void require_trace_entry(
+    const quiz_vulkan::app_scene_scenario_trace_entry& entry,
+    const char* before_screen,
+    const char* action_type,
+    const char* after_screen,
+    const char* message)
+{
+    require(entry.before_screen_id == before_screen, message);
+    require(entry.action_type == action_type, message);
+    require(entry.after_screen_id == after_screen, message);
+    require(entry.handled, message);
+    require(entry.needs_render, message);
+    require(entry.before_node_count > 1, message);
+    require(entry.after_node_count > 1, message);
+    require(entry.before_input_region_count > 0, message);
+    require(entry.after_input_region_count > 0, message);
+}
+
+void test_quiz_scene_event_replay_reaches_results()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "answer_first_option",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_active_option_0",
+                .now_ms = 200,
+            },
+            app_scene_scenario_step{
+                .name = "continue_feedback",
+                .input = app_scene_scenario_input_kind::swipe_right,
+                .now_ms = 300,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "scenario replay succeeds");
+    require(result.trace.size() == 3, "scenario emits one trace entry per step");
+    require_trace_entry(result.trace[0], "day_intro", "start_quiz", "quiz_active", "start step trace is stable");
+    require(result.trace[0].before_focus_id == "day_intro_start_normal", "start step captures day intro focus");
+    require(result.trace[0].after_focus_id == "quiz_active_option_0", "start step captures active focus");
+
+    require_trace_entry(result.trace[1], "quiz_active", "submit_option", "quiz_feedback", "answer step trace is stable");
+    require(result.trace[1].target_node_id == "quiz_active_option_0", "answer step records target node");
+    require(result.trace[1].after_focus_id == "quiz_feedback_continue", "answer step captures feedback focus");
+
+    require_trace_entry(result.trace[2], "quiz_feedback", "continue_after_feedback", "quiz_results", "continue step trace is stable");
+    require(result.trace[2].event_kind == "swipe_right", "continue step records gesture kind");
+    require(result.final_frame.layout.route_state().screen_id == "quiz_results", "final frame is results");
+    require(result.final_frame.layout.contains_node("quiz_results_actions"), "final frame emits results actions");
+    require(result.final_frame.snapshot.screen == domain::app_screen::completed, "final snapshot is completed");
+}
+
+void test_quiz_scene_event_replay_supports_compact_viewport()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal_compact",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "answer_first_option_compact",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_active_option_0",
+                .now_ms = 200,
+            },
+            app_scene_scenario_step{
+                .name = "continue_feedback_compact",
+                .input = app_scene_scenario_input_kind::swipe_right,
+                .now_ms = 300,
+            },
+        },
+        {0.0f, 0.0f, 320.0f, 480.0f},
+        metrics);
+
+    require(result.ok(), "compact viewport scenario replay succeeds");
+    require(result.trace.size() == 3, "compact viewport scenario emits one trace entry per step");
+    require_trace_entry(result.trace[0], "day_intro", "start_quiz", "quiz_active", "compact start trace is stable");
+    require_trace_entry(result.trace[1], "quiz_active", "submit_option", "quiz_feedback", "compact answer trace is stable");
+    require_trace_entry(result.trace[2], "quiz_feedback", "continue_after_feedback", "quiz_results", "compact continue trace is stable");
+    require(result.final_frame.placed.usable_bounds.width == 320.0f, "compact final frame keeps viewport width");
+    require(result.final_frame.placed.usable_bounds.height == 480.0f, "compact final frame keeps viewport height");
+    require(result.final_frame.layout.route_state().screen_id == "quiz_results", "compact final frame is results");
+    require(result.final_frame.layout.contains_node("quiz_results_actions"), "compact final frame emits results actions");
+    require(!result.final_frame.placed.input_regions.empty(), "compact final frame keeps input regions");
+}
+
+void test_quiz_scene_feedback_continue_button_replay_advances_question()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_two_question_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "answer_first_option",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_active_option_0",
+                .now_ms = 200,
+            },
+            app_scene_scenario_step{
+                .name = "continue_feedback_button",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_feedback_continue",
+                .now_ms = 300,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "feedback continue button scenario replay succeeds");
+    require(result.trace.size() == 3, "feedback continue button scenario emits one trace entry per step");
+    require_trace_entry(result.trace[2], "quiz_feedback", "continue_after_feedback", "quiz_active", "feedback continue button trace is stable");
+    require(result.trace[2].event_kind == "tap_node", "feedback continue button records tap event kind");
+    require(result.trace[2].target_node_id == "quiz_feedback_continue", "feedback continue button records target node");
+    require(result.trace[2].before_focus_id == "quiz_feedback_continue", "feedback continue button starts from continue focus");
+    require(result.trace[2].after_focus_id == "quiz_active_option_0", "feedback continue button advances to next active focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::quiz, "feedback continue final snapshot remains in quiz");
+    require(result.final_frame.snapshot.active_session.has_value(), "feedback continue final snapshot has session");
+    const domain::session_snapshot& session = *result.final_frame.snapshot.active_session;
+    require(session.current_index == 1, "feedback continue final snapshot advances to second question index");
+    require(session.current_question.has_value(), "feedback continue final snapshot has current question");
+    require(session.current_question->question_id == "q2", "feedback continue final snapshot advances to q2");
+    require(!session.feedback.has_value(), "feedback continue final snapshot clears feedback");
+}
+
+void test_quiz_scene_feedback_continue_button_replay_reaches_results()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "answer_first_option",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_active_option_0",
+                .now_ms = 200,
+            },
+            app_scene_scenario_step{
+                .name = "continue_feedback_button_to_results",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_feedback_continue",
+                .now_ms = 300,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "feedback continue button to results scenario replay succeeds");
+    require(result.trace.size() == 3, "feedback continue button to results scenario emits one trace entry per step");
+    require_trace_entry(result.trace[2], "quiz_feedback", "continue_after_feedback", "quiz_results", "feedback continue button to results trace is stable");
+    require(result.trace[2].event_kind == "tap_node", "feedback continue button to results records tap event kind");
+    require(result.trace[2].target_node_id == "quiz_feedback_continue", "feedback continue button to results records target node");
+    require(result.trace[2].before_focus_id == "quiz_feedback_continue", "feedback continue button to results starts from continue focus");
+    require(result.trace[2].after_focus_id == "quiz_results_start_normal", "feedback continue button to results captures results focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::completed, "feedback continue button to results final snapshot is completed");
+    require(result.final_frame.layout.route_state().screen_id == "quiz_results", "feedback continue button to results final frame is results");
+    require(result.final_frame.layout.contains_node("quiz_results_actions"), "feedback continue button to results final frame emits results actions");
+}
+
+void test_quiz_scene_empty_replay_renders_initial_frame()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {},
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "empty scenario replay succeeds");
+    require(result.trace.empty(), "empty scenario replay emits no trace entries");
+    require(result.final_frame.layout.route_state().screen_id == "deck_list", "empty scenario final frame is initial deck list");
+    require(result.final_frame.layout.contains_node("deck_list_deck_deck1"), "empty scenario final frame emits first deck");
+    require(result.final_frame.layout.has_focus(), "empty scenario final frame has focus");
+    require(result.final_frame.layout.focus_id() == "deck_list_deck_deck1", "empty scenario final frame focuses first deck");
+    require(result.final_frame.snapshot.screen == domain::app_screen::deck_select, "empty scenario final snapshot stays on deck select");
+    require(!result.final_frame.snapshot.selected_deck_id.has_value(), "empty scenario final snapshot has no selected deck");
+    require(!result.final_frame.snapshot.selected_day_id.has_value(), "empty scenario final snapshot has no selected day");
+}
+
+void test_quiz_scene_deck_navigation_replay_reaches_day_intro()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "select_deck",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "deck_list_deck_deck1",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "select_day",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "deck_view_day_day1",
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "deck navigation scenario replay succeeds");
+    require(result.trace.size() == 2, "deck navigation scenario emits one trace entry per step");
+    require_trace_entry(result.trace[0], "deck_list", "select_deck", "deck_view", "select deck trace is stable");
+    require(result.trace[0].target_node_id == "deck_list_deck_deck1", "select deck records target node");
+    require(result.trace[0].before_focus_id == "deck_list_deck_deck1", "select deck starts from deck focus");
+    require(result.trace[0].after_focus_id == "deck_view_day_day1", "select deck captures first day focus");
+
+    require_trace_entry(result.trace[1], "deck_view", "select_day", "day_intro", "select day trace is stable");
+    require(result.trace[1].target_node_id == "deck_view_day_day1", "select day records target node");
+    require(result.trace[1].after_focus_id == "day_intro_start_normal", "select day captures day intro focus");
+
+    require(result.final_frame.layout.route_state().screen_id == "day_intro", "deck navigation final frame is day intro");
+    require(result.final_frame.snapshot.selected_deck_id.has_value(), "deck navigation final snapshot has selected deck");
+    require(result.final_frame.snapshot.selected_day_id.has_value(), "deck navigation final snapshot has selected day");
+    require(*result.final_frame.snapshot.selected_deck_id == "deck1", "deck navigation selects deck1");
+    require(*result.final_frame.snapshot.selected_day_id == "day1", "deck navigation selects day1");
+}
+
+void test_quiz_scene_deck_view_start_all_replay_starts_session()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "select_deck",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "deck_list_deck_deck1",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "start_all_from_deck_view",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "deck_view_start_all",
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "deck view start-all scenario replay succeeds");
+    require(result.trace.size() == 2, "deck view start-all scenario emits one trace entry per step");
+    require_trace_entry(result.trace[0], "deck_list", "select_deck", "deck_view", "deck view start-all select trace is stable");
+    require_trace_entry(result.trace[1], "deck_view", "start_quiz", "quiz_active", "deck view start-all trace is stable");
+    require(result.trace[1].target_node_id == "deck_view_start_all", "deck view start-all records target node");
+    require(result.trace[1].before_focus_id == "deck_view_day_day1", "deck view start-all starts from deck view day focus");
+    require(result.trace[1].after_focus_id == "quiz_active_option_0", "deck view start-all captures active option focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::quiz, "deck view start-all final snapshot is quiz");
+    require(result.final_frame.snapshot.active_session.has_value(), "deck view start-all final snapshot has session");
+    const domain::session_snapshot& session = *result.final_frame.snapshot.active_session;
+    require(session.mode == domain::quiz_mode::normal, "deck view start-all final session is normal");
+    require(session.current_question.has_value(), "deck view start-all final session has current question");
+    require(session.current_question->question_id == "q1", "deck view start-all final session starts available question");
+    require(!result.final_frame.snapshot.selected_day_id.has_value(), "deck view start-all does not require selected day");
+}
+
+void test_quiz_scene_day_intro_random_mode_replay_starts_random_session()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_random",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_random",
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "random mode day intro scenario replay succeeds");
+    require(result.trace.size() == 1, "random mode day intro scenario emits one trace entry");
+    require_trace_entry(result.trace[0], "day_intro", "start_quiz", "quiz_active", "random mode start trace is stable");
+    require(result.trace[0].target_node_id == "day_intro_start_random", "random mode start records target node");
+    require(result.trace[0].after_focus_id == "quiz_active_option_0", "random mode start captures active option focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::quiz, "random mode final snapshot is quiz");
+    require(result.final_frame.snapshot.active_session.has_value(), "random mode final snapshot has session");
+    const domain::session_snapshot& session = *result.final_frame.snapshot.active_session;
+    require(session.mode == domain::quiz_mode::random, "random mode final session is random");
+    require(session.question_count == 1, "random mode final session includes day question");
+    require(session.current_question.has_value(), "random mode final session has current question");
+    require(session.current_question->question_id == "q1", "random mode final session starts available question");
+}
+
+void test_quiz_scene_day_intro_known_mode_replay_starts_known_session()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+    state.dispatch(domain::make_start_quiz_action(domain::quiz_mode::normal), 20);
+    state.dispatch(domain::make_mark_question_known_action(), 30);
+    state.dispatch(domain::make_select_day_action("day1"), 40);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_known_from_day_intro",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_known",
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "known mode day intro scenario replay succeeds");
+    require(result.trace.size() == 1, "known mode day intro scenario emits one trace entry");
+    require_trace_entry(result.trace[0], "day_intro", "start_quiz", "quiz_active", "known mode day intro trace is stable");
+    require(result.trace[0].target_node_id == "day_intro_start_known", "known mode day intro records target node");
+    require(result.trace[0].before_focus_id == "day_intro_start_normal", "known mode day intro starts from normal focus");
+    require(result.trace[0].after_focus_id == "quiz_active_option_0", "known mode day intro captures active option focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::quiz, "known mode day intro final snapshot is quiz");
+    require(result.final_frame.snapshot.active_session.has_value(), "known mode day intro final snapshot has session");
+    const domain::session_snapshot& session = *result.final_frame.snapshot.active_session;
+    require(session.mode == domain::quiz_mode::known, "known mode day intro final session is known");
+    require(session.current_question.has_value(), "known mode day intro final session has current question");
+    require(session.current_question->question_id == "q1", "known mode day intro final session starts known question");
+    require(result.final_frame.snapshot.learning.known_count == 1, "known mode day intro final snapshot preserves known count");
+}
+
+void test_quiz_scene_day_intro_wrong_note_mode_replay_starts_wrong_note_session()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_update_setting_action("wrong_note_enabled", "yes"), 5);
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+    state.dispatch(domain::make_start_quiz_action(domain::quiz_mode::normal), 20);
+    state.dispatch(domain::make_submit_option_action(1), 30);
+    state.dispatch(domain::make_select_day_action("day1"), 40);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_wrong_note_from_day_intro",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_wrong_note",
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "wrong-note mode day intro scenario replay succeeds");
+    require(result.trace.size() == 1, "wrong-note mode day intro scenario emits one trace entry");
+    require_trace_entry(result.trace[0], "day_intro", "start_quiz", "quiz_active", "wrong-note mode day intro trace is stable");
+    require(result.trace[0].target_node_id == "day_intro_start_wrong_note", "wrong-note mode day intro records target node");
+    require(result.trace[0].before_focus_id == "day_intro_start_normal", "wrong-note mode day intro starts from normal focus");
+    require(result.trace[0].after_focus_id == "quiz_active_option_0", "wrong-note mode day intro captures active option focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::quiz, "wrong-note mode day intro final snapshot is quiz");
+    require(result.final_frame.snapshot.active_session.has_value(), "wrong-note mode day intro final snapshot has session");
+    const domain::session_snapshot& session = *result.final_frame.snapshot.active_session;
+    require(session.mode == domain::quiz_mode::wrong_note, "wrong-note mode day intro final session is wrong_note");
+    require(session.current_question.has_value(), "wrong-note mode day intro final session has current question");
+    require(session.current_question->question_id == "q1", "wrong-note mode day intro final session starts wrong-note question");
+    require(result.final_frame.snapshot.learning.wrong_note_count == 1, "wrong-note mode day intro final snapshot preserves wrong-note count");
+}
+
+void test_quiz_scene_error_recovery_replay_selects_deck()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_deck_action("missing"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "recover_with_deck",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "error_deck_deck1",
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "error recovery scenario replay succeeds");
+    require(result.trace.size() == 1, "error recovery scenario emits one trace entry");
+    require_trace_entry(result.trace[0], "error", "select_deck", "deck_view", "error recovery trace is stable");
+    require(result.trace[0].target_node_id == "error_deck_deck1", "error recovery records target node");
+    require(result.trace[0].before_focus_id == "error_deck_deck1", "error recovery starts from recovery deck focus");
+    require(result.trace[0].after_focus_id == "deck_view_day_day1", "error recovery captures deck view focus");
+
+    require(!result.final_frame.snapshot.error_message.has_value(), "error recovery clears error message");
+    require(result.final_frame.snapshot.selected_deck_id.has_value(), "error recovery final snapshot has selected deck");
+    require(*result.final_frame.snapshot.selected_deck_id == "deck1", "error recovery selects deck1");
+    require(result.final_frame.layout.route_state().screen_id == "deck_view", "error recovery final frame is deck view");
+}
+
+void test_quiz_scene_text_submit_replay_records_feedback()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_blank_text_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "submit_text_answer",
+                .input = app_scene_scenario_input_kind::text_submit,
+                .target_node_id = "quiz_active_text_answer",
+                .committed_text = "Seoul",
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "text answer scenario replay succeeds");
+    require(result.trace.size() == 2, "text answer scenario emits one trace entry per step");
+    require_trace_entry(result.trace[0], "day_intro", "start_quiz", "quiz_active", "text scenario start trace is stable");
+    require(result.trace[0].after_focus_id == "quiz_active_text_answer", "blank question focuses text input");
+
+    require_trace_entry(result.trace[1], "quiz_active", "submit_text_answer", "quiz_feedback", "text submit trace is stable");
+    require(result.trace[1].event_kind == "text_submit", "text submit records text event kind");
+    require(result.trace[1].target_node_id == "quiz_active_text_answer", "text submit records target node");
+    require(result.trace[1].clear_text_after_action, "text submit requests committed text clear");
+    require(result.trace[1].after_focus_id == "quiz_feedback_continue", "text submit captures feedback focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::feedback, "text submit final snapshot is feedback");
+    require(result.final_frame.snapshot.active_session.has_value(), "text submit final snapshot has session");
+    require(result.final_frame.snapshot.active_session->feedback.has_value(), "text submit final snapshot has feedback");
+    const domain::answer_record& feedback = *result.final_frame.snapshot.active_session->feedback;
+    require(feedback.outcome == domain::answer_outcome::correct, "text submit feedback is correct");
+    require(feedback.submitted_text_answers.size() == 1, "text submit records one answer");
+    require(feedback.submitted_text_answers.front() == "seoul", "text submit records normalized answer");
+}
+
+void test_quiz_scene_text_submit_button_replay_uses_committed_text()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_blank_text_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "tap_submit_text_button",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_active_submit_text",
+                .committed_text = "Seoul",
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "text submit button scenario replay succeeds");
+    require(result.trace.size() == 2, "text submit button scenario emits one trace entry per step");
+    require_trace_entry(result.trace[1], "quiz_active", "submit_text_answer", "quiz_feedback", "text submit button trace is stable");
+    require(result.trace[1].event_kind == "tap_node", "text submit button records tap event kind");
+    require(result.trace[1].target_node_id == "quiz_active_submit_text", "text submit button records target node");
+    require(result.trace[1].clear_text_after_action, "text submit button requests committed text clear");
+    require(result.trace[1].after_focus_id == "quiz_feedback_continue", "text submit button captures feedback focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::feedback, "text submit button final snapshot is feedback");
+    require(result.final_frame.snapshot.active_session.has_value(), "text submit button final snapshot has session");
+    require(result.final_frame.snapshot.active_session->feedback.has_value(), "text submit button final snapshot has feedback");
+    const domain::answer_record& feedback = *result.final_frame.snapshot.active_session->feedback;
+    require(feedback.outcome == domain::answer_outcome::correct, "text submit button feedback is correct");
+    require(feedback.submitted_text_answers.size() == 1, "text submit button records one answer");
+    require(feedback.submitted_text_answers.front() == "seoul", "text submit button records normalized committed text");
+}
+
+void test_quiz_scene_text_submit_button_replay_records_incorrect_feedback()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_blank_text_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "tap_submit_wrong_text_button",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_active_submit_text",
+                .committed_text = "Busan",
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "incorrect text submit button scenario replay succeeds");
+    require(result.trace.size() == 2, "incorrect text submit button scenario emits one trace entry per step");
+    require_trace_entry(result.trace[1], "quiz_active", "submit_text_answer", "quiz_feedback", "incorrect text submit button trace is stable");
+    require(result.trace[1].event_kind == "tap_node", "incorrect text submit button records tap event kind");
+    require(result.trace[1].target_node_id == "quiz_active_submit_text", "incorrect text submit button records target node");
+    require(result.trace[1].clear_text_after_action, "incorrect text submit button requests committed text clear");
+    require(result.trace[1].after_focus_id == "quiz_feedback_continue", "incorrect text submit button captures feedback focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::feedback, "incorrect text submit button final snapshot is feedback");
+    require(result.final_frame.snapshot.active_session.has_value(), "incorrect text submit button final snapshot has session");
+    require(result.final_frame.snapshot.active_session->feedback.has_value(), "incorrect text submit button final snapshot has feedback");
+    const domain::answer_record& feedback = *result.final_frame.snapshot.active_session->feedback;
+    require(feedback.outcome == domain::answer_outcome::incorrect, "incorrect text submit button feedback is incorrect");
+    require(feedback.submitted_text_answers.size() == 1, "incorrect text submit button records one answer");
+    require(feedback.submitted_text_answers.front() == "busan", "incorrect text submit button records normalized committed text");
+}
+
+void test_quiz_scene_incorrect_text_submit_replay_records_feedback()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_blank_text_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "submit_wrong_text_answer",
+                .input = app_scene_scenario_input_kind::text_submit,
+                .target_node_id = "quiz_active_text_answer",
+                .committed_text = "Busan",
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "incorrect text answer scenario replay succeeds");
+    require(result.trace.size() == 2, "incorrect text answer scenario emits one trace entry per step");
+    require_trace_entry(result.trace[1], "quiz_active", "submit_text_answer", "quiz_feedback", "incorrect text submit trace is stable");
+    require(result.trace[1].event_kind == "text_submit", "incorrect text submit records text event kind");
+    require(result.trace[1].clear_text_after_action, "incorrect text submit requests committed text clear");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::feedback, "incorrect text submit final snapshot is feedback");
+    require(result.final_frame.snapshot.active_session.has_value(), "incorrect text submit final snapshot has session");
+    require(result.final_frame.snapshot.active_session->feedback.has_value(), "incorrect text submit final snapshot has feedback");
+    const domain::answer_record& feedback = *result.final_frame.snapshot.active_session->feedback;
+    require(feedback.outcome == domain::answer_outcome::incorrect, "incorrect text submit feedback is incorrect");
+    require(feedback.submitted_text_answers.size() == 1, "incorrect text submit records one answer");
+    require(feedback.submitted_text_answers.front() == "busan", "incorrect text submit records normalized answer");
+}
+
+void test_quiz_scene_multiselect_replay_records_feedback()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_multiselect_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "submit_multiselect_option",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_active_option_0",
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "multiselect scenario replay succeeds");
+    require(result.trace.size() == 2, "multiselect scenario emits one trace entry per step");
+    require_trace_entry(result.trace[1], "quiz_active", "submit_multiselect", "quiz_feedback", "multiselect trace is stable");
+    require(result.trace[1].target_node_id == "quiz_active_option_0", "multiselect records target node");
+    require(result.trace[1].after_focus_id == "quiz_feedback_continue", "multiselect captures feedback focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::feedback, "multiselect final snapshot is feedback");
+    require(result.final_frame.snapshot.active_session.has_value(), "multiselect final snapshot has session");
+    require(result.final_frame.snapshot.active_session->feedback.has_value(), "multiselect final snapshot has feedback");
+    const domain::answer_record& feedback = *result.final_frame.snapshot.active_session->feedback;
+    require(feedback.outcome == domain::answer_outcome::correct, "multiselect feedback is correct");
+    require(feedback.selected_option_indexes.size() == 1, "multiselect records one selected option");
+    require(feedback.selected_option_indexes.front() == 0, "multiselect records selected option index");
+}
+
+void test_quiz_scene_results_known_mode_replay_starts_known_session()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+    state.dispatch(domain::make_start_quiz_action(domain::quiz_mode::normal), 20);
+    state.dispatch(domain::make_mark_question_known_action(), 30);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_known_from_results",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_results_start_known",
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "known mode results scenario replay succeeds");
+    require(result.trace.size() == 1, "known mode results scenario emits one trace entry");
+    require_trace_entry(result.trace[0], "quiz_results", "start_quiz", "quiz_active", "known mode start trace is stable");
+    require(result.trace[0].target_node_id == "quiz_results_start_known", "known mode start records target node");
+    require(result.trace[0].after_focus_id == "quiz_active_option_0", "known mode start captures active option focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::quiz, "known mode final snapshot is quiz");
+    require(result.final_frame.snapshot.active_session.has_value(), "known mode final snapshot has session");
+    const domain::session_snapshot& session = *result.final_frame.snapshot.active_session;
+    require(session.mode == domain::quiz_mode::known, "known mode final session is known");
+    require(session.current_question.has_value(), "known mode final session has current question");
+    require(session.current_question->question_id == "q1", "known mode final session starts known question");
+    require(result.final_frame.snapshot.learning.known_count == 1, "known mode final snapshot preserves known count");
+}
+
+void test_quiz_scene_results_due_restart_replay_starts_due_known_session()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+    state.dispatch(domain::make_start_quiz_action(domain::quiz_mode::normal), 20);
+    state.dispatch(domain::make_mark_question_known_action(), 30);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "restart_due_from_results",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_results_start_normal",
+                .now_ms = 86'400'030,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "due restart results scenario replay succeeds");
+    require(result.trace.size() == 1, "due restart results scenario emits one trace entry");
+    require_trace_entry(result.trace[0], "quiz_results", "start_quiz", "quiz_active", "due restart trace is stable");
+    require(result.trace[0].target_node_id == "quiz_results_start_normal", "due restart records target node");
+    require(result.trace[0].after_focus_id == "quiz_active_option_0", "due restart captures active option focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::quiz, "due restart final snapshot is quiz");
+    require(result.final_frame.snapshot.active_session.has_value(), "due restart final snapshot has session");
+    const domain::session_snapshot& session = *result.final_frame.snapshot.active_session;
+    require(session.mode == domain::quiz_mode::normal, "due restart final session stays normal mode");
+    require(session.current_question.has_value(), "due restart final session has current question");
+    require(session.current_question->question_id == "q1", "due restart final session starts due known question");
+    require(session.current_question->learning == domain::learning_state::known, "due restart keeps question learning state known");
+    require(result.final_frame.snapshot.learning.known_count == 1, "due restart final snapshot preserves known count");
+}
+
+void test_quiz_scene_results_wrong_note_mode_replay_starts_wrong_note_session()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_update_setting_action("wrong_note_enabled", "yes"), 5);
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+    state.dispatch(domain::make_start_quiz_action(domain::quiz_mode::normal), 20);
+    state.dispatch(domain::make_submit_option_action(1), 30);
+    state.dispatch(domain::make_continue_after_feedback_action(), 40);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_wrong_note_from_results",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_results_start_wrong_note",
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "wrong-note mode results scenario replay succeeds");
+    require(result.trace.size() == 1, "wrong-note mode results scenario emits one trace entry");
+    require_trace_entry(result.trace[0], "quiz_results", "start_quiz", "quiz_active", "wrong-note mode start trace is stable");
+    require(result.trace[0].target_node_id == "quiz_results_start_wrong_note", "wrong-note mode start records target node");
+    require(result.trace[0].after_focus_id == "quiz_active_option_0", "wrong-note mode start captures active option focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::quiz, "wrong-note mode final snapshot is quiz");
+    require(result.final_frame.snapshot.active_session.has_value(), "wrong-note mode final snapshot has session");
+    const domain::session_snapshot& session = *result.final_frame.snapshot.active_session;
+    require(session.mode == domain::quiz_mode::wrong_note, "wrong-note mode final session is wrong_note");
+    require(session.current_question.has_value(), "wrong-note mode final session has current question");
+    require(session.current_question->question_id == "q1", "wrong-note mode final session starts wrong-note question");
+    require(result.final_frame.snapshot.learning.wrong_note_count == 1, "wrong-note mode final snapshot preserves wrong-note count");
+}
+
+void test_quiz_scene_swipe_skip_replay_reaches_results()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "skip_with_swipe",
+                .input = app_scene_scenario_input_kind::swipe_right,
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "swipe skip scenario replay succeeds");
+    require(result.trace.size() == 2, "swipe skip scenario emits one trace entry per step");
+    require_trace_entry(result.trace[1], "quiz_active", "skip_question", "quiz_results", "swipe skip trace is stable");
+    require(result.trace[1].event_kind == "swipe_right", "swipe skip records gesture kind");
+    require(result.trace[1].before_focus_id == "quiz_active_option_0", "swipe skip starts from active option focus");
+    require(result.trace[1].after_focus_id == "quiz_results_start_normal", "swipe skip captures results focus");
+    require(result.final_frame.snapshot.screen == domain::app_screen::completed, "swipe skip final snapshot is completed");
+    require(result.final_frame.layout.contains_node("quiz_results_actions"), "swipe skip final frame emits results actions");
+}
+
+void test_quiz_scene_skip_button_replay_reaches_results()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "skip_with_button",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_active_skip",
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "skip button scenario replay succeeds");
+    require(result.trace.size() == 2, "skip button scenario emits one trace entry per step");
+    require_trace_entry(result.trace[1], "quiz_active", "skip_question", "quiz_results", "skip button trace is stable");
+    require(result.trace[1].event_kind == "tap_node", "skip button records tap event kind");
+    require(result.trace[1].target_node_id == "quiz_active_skip", "skip button records target node");
+    require(result.trace[1].after_focus_id == "quiz_results_start_normal", "skip button captures results focus");
+    require(result.final_frame.snapshot.screen == domain::app_screen::completed, "skip button final snapshot is completed");
+    require(result.final_frame.layout.contains_node("quiz_results_actions"), "skip button final frame emits results actions");
+}
+
+void test_quiz_scene_long_press_mark_unknown_updates_learning()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "mark_unknown_with_long_press",
+                .input = app_scene_scenario_input_kind::long_press,
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "long press mark unknown scenario replay succeeds");
+    require(result.trace.size() == 2, "long press scenario emits one trace entry per step");
+    require_trace_entry(result.trace[1], "quiz_active", "mark_question_unknown", "quiz_results", "long press trace is stable");
+    require(result.trace[1].event_kind == "long_press", "long press records gesture kind");
+    require(result.trace[1].after_focus_id == "quiz_results_start_normal", "long press captures results focus");
+    require(result.final_frame.snapshot.screen == domain::app_screen::completed, "long press final snapshot is completed");
+    require(result.final_frame.snapshot.learning.question_count == 1, "long press final snapshot summarizes learning");
+    require(result.final_frame.snapshot.learning.unknown_count == 1, "long press marks question unknown");
+}
+
+void test_quiz_scene_mark_unknown_button_replay_updates_learning()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "mark_unknown_with_button",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_active_mark_unknown",
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "mark unknown button scenario replay succeeds");
+    require(result.trace.size() == 2, "mark unknown button scenario emits one trace entry per step");
+    require_trace_entry(result.trace[1], "quiz_active", "mark_question_unknown", "quiz_results", "mark unknown button trace is stable");
+    require(result.trace[1].event_kind == "tap_node", "mark unknown button records tap event kind");
+    require(result.trace[1].target_node_id == "quiz_active_mark_unknown", "mark unknown button records target node");
+    require(result.trace[1].after_focus_id == "quiz_results_start_normal", "mark unknown button captures results focus");
+    require(result.final_frame.snapshot.screen == domain::app_screen::completed, "mark unknown button final snapshot is completed");
+    require(result.final_frame.snapshot.learning.question_count == 1, "mark unknown button final snapshot summarizes learning");
+    require(result.final_frame.snapshot.learning.unknown_count == 1, "mark unknown button marks question unknown");
+}
+
+void test_quiz_scene_swipe_previous_replay_returns_to_prior_question()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_two_question_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_normal",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "answer_first_option",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_active_option_0",
+                .now_ms = 200,
+            },
+            app_scene_scenario_step{
+                .name = "continue_feedback",
+                .input = app_scene_scenario_input_kind::swipe_right,
+                .now_ms = 300,
+            },
+            app_scene_scenario_step{
+                .name = "previous_with_swipe",
+                .input = app_scene_scenario_input_kind::swipe_left,
+                .now_ms = 400,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "swipe previous scenario replay succeeds");
+    require(result.trace.size() == 4, "swipe previous scenario emits one trace entry per step");
+    require_trace_entry(result.trace[2], "quiz_feedback", "continue_after_feedback", "quiz_active", "continue to second question trace is stable");
+    require(result.trace[2].event_kind == "swipe_right", "continue to second question records gesture kind");
+    require(result.trace[2].after_focus_id == "quiz_active_option_0", "second question active focus is captured");
+
+    require_trace_entry(result.trace[3], "quiz_active", "previous_question", "quiz_active", "previous question trace is stable");
+    require(result.trace[3].event_kind == "swipe_left", "previous question records gesture kind");
+    require(result.trace[3].before_focus_id == "quiz_active_option_0", "previous question starts from second question focus");
+    require(result.trace[3].after_focus_id == "quiz_active_option_0", "previous question returns to active option focus");
+
+    require(result.final_frame.snapshot.screen == domain::app_screen::quiz, "previous final snapshot remains in quiz");
+    require(result.final_frame.snapshot.active_session.has_value(), "previous final snapshot has session");
+    const domain::session_snapshot& session = *result.final_frame.snapshot.active_session;
+    require(session.current_index == 0, "previous final snapshot returns to first question index");
+    require(session.current_question.has_value(), "previous final snapshot has current question");
+    require(session.current_question->question_id == "q1", "previous final snapshot returns to q1");
+    require(!session.feedback.has_value(), "previous final snapshot has no pending feedback");
+}
+
+void test_quiz_scene_settings_close_replay_returns_to_deck_list()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_update_setting_action("ui_screen", "settings"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "close_settings",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "settings_close",
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "settings close scenario replay succeeds");
+    require(result.trace.size() == 1, "settings close scenario emits one trace entry");
+    require_trace_entry(result.trace[0], "settings", "update_setting", "deck_list", "settings close trace is stable");
+    require(result.trace[0].target_node_id == "settings_close", "settings close records target node");
+    require(result.trace[0].before_focus_id == "settings_close", "settings close starts from close focus");
+    require(result.trace[0].after_focus_id == "deck_list_deck_deck1", "settings close captures deck list focus");
+
+    require(result.final_frame.layout.route_state().screen_id == "deck_list", "settings close final frame is deck list");
+    require(result.final_frame.layout.contains_node("deck_list_decks"), "settings close final frame emits deck list");
+    const auto setting = result.final_frame.snapshot.settings.find("ui_screen");
+    require(setting != result.final_frame.snapshot.settings.end(), "settings close final snapshot keeps ui_screen setting");
+    require(setting->second == "deck_list", "settings close final snapshot updates route setting");
+}
+
+void test_quiz_scene_missing_target_records_failure_trace()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "tap_missing_target",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "deck_list_missing_deck",
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(!result.ok(), "missing target scenario reports failure");
+    require(result.error.find("scenario target input region not found: deck_list_missing_deck") != std::string::npos,
+        "missing target scenario reports target id");
+    require(result.trace.size() == 1, "missing target scenario records failed step trace");
+
+    const app_scene_scenario_trace_entry& trace = result.trace.front();
+    require(trace.step_name == "tap_missing_target", "missing target trace records step name");
+    require(trace.event_kind == "tap_node", "missing target trace records event kind");
+    require(trace.target_node_id == "deck_list_missing_deck", "missing target trace records target node");
+    require(trace.before_screen_id == "deck_list", "missing target trace records before screen");
+    require(trace.before_focus_id == "deck_list_deck_deck1", "missing target trace records before focus");
+    require(trace.before_node_count > 1, "missing target trace records before node count");
+    require(trace.before_input_region_count > 0, "missing target trace records before input regions");
+    require(!trace.handled, "missing target trace is not handled");
+    require(!trace.needs_render, "missing target trace does not request render");
+    require(trace.action_type.empty(), "missing target trace records no action");
+    require(trace.error == result.error, "missing target trace records failure error");
+}
+
+void test_quiz_scene_partial_failure_preserves_prior_trace()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_select_day_action("day1"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "start_before_missing_target",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "day_intro_start_normal",
+                .now_ms = 100,
+            },
+            app_scene_scenario_step{
+                .name = "tap_missing_active_target",
+                .input = app_scene_scenario_input_kind::tap_node,
+                .target_node_id = "quiz_active_missing_option",
+                .now_ms = 200,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(!result.ok(), "partial failure scenario reports failure");
+    require(result.error.find("scenario target input region not found: quiz_active_missing_option") != std::string::npos,
+        "partial failure scenario reports missing active target id");
+    require(result.trace.size() == 2, "partial failure scenario preserves prior successful trace");
+
+    require_trace_entry(result.trace[0], "day_intro", "start_quiz", "quiz_active", "partial failure prior trace is stable");
+    require(result.trace[0].target_node_id == "day_intro_start_normal", "partial failure prior trace records target");
+    require(result.trace[0].after_focus_id == "quiz_active_option_0", "partial failure prior trace captures active focus");
+
+    const app_scene_scenario_trace_entry& failed = result.trace[1];
+    require(failed.step_name == "tap_missing_active_target", "partial failure failed trace records step name");
+    require(failed.event_kind == "tap_node", "partial failure failed trace records event kind");
+    require(failed.target_node_id == "quiz_active_missing_option", "partial failure failed trace records target");
+    require(failed.before_screen_id == "quiz_active", "partial failure failed trace records active before screen");
+    require(failed.before_focus_id == "quiz_active_option_0", "partial failure failed trace records active before focus");
+    require(failed.before_node_count > 1, "partial failure failed trace records before node count");
+    require(failed.before_input_region_count > 0, "partial failure failed trace records before input regions");
+    require(failed.after_screen_id.empty(), "partial failure failed trace records no after screen");
+    require(!failed.handled, "partial failure failed trace is not handled");
+    require(!failed.needs_render, "partial failure failed trace does not request render");
+    require(failed.action_type.empty(), "partial failure failed trace records no action");
+    require(failed.error == result.error, "partial failure failed trace records failure error");
+}
+
+void test_quiz_scene_unhandled_text_submit_records_noop_trace()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "text_submit_without_handler",
+                .input = app_scene_scenario_input_kind::text_submit,
+                .target_node_id = "deck_list_deck_deck1",
+                .committed_text = "ignored",
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "unhandled text submit scenario remains successful");
+    require(result.trace.size() == 1, "unhandled text submit scenario records one trace");
+
+    const app_scene_scenario_trace_entry& trace = result.trace.front();
+    require(trace.step_name == "text_submit_without_handler", "unhandled text submit trace records step name");
+    require(trace.event_kind == "text_submit", "unhandled text submit trace records event kind");
+    require(trace.target_node_id == "deck_list_deck_deck1", "unhandled text submit trace records target");
+    require(trace.before_screen_id == "deck_list", "unhandled text submit trace records before screen");
+    require(trace.after_screen_id == "deck_list", "unhandled text submit trace records unchanged after screen");
+    require(trace.before_focus_id == "deck_list_deck_deck1", "unhandled text submit trace records before focus");
+    require(trace.after_focus_id == "deck_list_deck_deck1", "unhandled text submit trace records unchanged after focus");
+    require(!trace.handled, "unhandled text submit trace is not handled");
+    require(!trace.needs_render, "unhandled text submit trace does not request render");
+    require(!trace.clear_text_after_action, "unhandled text submit trace does not clear text");
+    require(trace.action_type.empty(), "unhandled text submit trace records no action");
+    require(trace.error.empty(), "unhandled text submit trace records no error");
+    require(trace.before_node_count == trace.after_node_count, "unhandled text submit keeps node count stable");
+    require(trace.before_input_region_count == trace.after_input_region_count, "unhandled text submit keeps input regions stable");
+    require(result.final_frame.layout.route_state().screen_id == "deck_list", "unhandled text submit final frame remains deck list");
+}
+
+void test_quiz_scene_settings_swipe_previous_records_error_transition()
+{
+    using namespace quiz_vulkan;
+
+    app_state state({make_test_deck()});
+    state.dispatch(domain::make_update_setting_action("ui_screen", "settings"), 10);
+
+    const fixed_text_metrics metrics;
+    const app_scene_scenario_result result = run_app_scene_scenario(
+        state,
+        {
+            app_scene_scenario_step{
+                .name = "swipe_previous_from_settings",
+                .input = app_scene_scenario_input_kind::swipe_left,
+                .now_ms = 100,
+            },
+        },
+        {0.0f, 0.0f, 360.0f, 640.0f},
+        metrics);
+
+    require(result.ok(), "settings swipe previous scenario remains successful");
+    require(result.trace.size() == 1, "settings swipe previous scenario records one trace");
+
+    const app_scene_scenario_trace_entry& trace = result.trace.front();
+    require(trace.step_name == "swipe_previous_from_settings", "settings swipe previous trace records step name");
+    require(trace.event_kind == "swipe_left", "settings swipe previous trace records event kind");
+    require(trace.target_node_id.empty(), "settings swipe previous trace records no target");
+    require_trace_entry(trace, "settings", "previous_question", "error", "settings swipe previous trace is stable");
+    require(trace.before_focus_id == "settings_close", "settings swipe previous trace records before focus");
+    require(trace.after_focus_id == "error_deck_deck1", "settings swipe previous trace captures error recovery focus");
+    require(!trace.clear_text_after_action, "settings swipe previous trace does not clear text");
+    require(trace.error.empty(), "settings swipe previous trace records no route error");
+
+    require(result.final_frame.layout.route_state().screen_id == "error", "settings swipe previous final frame is error");
+    require(result.final_frame.snapshot.error_message.has_value(), "settings swipe previous final snapshot records error");
+    require(result.final_frame.layout.contains_node("error_deck_deck1"), "settings swipe previous final frame emits recovery deck action");
+}
+
+} // namespace
+
+int main()
+{
+    test_quiz_scene_event_replay_reaches_results();
+    test_quiz_scene_event_replay_supports_compact_viewport();
+    test_quiz_scene_feedback_continue_button_replay_advances_question();
+    test_quiz_scene_feedback_continue_button_replay_reaches_results();
+    test_quiz_scene_empty_replay_renders_initial_frame();
+    test_quiz_scene_deck_navigation_replay_reaches_day_intro();
+    test_quiz_scene_deck_view_start_all_replay_starts_session();
+    test_quiz_scene_day_intro_random_mode_replay_starts_random_session();
+    test_quiz_scene_day_intro_known_mode_replay_starts_known_session();
+    test_quiz_scene_day_intro_wrong_note_mode_replay_starts_wrong_note_session();
+    test_quiz_scene_error_recovery_replay_selects_deck();
+    test_quiz_scene_text_submit_replay_records_feedback();
+    test_quiz_scene_text_submit_button_replay_uses_committed_text();
+    test_quiz_scene_text_submit_button_replay_records_incorrect_feedback();
+    test_quiz_scene_incorrect_text_submit_replay_records_feedback();
+    test_quiz_scene_multiselect_replay_records_feedback();
+    test_quiz_scene_results_known_mode_replay_starts_known_session();
+    test_quiz_scene_results_due_restart_replay_starts_due_known_session();
+    test_quiz_scene_results_wrong_note_mode_replay_starts_wrong_note_session();
+    test_quiz_scene_swipe_skip_replay_reaches_results();
+    test_quiz_scene_skip_button_replay_reaches_results();
+    test_quiz_scene_long_press_mark_unknown_updates_learning();
+    test_quiz_scene_mark_unknown_button_replay_updates_learning();
+    test_quiz_scene_swipe_previous_replay_returns_to_prior_question();
+    test_quiz_scene_settings_close_replay_returns_to_deck_list();
+    test_quiz_scene_missing_target_records_failure_trace();
+    test_quiz_scene_partial_failure_preserves_prior_trace();
+    test_quiz_scene_unhandled_text_submit_records_noop_trace();
+    test_quiz_scene_settings_swipe_previous_records_error_transition();
+    return 0;
+}

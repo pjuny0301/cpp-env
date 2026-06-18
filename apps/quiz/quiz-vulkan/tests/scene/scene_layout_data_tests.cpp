@@ -69,6 +69,13 @@ int main()
     assert(scene.find_node("choice_a")->text_runs.front().text == "Choice A");
     assert(scene.find_node("choice_a")->has_action_binding);
     assert(scene.find_node("choice_a")->action_binding.action_type == "answer_selected");
+    assert(scene.find_node("choice_a")->has_event_handlers);
+    assert(scene.find_node("choice_a")->event_handlers.size() == 1);
+    assert(scene.find_node("choice_a")->event_handlers.front().commands.size() == 1);
+    assert(scene.find_node("choice_a")->event_handlers.front().commands.front().name == "answer_selected");
+    assert(scene.find_node("choice_a")->event_handlers.front().commands.front().find_arg("payload")->string_if() != nullptr);
+    assert(*scene.find_node("choice_a")->event_handlers.front().commands.front().find_arg("payload")->string_if() == "A");
+    assert(std::string(quiz_vulkan::scene::to_string(scene.find_node("choice_a")->event_handlers.front().trigger)) == "press");
     assert(scene.find_node("choice_a")->semantics.role == quiz_vulkan::scene::scene_node_role::quiz_option);
     assert(scene.find_node("choice_a")->semantics.quiz.option_state == quiz_vulkan::scene::scene_quiz_option_state::selected);
     assert(scene.find_node("choice_a")->semantics.quiz.option_index == 0);
@@ -103,6 +110,32 @@ int main()
     assert(scene.has_focus());
     assert(scene.focus_id() == "title");
     assert(scene.find_node("title")->text_runs.front().text == "Question 1 updated");
+
+    quiz_vulkan::scene::scene_layout_edit_data command_edit("typed command");
+    quiz_vulkan::scene::scene_node_data typed_button;
+    typed_button.id = "typed_button";
+    typed_button.kind = quiz_vulkan::scene::scene_node_kind::input;
+    command_edit
+        .append_node("", typed_button)
+        .bind_event_handler(
+            "typed_button",
+            quiz_vulkan::scene::make_scene_event_handler(
+                quiz_vulkan::scene::scene_action_trigger::press,
+                {quiz_vulkan::scene::make_scene_command(
+                    "submit_option",
+                    {{"option_index", quiz_vulkan::scene::scene_value(2)}})},
+                "question.active"));
+    assert(command_edit.finish_patch().apply_to(scene).applied());
+    const quiz_vulkan::scene::scene_node_data* typed_node = scene.find_node("typed_button");
+    assert(typed_node != nullptr);
+    assert(!typed_node->has_action_binding);
+    assert(typed_node->has_event_handlers);
+    assert(typed_node->event_handlers.front().commands.front().name == "submit_option");
+    assert(*typed_node->event_handlers.front().commands.front().find_arg("option_index")->int_if() == 2);
+    assert(typed_node->event_handlers.front().condition.has_value());
+    assert(typed_node->event_handlers.front().condition.value() == "question.active");
+    assert(std::string(quiz_vulkan::scene::to_string(quiz_vulkan::scene::scene_action_trigger::swipe_left)) == "swipe_left");
+    assert(std::string(quiz_vulkan::scene::to_string(quiz_vulkan::scene::scene_action_trigger::long_press)) == "long_press");
 
     return 0;
 }
